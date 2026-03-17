@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
     Rocket, ArrowLeft, CheckCircle2, PlusCircle, FileJson, FileDown,
-    Database, AlertCircle, XCircle, FileSpreadsheet,
+    Database, AlertCircle, XCircle, FileSpreadsheet, UploadCloud,
     Zap, Shield, ChevronRight, Tv, Film, Music, Laugh, Radio, Smartphone,
     Globe, Monitor, Apple, Play, BarChart3, ChevronLeft, Layers, BookOpen,
 } from 'lucide-react';
@@ -434,21 +434,29 @@ function ValidationPanel({ results, eventName }: { results: AttrResult[]; eventN
     );
 }
 
+// ─── localStorage helpers ─────────────────────────────────────────────────────
+function lsGet<T>(key: string, fallback: T): T {
+    try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+}
+function lsSet(key: string, value: any) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function CleverTapTrackerPage() {
     const { toast } = useToast();
     const xlsxInputRef = useRef<HTMLInputElement>(null);
 
-    const [step, setStep] = useState<Step>(1);
+    const [step, setStep] = useState<Step>(() => lsGet('ct_step', 1) as Step);
     const form = useForm<ConfigForm>({
         resolver: zodResolver(configSchema),
-        defaultValues: { environment: 'Production', appVersion: '' },
+        defaultValues: lsGet<ConfigForm>('ct_config', { platform: '', environment: 'Production', appVersion: '' }) as ConfigForm,
     });
-    const [config, setConfig] = useState<ConfigForm | null>(null);
-    const [selectedContentTypes, setSelectedContentTypes] = useState<string[]>([]);
-    const [includeAds, setIncludeAds] = useState(false);
-    const [htmlInputs, setHtmlInputs] = useState<Record<string, Record<string, string>>>({});
-    const [capturedEvents, setCapturedEvents] = useState<Record<string, Record<string, EventCapture>>>({});
+    const [config, setConfig] = useState<ConfigForm | null>(() => lsGet('ct_config', null));
+    const [selectedContentTypes, setSelectedContentTypes] = useState<string[]>(() => lsGet('ct_content_types', []));
+    const [includeAds, setIncludeAds] = useState<boolean>(() => lsGet('ct_include_ads', false));
+    const [htmlInputs, setHtmlInputs] = useState<Record<string, Record<string, string>>>(() => lsGet('ct_html_inputs', {}));
+    const [capturedEvents, setCapturedEvents] = useState<Record<string, Record<string, EventCapture>>>(() => lsGet('ct_captured_events', {}));
     const [activeHtmlModal, setActiveHtmlModal] = useState<string | null>(null);
 
     // In-House modal state
@@ -456,18 +464,34 @@ export default function CleverTapTrackerPage() {
     const [inHousePhase, setInHousePhase] = useState<InHousePhase>('choose');
 
     // Phase 1 state: eventName -> { json, results }
-    const [phase1Inputs, setPhase1Inputs] = useState<Record<string, string>>({});
-    const [phase1Results, setPhase1Results] = useState<Record<string, AttrResult[]>>({});
+    const [phase1Inputs, setPhase1Inputs] = useState<Record<string, string>>(() => lsGet('ct_p1_inputs', {}));
+    const [phase1Results, setPhase1Results] = useState<Record<string, AttrResult[]>>(() => lsGet('ct_p1_results', {}));
 
     // Phase 2 state
-    const [p2SelectedSheet, setP2SelectedSheet] = useState<string>('');
-    const [p2EventName, setP2EventName] = useState('');
-    const [p2Json, setP2Json] = useState('');
-    const [p2Results, setP2Results] = useState<AttrResult[] | null>(null);
-    const [p2Score, setP2Score] = useState<number | null>(null);
+    const [p2SelectedSheet, setP2SelectedSheet] = useState<string>(() => lsGet('ct_p2_sheet', ''));
+    const [p2EventName, setP2EventName] = useState<string>(() => lsGet('ct_p2_event', ''));
+    const [p2Json, setP2Json] = useState<string>(() => lsGet('ct_p2_json', ''));
+    const [p2Results, setP2Results] = useState<AttrResult[] | null>(() => lsGet('ct_p2_results', null));
+    const [p2Score, setP2Score] = useState<number | null>(() => lsGet('ct_p2_score', null));
     // Saved per-event data: eventName -> { json, results, score, sheet }
-    const [p2SavedEvents, setP2SavedEvents] = useState<Record<string, { json: string; results: AttrResult[]; score: number; sheet: string }>>({});
+    const [p2SavedEvents, setP2SavedEvents] = useState<Record<string, { json: string; results: AttrResult[]; score: number; sheet: string }>>(() => lsGet('ct_p2_saved', {}));
     const [isP2ReportOpen, setIsP2ReportOpen] = useState(false);
+
+    // ── Persist to localStorage on change ──
+    useEffect(() => { lsSet('ct_step', step); }, [step]);
+    useEffect(() => { if (config) lsSet('ct_config', config); }, [config]);
+    useEffect(() => { lsSet('ct_content_types', selectedContentTypes); }, [selectedContentTypes]);
+    useEffect(() => { lsSet('ct_include_ads', includeAds); }, [includeAds]);
+    useEffect(() => { lsSet('ct_html_inputs', htmlInputs); }, [htmlInputs]);
+    useEffect(() => { lsSet('ct_captured_events', capturedEvents); }, [capturedEvents]);
+    useEffect(() => { lsSet('ct_p1_inputs', phase1Inputs); }, [phase1Inputs]);
+    useEffect(() => { lsSet('ct_p1_results', phase1Results); }, [phase1Results]);
+    useEffect(() => { lsSet('ct_p2_sheet', p2SelectedSheet); }, [p2SelectedSheet]);
+    useEffect(() => { lsSet('ct_p2_event', p2EventName); }, [p2EventName]);
+    useEffect(() => { lsSet('ct_p2_json', p2Json); }, [p2Json]);
+    useEffect(() => { lsSet('ct_p2_results', p2Results); }, [p2Results]);
+    useEffect(() => { lsSet('ct_p2_score', p2Score); }, [p2Score]);
+    useEffect(() => { lsSet('ct_p2_saved', p2SavedEvents); }, [p2SavedEvents]);
 
     // Schema: flat (event → attrs) for Phase 1, and per-sheet for Phase 2
     const [schema, setSchema] = useState<Schema>({});
@@ -494,6 +518,15 @@ export default function CleverTapTrackerPage() {
 
     // XLSX workbook cache — avoid re-fetching on every platform change
     const xlsxCacheRef = useRef<{ wb: any } | null>(null);
+
+    // ── Restore form values from persisted config on mount ──
+    useEffect(() => {
+        const saved = lsGet<ConfigForm | null>('ct_config', null);
+        if (saved) {
+            form.reset(saved);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // ── Load schema from xlsx ──
     useEffect(() => {
@@ -697,7 +730,7 @@ export default function CleverTapTrackerPage() {
             platform: PLATFORMS.find(p => p.id === config?.platform)?.label || '',
             environment: config?.environment || '',
             appVersion: config?.appVersion || '',
-        });
+        }, phase1Inputs);
         const filename = `CleverTap_Phase1_${PLATFORMS.find(p => p.id === config?.platform)?.label || ''}_${format(new Date(), 'ddMMMyyy_HHmm')}`;
         downloadAsExcel(tabs, filename);
         toast({ title: 'Downloaded as Excel' });
@@ -714,6 +747,103 @@ export default function CleverTapTrackerPage() {
         const filename = `CleverTap_Phase2_${p2SelectedSheet}_${format(new Date(), 'ddMMMyyy_HHmm')}`;
         downloadAsExcel(tabs, filename);
         toast({ title: 'Downloaded as Excel' });
+    };
+
+    // ── Import from Excel (restore session) ──
+    const importInputRef = useRef<HTMLInputElement>(null);
+
+    const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                const buf = ev.target?.result as ArrayBuffer;
+                const wb = XLSX.read(buf, { type: 'array' });
+                const jsonSheet = wb.Sheets['5. Session JSON'];
+                if (!jsonSheet) {
+                    toast({ title: 'No session data found', description: 'This Excel was not exported from CleverTap Tracker or is missing the Session JSON tab.', variant: 'destructive' });
+                    return;
+                }
+                const rows = XLSX.utils.sheet_to_json<any[]>(jsonSheet, { header: 1 }) as any[][];
+                // rows[0] = headers: ['Event', 'Sheet', 'Score', 'JSON']
+                const dataRows = rows.slice(1).filter(r => r[0]);
+                const isPhase1 = dataRows.some(r => r[1] === 'Phase1');
+
+                if (isPhase1) {
+                    // Restore Phase 1 inputs
+                    const newInputs: Record<string, string> = {};
+                    dataRows.forEach(r => {
+                        const evName = String(r[0] || '').trim();
+                        const json = String(r[3] || '').trim();
+                        if (evName && json) newInputs[evName] = json;
+                    });
+                    setPhase1Inputs(prev => {
+                        const merged = { ...prev, ...newInputs };
+                        // Auto-validate immediately using merged inputs
+                        const autoResults: Record<string, AttrResult[]> = {};
+                        for (const ev of PHASE1_EVENTS) {
+                            const json = merged[ev.name] || '';
+                            if (!json.trim()) continue;
+                            try {
+                                const params = parseJsonToParams(json);
+                                const schemaEvent = schema[ev.name] || {};
+                                const eventMeta = schemaMeta[ev.name] || {};
+                                autoResults[ev.name] = validateParams(params, schemaEvent, eventMeta);
+                            } catch {}
+                        }
+                        if (Object.keys(autoResults).length > 0) setPhase1Results(autoResults);
+                        return merged;
+                    });
+                    toast({ title: 'Phase 1 session restored', description: `${dataRows.length} event(s) loaded and validated.` });
+                } else {
+                    // Restore Phase 2 saved events — results come from "2. All Attributes" tab
+                    const allAttrsSheet = wb.Sheets['2. All Attributes'];
+                    const allAttrsRows = allAttrsSheet
+                        ? (XLSX.utils.sheet_to_json<any[]>(allAttrsSheet, { header: 1 }) as any[][]).slice(1)
+                        : [];
+
+                    // Build results per event from All Attributes tab
+                    const resultsByEvent: Record<string, AttrResult[]> = {};
+                    allAttrsRows.forEach(r => {
+                        const evName = String(r[0] || '').trim();
+                        if (!evName) return;
+                        const attrRaw = String(r[2] || '').trim();
+                        const isOthers = attrRaw.startsWith('others(');
+                        const attr = isOthers ? attrRaw.slice(7, -1) : attrRaw;
+                        const statusRaw = String(r[4] || '').replace('✓ ', '').trim() as ValidationStatus;
+                        const expected = String(r[5] || '').trim() || undefined;
+                        const actualRaw = String(r[6] || '').trim();
+                        const actual = actualRaw === '(absent)' ? undefined : actualRaw;
+                        const message = String(r[7] || '').trim();
+                        if (!resultsByEvent[evName]) resultsByEvent[evName] = [];
+                        resultsByEvent[evName].push({ attr, status: statusRaw, expected, actual, message, mainAttr: isOthers ? 'others' : undefined });
+                    });
+
+                    // Build p2SavedEvents from Session JSON tab
+                    const newSaved: Record<string, { json: string; results: AttrResult[]; score: number; sheet: string }> = {};
+                    dataRows.forEach(r => {
+                        const evName = String(r[0] || '').trim();
+                        const sheet = String(r[1] || '').trim();
+                        const score = Number(r[2]) || 0;
+                        const json = String(r[3] || '').trim();
+                        if (!evName) return;
+                        newSaved[evName] = { json, results: resultsByEvent[evName] || [], score, sheet };
+                    });
+
+                    // Restore sheet selection from first event
+                    const firstSheet = dataRows[0]?.[1] ? String(dataRows[0][1]).trim() : '';
+                    if (firstSheet) setP2SelectedSheet(firstSheet);
+                    setP2SavedEvents(prev => ({ ...prev, ...newSaved }));
+                    toast({ title: 'Phase 2 session restored', description: `${Object.keys(newSaved).length} event(s) loaded. Click any event chip to resume.` });
+                }
+            } catch {
+                toast({ title: 'Import failed', description: 'Could not read the Excel file.', variant: 'destructive' });
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        // reset so same file can be re-imported
+        e.target.value = '';
     };
 
     const HTML_EVENT_NAME_MAP: Record<string, string> = {
@@ -1146,6 +1276,12 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                         </Button>
                                     </div>
                                 )}
+                                <div className="flex gap-2">
+                                    <input ref={importInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportExcel} />
+                                    <Button size="sm" variant="outline" className="border-amber-500 text-amber-600 gap-1" onClick={() => importInputRef.current?.click()}>
+                                        <UploadCloud className="w-3.5 h-3.5" /> Import Session
+                                    </Button>
+                                </div>
                             </div>
 
                             {/* Sheet selector */}

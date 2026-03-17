@@ -48,7 +48,8 @@ function getActionRequired(status: ValidationStatus): string {
 
 export function buildPhase1Tabs(
     liveData: { event: string; results: AttrResult[]; score: number }[],
-    config: { platform: string; environment: string; appVersion: string }
+    config: { platform: string; environment: string; appVersion: string },
+    phase1Inputs?: Record<string, string>
 ): SheetTab[] {
     const tabs: SheetTab[] = [];
 
@@ -102,6 +103,14 @@ export function buildPhase1Tabs(
         });
     });
     if (missingRows.length) tabs.push({ tabName: '4. Missing Attrs', headerColor: TAB_COLORS.missing, headers: ['Event', 'Missing Attribute', 'Detail', 'Developer Note'], rows: missingRows });
+
+    // ── 5. Session JSON (for re-import) ────────────────────────────────
+    tabs.push({
+        tabName: '5. Session JSON',
+        headerColor: { red: 0.3, green: 0.3, blue: 0.3 },
+        headers: ['Event', 'Sheet', 'Score', 'JSON'],
+        rows: liveData.map(d => [d.event, 'Phase1', d.score, phase1Inputs?.[d.event] ?? '']),
+    });
 
     return tabs;
 }
@@ -160,6 +169,14 @@ export function buildPhase2Tabs(
         });
     });
     if (missingRows.length) tabs.push({ tabName: '4. Missing Attrs', headerColor: TAB_COLORS.missing, headers: ['Event', 'Sheet', 'Missing Attribute', 'Detail', 'Developer Note'], rows: missingRows });
+
+    // ── 5. Session JSON (for re-import) ────────────────────────────────
+    tabs.push({
+        tabName: '5. Session JSON',
+        headerColor: { red: 0.3, green: 0.3, blue: 0.3 },
+        headers: ['Event', 'Sheet', 'Score', 'JSON'],
+        rows: saved.map(([evName, data]) => [evName, data.sheet, data.score, data.json]),
+    });
 
     return tabs;
 }
