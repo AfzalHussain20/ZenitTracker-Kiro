@@ -325,7 +325,6 @@ export default function RepositoryPage() {
                         </CardContent>
                     </Card>
                 )}
-            </div>
         </div>
     );
 }

@@ -230,7 +230,6 @@ export default function LocatorStudioPage() {
                         </CardContent>
                     </Card>
                 )}
-            </div>
         </div>
     );
 }

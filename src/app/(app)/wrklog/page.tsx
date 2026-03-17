@@ -196,7 +196,6 @@ export default function WrklogPage() {
                         </CardContent>
                     </Card>
                 </div>
-            </div>
         </div>
     );
 }
