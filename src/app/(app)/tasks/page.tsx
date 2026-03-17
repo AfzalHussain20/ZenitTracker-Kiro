@@ -69,7 +69,7 @@ export default function TasksPage() {
   useEffect(() => {
     if (!isLead || !user) return;
     getDocs(collection(db, 'users')).then(snap => {
-      setTesters(snap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile)));
+      setTesters(snap.docs.map(d => ({ id: d.id, ...d.data() } as unknown as UserProfile)));
     });
   }, [isLead, user]);
 

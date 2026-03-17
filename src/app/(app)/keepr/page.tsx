@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Shield, Plus, Search, Smartphone, Tablet, Monitor, Tv, CheckCircle2, Activity, TrendingUp, Package, ArrowLeft, Box, Laptop, ClipboardCheck } from 'lucide-react';
 import Link from 'next/link';
+import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebaseConfig';
 import { collection, query, onSnapshot, updateDoc, doc, setDoc } from 'firebase/firestore';
 

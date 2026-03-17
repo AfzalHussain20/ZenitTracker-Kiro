@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -23,6 +23,8 @@ function Ring({ radius, color, speed, tilt = 0 }: { radius: number; color: strin
     }, [radius]);
     const mat = useMemo(() => new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.45 }), [color]);
     useFrame((_, d) => { ref.current.rotation.y += d * speed; });
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore – three.js <line> JSX element conflicts with SVG line type
     return <line ref={ref} geometry={geo} material={mat} rotation={[tilt, 0, 0]} />;
 }
 
