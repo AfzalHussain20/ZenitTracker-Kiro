@@ -305,6 +305,12 @@ function validateParams(
             continue;
         }
 
+        // ── Web platform: these attrs always send NA — treat as PASS silently ──
+        if (isWeb && WEB_NA_ATTRS.has(schemaKey)) {
+            results.push({ attr: schemaKey, status: 'PASS', actual: actual ?? 'na', message: 'Web platform — NA expected', mainAttr });
+            continue;
+        }
+
         // ── Standard YES/NO validation ──────────────────────────────────
         if (actual === undefined) {
             results.push({
@@ -645,6 +651,7 @@ export default function CleverTapTrackerPage() {
 
     // ── Phase 1: validate all 4 events at once ──
     const validatePhase1 = () => {
+        const isWeb = config?.platform === 'web';
         const newResults: Record<string, AttrResult[]> = {};
         let anyValidated = false;
         for (const ev of PHASE1_EVENTS) {
@@ -654,7 +661,7 @@ export default function CleverTapTrackerPage() {
                 const params = parseJsonToParams(json);
                 const schemaEvent = schema[ev.name] || {};
                 const eventMeta = schemaMeta[ev.name] || {};
-                newResults[ev.name] = validateParams(params, schemaEvent, eventMeta);
+                newResults[ev.name] = validateParams(params, schemaEvent, eventMeta, isWeb);
                 anyValidated = true;
             } catch {
                 toast({ title: `Invalid JSON for ${ev.name}`, variant: 'destructive' });
@@ -670,6 +677,7 @@ export default function CleverTapTrackerPage() {
         if (!p2SelectedSheet) { toast({ title: 'Select a sheet first', variant: 'destructive' }); return; }
         if (!p2Json.trim()) { toast({ title: 'Paste a JSON to validate', variant: 'destructive' }); return; }
         if (!p2EventName.trim()) { toast({ title: 'Select or enter an event name', variant: 'destructive' }); return; }
+        const isWeb = p2SelectedSheet === 'Web - Non Play Back Event';
         try {
             const params = parseJsonToParams(p2Json);
             const sheetEvs = sheetSchema[p2SelectedSheet] || {};
@@ -678,7 +686,7 @@ export default function CleverTapTrackerPage() {
             const schemaEvent = sheetEvs[resolvedEventName] || {};
             const eventMeta = sheetMeta[resolvedEventName] || {};
             const results = Object.keys(schemaEvent).length
-                ? validateParams(params, schemaEvent, eventMeta)
+                ? validateParams(params, schemaEvent, eventMeta, isWeb)
                 : Object.entries(params).map(([attr, actual]) => ({
                     attr: attr.startsWith('others(') ? attr.slice(7, -1) : attr,
                     status: 'EXTRA' as ValidationStatus,
@@ -909,7 +917,8 @@ export default function CleverTapTrackerPage() {
             const params = parseJsonToParams(sessionJson);
             const schemaEvent = schema[sessionEventType] || {};
             const eventMeta = schemaMeta[sessionEventType] || {};
-            setSessionResults(validateParams(params, schemaEvent, eventMeta));
+            const isWeb = config?.platform === 'web';
+            setSessionResults(validateParams(params, schemaEvent, eventMeta, isWeb));
         } catch { toast({ title: 'Invalid JSON', variant: 'destructive' }); }
     };
 
@@ -1286,6 +1295,17 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                     })}
                                 </div>
                             )}
+                            {/* Web platform notice */}
+                            {config?.platform === 'web' && (
+                                <div className="flex items-start gap-3 p-3 rounded-xl bg-yellow-50 dark:bg-yellow-950/40 border border-yellow-300 dark:border-yellow-700 text-xs text-yellow-800 dark:text-yellow-300">
+                                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-yellow-600" />
+                                    <div>
+                                        <p className="font-semibold mb-1">Web Team Notice — NA attributes bypassed</p>
+                                        <p className="opacity-80">The following attributes are expected as NA on Web platform and are treated as PASS:</p>
+                                        <p className="font-mono mt-1 leading-relaxed">{Array.from(WEB_NA_ATTRS).join(', ')}</p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -1483,6 +1503,17 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                     </CardContent>
                                 </Card>
                             )}
+                            {/* Web platform notice */}
+                            {p2SelectedSheet === 'Web - Non Play Back Event' && (
+                                <div className="flex items-start gap-3 p-3 rounded-xl bg-yellow-50 dark:bg-yellow-950/40 border border-yellow-300 dark:border-yellow-700 text-xs text-yellow-800 dark:text-yellow-300">
+                                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-yellow-600" />
+                                    <div>
+                                        <p className="font-semibold mb-1">Web Team Notice — NA attributes bypassed</p>
+                                        <p className="opacity-80">The following attributes are expected as NA on Web platform and are treated as PASS:</p>
+                                        <p className="font-mono mt-1 leading-relaxed">{Array.from(WEB_NA_ATTRS).join(', ')}</p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </DialogContent>
@@ -1590,7 +1621,8 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                     (params['event_name'] || params['event'] || 'custom_event').toLowerCase().replace(/\s+/g, '_');
                                 const schemaEvent = schema[evName] || {};
                                 const eventMeta = schemaMeta[evName] || {};
-                                const results = Object.keys(schemaEvent).length ? validateParams(params, schemaEvent, eventMeta) : [];
+                                const isWeb = config?.platform === 'web';
+                                const results = Object.keys(schemaEvent).length ? validateParams(params, schemaEvent, eventMeta, isWeb) : [];
                                 setCustomResults(results);
                                 toast({ title: `Validated "${evName}"`, description: results.length ? `Score: ${calcScore(results)}%` : 'No schema — showing raw params' });
                             } catch { toast({ title: 'Invalid JSON', variant: 'destructive' }); }
