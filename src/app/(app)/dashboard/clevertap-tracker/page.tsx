@@ -128,6 +128,18 @@ const FLEXIBLE_VALUE_ATTRS = new Set([
     'funnel_step',
 ]);
 
+// Web platform always sends NA for these — treat as PASS, show web team notice
+const WEB_NA_ATTRS = new Set([
+    'device_id', 'server_timestamp', 'app_id', 'app_build', 'new_app_version',
+    'device_manufacturer', 'device_model', 'region_code', 'force_update',
+    'last_interaction_ts', 'time_to_app_start_ms', 'time_since_load_ms',
+    'time_to_splash_ms', 'time_to_app_config_ms', 'time_to_storefront_ms',
+    'vertical_position', 'vpn_detected', 'proxy_detected',
+    'experiment_id', 'experiment_variant', 'feature_flag', 'launch_type',
+    'recommendation_source', 'recommendation_version', 'subscription_flow_id',
+    'funnel_step', 'app_state', 'background_reason',
+]);
+
 // Phase 1: exactly these 4 events
 const PHASE1_EVENTS = [
     { name: 'app_launch', color: 'from-blue-500 to-cyan-600' },
@@ -223,7 +235,8 @@ function isInvalidNAValue(v: string | undefined | null): boolean {
 function validateParams(
     params: Record<string, string>,
     schemaEvent: Record<string, 'yes' | 'no'>,
-    schemaMeta?: Record<string, { rule: 'yes' | 'no'; mainAttr: string }>
+    schemaMeta?: Record<string, { rule: 'yes' | 'no'; mainAttr: string }>,
+    isWeb?: boolean
 ): AttrResult[] {
     const results: AttrResult[] = [];
     const cleanedParams: Record<string, string> = {};
@@ -761,7 +774,7 @@ export default function CleverTapTrackerPage() {
                 const buf = ev.target?.result as ArrayBuffer;
                 const wb = XLSX.read(buf, { type: 'array' });
 
-                // ── Always read All Attributes tab (present in all exports) ──
+                // ── Require the All Attributes tab ──
                 const allAttrsSheet = wb.Sheets['2. All Attributes'];
                 if (!allAttrsSheet) {
                     toast({ title: 'No session data found', description: 'This Excel was not exported from CleverTap Tracker.', variant: 'destructive' });
@@ -769,19 +782,14 @@ export default function CleverTapTrackerPage() {
                 }
                 const allAttrsRows = (XLSX.utils.sheet_to_json<any[]>(allAttrsSheet, { header: 1 }) as any[][]).slice(1);
 
-                // ── Detect Phase 1 vs Phase 2 from Summary tab ──
-                const summarySheet = wb.Sheets['1. Summary'];
-                const summaryRows = summarySheet
-                    ? (XLSX.utils.sheet_to_json<any[]>(summarySheet, { header: 1 }) as any[][]).slice(1).filter(r => r[0])
-                    : [];
-                // Phase 2 summary has 'Sheet' as col 1; Phase 1 has 'Score' as col 1
-                const isPhase2 = summaryRows.length > 0 && String(summaryRows[0][1] || '').trim().toLowerCase() !== '' &&
-                    !['100%', '0%'].includes(String(summaryRows[0][1] || '').trim()) &&
-                    String(summaryRows[0][1] || '').trim().length > 3;
+                // ── Detect Phase 1 vs Phase 2 by checking header row of All Attributes ──
+                // Phase 1 header: [Event, Attribute, Group, Status, ...]
+                // Phase 2 header: [Event, Sheet, Attribute, Group, Status, ...]
+                const headerRow = (XLSX.utils.sheet_to_json<any[]>(allAttrsSheet, { header: 1 }) as any[][])[0] || [];
+                // If col[1] is "Sheet" it's Phase 2; otherwise Phase 1
+                const isPhase2 = String(headerRow[1] || '').trim().toLowerCase() === 'sheet';
 
                 // ── Build results per event from All Attributes ──
-                // Phase 1: cols = [Event, Attribute, Group, Status, Expected, Actual, Message, Action]
-                // Phase 2: cols = [Event, Sheet, Attribute, Group, Status, Expected, Actual, Message, Action]
                 const resultsByEvent: Record<string, AttrResult[]> = {};
                 const sheetByEvent: Record<string, string> = {};
                 allAttrsRows.forEach(r => {
@@ -806,6 +814,11 @@ export default function CleverTapTrackerPage() {
                     resultsByEvent[evName].push({ attr, status: statusRaw, expected, actual, message, mainAttr: isOthers ? 'others' : undefined });
                 });
 
+                if (Object.keys(resultsByEvent).length === 0) {
+                    toast({ title: 'No data found', description: 'The Excel file appears to be empty.', variant: 'destructive' });
+                    return;
+                }
+
                 // ── Try Session JSON tab for raw JSON (new exports only) ──
                 const jsonSheet = wb.Sheets['5. Session JSON'];
                 const jsonByEvent: Record<string, string> = {};
@@ -820,26 +833,21 @@ export default function CleverTapTrackerPage() {
 
                 if (!isPhase2) {
                     // ── Phase 1 restore ──
-                    const newInputs: Record<string, string> = { ...jsonByEvent };
-                    setPhase1Inputs(prev => {
-                        const merged = { ...prev, ...newInputs };
-                        const autoResults: Record<string, AttrResult[]> = {};
-                        // Use pre-built results from All Attributes if no JSON to re-validate
-                        for (const ev of PHASE1_EVENTS) {
-                            if (resultsByEvent[ev.name]) autoResults[ev.name] = resultsByEvent[ev.name];
-                            const json = merged[ev.name] || '';
-                            if (!json.trim()) continue;
-                            try {
-                                const params = parseJsonToParams(json);
-                                const schemaEvent = schema[ev.name] || {};
-                                const eventMeta = schemaMeta[ev.name] || {};
-                                autoResults[ev.name] = validateParams(params, schemaEvent, eventMeta);
-                            } catch {}
-                        }
-                        if (Object.keys(autoResults).length > 0) setPhase1Results(autoResults);
-                        return merged;
-                    });
-                    toast({ title: 'Phase 1 session restored', description: `${Object.keys(resultsByEvent).length} event(s) loaded.` });
+                    // Always use pre-built results from the Excel — no re-validation needed
+                    // (schema may not be loaded yet, and results are already correct)
+                    const newInputs: Record<string, string> = {};
+                    const autoResults: Record<string, AttrResult[]> = {};
+                    for (const ev of PHASE1_EVENTS) {
+                        if (jsonByEvent[ev.name]) newInputs[ev.name] = jsonByEvent[ev.name];
+                        if (resultsByEvent[ev.name]) autoResults[ev.name] = resultsByEvent[ev.name];
+                    }
+                    if (Object.keys(newInputs).length > 0) {
+                        setPhase1Inputs(prev => ({ ...prev, ...newInputs }));
+                    }
+                    if (Object.keys(autoResults).length > 0) {
+                        setPhase1Results(autoResults);
+                    }
+                    toast({ title: 'Phase 1 session restored', description: `${Object.keys(autoResults).length} event(s) loaded.` });
                 } else {
                     // ── Phase 2 restore ──
                     const newSaved: Record<string, { json: string; results: AttrResult[]; score: number; sheet: string }> = {};
@@ -1249,8 +1257,12 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
 
                             {/* Single validate all button */}
                             <div className="flex gap-3 pt-2">
+                                <input ref={importInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportExcel} />
                                 <Button onClick={validatePhase1} className="flex-1 h-11 bg-gradient-to-r from-purple-500 to-violet-600 text-white font-semibold">
                                     <Shield className="w-4 h-4 mr-2" /> Validate All Events
+                                </Button>
+                                <Button variant="outline" className="border-amber-500 text-amber-600 gap-1 h-11" onClick={() => importInputRef.current?.click()}>
+                                    <UploadCloud className="w-4 h-4" /> Import Session
                                 </Button>
                                 {Object.keys(phase1Results).length > 0 && (
                                     <Button variant="outline" onClick={() => { setPhase1Results({}); setPhase1Inputs({}); }} className="border-red-300 text-red-500">
