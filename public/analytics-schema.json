@@ -1,0 +1,78 @@
+{
+  "App Launched": {
+    "platform": "yes",
+    "app_version": "yes",
+    "user_id": "yes",
+    "session_id": "yes",
+    "environment": "yes",
+    "device_model": "yes",
+    "os_version": "yes",
+    "network_type": "yes",
+    "launch_type": "yes",
+    "referrer": "no"
+  },
+  "Content Clicked": {
+    "content_id": "yes",
+    "content_type": "yes",
+    "title": "yes",
+    "platform": "yes",
+    "user_id": "yes",
+    "position": "yes",
+    "source": "yes",
+    "genre": "no",
+    "language": "yes",
+    "is_premium": "yes",
+    "thumbnail_url": "no"
+  },
+  "Content Attempted": {
+    "content_id": "yes",
+    "content_type": "yes",
+    "title": "yes",
+    "platform": "yes",
+    "user_id": "yes",
+    "drm_type": "yes",
+    "stream_url": "no",
+    "quality": "yes",
+    "language": "yes",
+    "is_premium": "yes",
+    "attempt_source": "yes"
+  },
+  "Content Played": {
+    "content_id": "yes",
+    "content_type": "yes",
+    "title": "yes",
+    "platform": "yes",
+    "user_id": "yes",
+    "duration": "yes",
+    "quality": "yes",
+    "language": "yes",
+    "is_premium": "yes",
+    "ads_played": "no",
+    "buffering_count": "yes",
+    "completion_percent": "yes",
+    "drm_type": "yes"
+  },
+  "Content Started": {
+    "content_id": "yes",
+    "content_type": "yes",
+    "title": "yes",
+    "platform": "yes",
+    "user_id": "yes",
+    "quality": "yes",
+    "language": "yes",
+    "drm_type": "yes",
+    "stream_type": "yes",
+    "ads_enabled": "no"
+  },
+  "Ads Played": {
+    "ad_id": "yes",
+    "ad_type": "yes",
+    "content_id": "yes",
+    "platform": "yes",
+    "user_id": "yes",
+    "ad_duration": "yes",
+    "ad_position": "yes",
+    "ad_skipped": "no",
+    "ad_provider": "yes"
+  }
+}

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testng-results ignored="0" total="1" passed="1" failed="0" skipped="0">
+  <reporter-output>
+  </reporter-output>
+  <suite started-at="2026-03-16T16:53:33 IST" name="Surefire suite" finished-at="2026-03-16T16:54:30 IST" duration-ms="57450">
+    <groups>
+    </groups>
+    <test started-at="2026-03-16T16:53:33 IST" name="Surefire test" finished-at="2026-03-16T16:54:30 IST" duration-ms="57450">
+      <class name="com.zenit.auto.tests.TC01_DynamicWorkflow">
+        <test-method is-config="true" signature="setup()[pri:0, instance:com.zenit.auto.tests.TC01_DynamicWorkflow@5dd6264]" started-at="2026-03-16T16:53:33 IST" name="setup" finished-at="2026-03-16T16:53:33 IST" duration-ms="16" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- setup -->
+        <test-method signature="executeDynamicFlow()[pri:0, instance:com.zenit.auto.tests.TC01_DynamicWorkflow@5dd6264]" started-at="2026-03-16T16:53:33 IST" name="executeDynamicFlow" finished-at="2026-03-16T16:54:30 IST" duration-ms="57351" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- executeDynamicFlow -->
+      </class> <!-- com.zenit.auto.tests.TC01_DynamicWorkflow -->
+    </test> <!-- Surefire test -->
+  </suite> <!-- Surefire suite -->
+</testng-results>

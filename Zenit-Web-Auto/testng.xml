@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite name="Zenit Web Automation Suite" parallel="none">
+    <test name="Subscription Tests">
+        <!-- We can pass combinations of plans here -->
+        <parameter name="headless" value="false" />
+        <parameter name="runCount" value="1" />
+        <parameter name="planIndex" value="1" /> <!-- 1: Premium, 2: Saver, 3: Lite -->
+        <parameter name="upgradeIndex" value="2" /> <!-- 1: Premium, 2: Saver, 3: Lite -->
+
+        <classes>
+            <class name="com.zenit.auto.tests.TC01_DynamicWorkflow"/>
+        </classes>
+    </test>
+</suite>

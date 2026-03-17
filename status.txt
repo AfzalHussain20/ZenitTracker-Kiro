@@ -1,0 +1,88 @@
+ M automation/target/maven-status/maven-compiler-plugin/testCompile/default-testCompile/inputFiles.lst
+ M package-lock.json
+ M package.json
+ D src/app/(app)/automation/page.tsx
+ M src/app/(app)/dashboard/page.tsx
+ M src/app/(app)/dashboard/repository/page.tsx
+ M src/app/(app)/dashboard/sessions/page.tsx
+ M src/app/(app)/layout.tsx
+ M src/app/api/automation/run/route.ts
+ M src/app/globals.css
+ M src/components/apps/AppShell.tsx
+ M src/components/dashboard/AppsHubSection.tsx
+ M src/components/layout/AppHeader.tsx
+ M src/components/ui/tabs.tsx
+?? .sessions/
+?? .vscode/
+?? DASHBOARD_TROUBLESHOOTING.md
+?? NaN_FIX_COMPLETE.md
+?? PERFORMANCE_TESTING_ACCESS_GUIDE.md
+?? PERFORMANCE_TESTING_COMPLETE.md
+?? PERFORMANCE_TESTING_GUIDE.md
+?? PERFORMANCE_TESTING_README.md
+?? PRODUCTION_READY_SUMMARY.md
+?? REAL_DEVICE_CONNECTION_GUIDE.md
+?? Zenit-Web-Auto/
+?? automation/target/surefire-reports/2026-02-24T14-33-25_319.dumpstream
+?? automation/target/surefire-reports/2026-03-01T11-00-05_273.dumpstream
+?? automation/target/surefire-reports/2026-03-01T11-00-41_581.dumpstream
+?? backend/
+?? build_output.txt
+?? emergency_restore.js
+?? final_vision_fix.js
+?? fix_all.js
+?? fix_final.js
+?? fix_locator.js
+?? fix_remaining.js
+?? fix_runner.js
+?? fix_syntax.js
+?? fix_vision_page.js
+?? fix_vision_stream.js
+?? frontend/
+?? gitlog.txt
+?? gitlog2.txt
+?? hs_err_pid20704.log
+?? hs_err_pid29968.log
+?? hs_err_pid4888.log
+?? optimize_vision.js
+?? overhaul_vision.js
+?? public/temp_vision_screenshot.png
+?? replay_pid20704.log
+?? replay_pid4888.log
+?? reports/run-1771923843189.json
+?? reports/run-1772343007939.json
+?? reports/run-1772343043057.json
+?? reports/run-1772617992371.json
+?? setup_performance_testing.ps1
+?? src/app/(app)/analytics/
+?? src/app/(app)/billing/
+?? src/app/(app)/dashboard/vision/
+?? src/app/(app)/integrations/
+?? src/app/(app)/nexus/
+?? src/app/(app)/performance/
+?? src/app/api/adb/
+?? src/app/api/automation/sessions/
+?? src/app/api/devices/
+?? src/app/api/jira/
+?? src/app/api/performance/
+?? src/app/api/tests/
+?? src/app/api/vision/
+?? src/app/automation/
+?? src/app/verify/
+?? src/components/automation/
+?? src/components/dashboard/OmniSearchPreview.tsx
+?? src/components/dashboard/PerformanceTestingPreview.tsx
+?? src/components/dashboard/ZenitAcademyPreview.tsx
+?? src/components/dashboard/ZenitVisionPreview.tsx
+?? src/components/layout/AdBanner.tsx
+?? src/components/layout/EnterpriseLayout.tsx
+?? src/components/zenit-omni.tsx
+?? src/lib/automation-sessions.ts
+?? src/lib/automation/
+?? src/lib/deviceConnection.ts
+?? src/lib/tracker-api.ts
+?? src/lib/vision-core.ts
+?? src/server/
+?? src/types/vision.ts
+?? status.txt
+?? tsconfig.server.json

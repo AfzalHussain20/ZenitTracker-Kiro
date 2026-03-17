@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,700;0,900;1,400;1,700;1,900&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+    --font-barlow: 'Barlow Condensed', sans-serif;
+    --font-inter: 'Inter', sans-serif;
+}
+
+body {
+    @apply bg-[#09090b] text-zinc-100 font-inter selection:bg-pink-500/30 selection:text-white;
+    overflow: hidden;
+}
+
+.font-barlow {
+    font-family: var(--font-barlow);
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
