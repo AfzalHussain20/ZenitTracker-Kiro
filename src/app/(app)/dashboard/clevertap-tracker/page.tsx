@@ -760,29 +760,73 @@ export default function CleverTapTrackerPage() {
             try {
                 const buf = ev.target?.result as ArrayBuffer;
                 const wb = XLSX.read(buf, { type: 'array' });
-                const jsonSheet = wb.Sheets['5. Session JSON'];
-                if (!jsonSheet) {
-                    toast({ title: 'No session data found', description: 'This Excel was not exported from CleverTap Tracker or is missing the Session JSON tab.', variant: 'destructive' });
+
+                // ── Always read All Attributes tab (present in all exports) ──
+                const allAttrsSheet = wb.Sheets['2. All Attributes'];
+                if (!allAttrsSheet) {
+                    toast({ title: 'No session data found', description: 'This Excel was not exported from CleverTap Tracker.', variant: 'destructive' });
                     return;
                 }
-                const rows = XLSX.utils.sheet_to_json<any[]>(jsonSheet, { header: 1 }) as any[][];
-                // rows[0] = headers: ['Event', 'Sheet', 'Score', 'JSON']
-                const dataRows = rows.slice(1).filter(r => r[0]);
-                const isPhase1 = dataRows.some(r => r[1] === 'Phase1');
+                const allAttrsRows = (XLSX.utils.sheet_to_json<any[]>(allAttrsSheet, { header: 1 }) as any[][]).slice(1);
 
-                if (isPhase1) {
-                    // Restore Phase 1 inputs
-                    const newInputs: Record<string, string> = {};
-                    dataRows.forEach(r => {
+                // ── Detect Phase 1 vs Phase 2 from Summary tab ──
+                const summarySheet = wb.Sheets['1. Summary'];
+                const summaryRows = summarySheet
+                    ? (XLSX.utils.sheet_to_json<any[]>(summarySheet, { header: 1 }) as any[][]).slice(1).filter(r => r[0])
+                    : [];
+                // Phase 2 summary has 'Sheet' as col 1; Phase 1 has 'Score' as col 1
+                const isPhase2 = summaryRows.length > 0 && String(summaryRows[0][1] || '').trim().toLowerCase() !== '' &&
+                    !['100%', '0%'].includes(String(summaryRows[0][1] || '').trim()) &&
+                    String(summaryRows[0][1] || '').trim().length > 3;
+
+                // ── Build results per event from All Attributes ──
+                // Phase 1: cols = [Event, Attribute, Group, Status, Expected, Actual, Message, Action]
+                // Phase 2: cols = [Event, Sheet, Attribute, Group, Status, Expected, Actual, Message, Action]
+                const resultsByEvent: Record<string, AttrResult[]> = {};
+                const sheetByEvent: Record<string, string> = {};
+                allAttrsRows.forEach(r => {
+                    const evName = String(r[0] || '').trim();
+                    if (!evName) return;
+                    const attrCol   = isPhase2 ? 2 : 1;
+                    const statusCol = isPhase2 ? 4 : 3;
+                    const expCol    = isPhase2 ? 5 : 4;
+                    const actCol    = isPhase2 ? 6 : 5;
+                    const msgCol    = isPhase2 ? 7 : 6;
+                    const attrRaw   = String(r[attrCol] || '').trim();
+                    if (!attrRaw) return;
+                    const isOthers  = attrRaw.startsWith('others(');
+                    const attr      = isOthers ? attrRaw.slice(7, -1) : attrRaw;
+                    const statusRaw = String(r[statusCol] || '').replace('✓ ', '').trim() as ValidationStatus;
+                    const expected  = String(r[expCol] || '').trim() || undefined;
+                    const actualRaw = String(r[actCol] || '').trim();
+                    const actual    = actualRaw === '(absent)' ? undefined : actualRaw || undefined;
+                    const message   = String(r[msgCol] || '').trim();
+                    if (isPhase2 && !sheetByEvent[evName]) sheetByEvent[evName] = String(r[1] || '').trim();
+                    if (!resultsByEvent[evName]) resultsByEvent[evName] = [];
+                    resultsByEvent[evName].push({ attr, status: statusRaw, expected, actual, message, mainAttr: isOthers ? 'others' : undefined });
+                });
+
+                // ── Try Session JSON tab for raw JSON (new exports only) ──
+                const jsonSheet = wb.Sheets['5. Session JSON'];
+                const jsonByEvent: Record<string, string> = {};
+                if (jsonSheet) {
+                    const jsonRows = (XLSX.utils.sheet_to_json<any[]>(jsonSheet, { header: 1 }) as any[][]).slice(1);
+                    jsonRows.forEach(r => {
                         const evName = String(r[0] || '').trim();
-                        const json = String(r[3] || '').trim();
-                        if (evName && json) newInputs[evName] = json;
+                        const json   = String(r[3] || '').trim();
+                        if (evName && json) jsonByEvent[evName] = json;
                     });
+                }
+
+                if (!isPhase2) {
+                    // ── Phase 1 restore ──
+                    const newInputs: Record<string, string> = { ...jsonByEvent };
                     setPhase1Inputs(prev => {
                         const merged = { ...prev, ...newInputs };
-                        // Auto-validate immediately using merged inputs
                         const autoResults: Record<string, AttrResult[]> = {};
+                        // Use pre-built results from All Attributes if no JSON to re-validate
                         for (const ev of PHASE1_EVENTS) {
+                            if (resultsByEvent[ev.name]) autoResults[ev.name] = resultsByEvent[ev.name];
                             const json = merged[ev.name] || '';
                             if (!json.trim()) continue;
                             try {
@@ -795,44 +839,21 @@ export default function CleverTapTrackerPage() {
                         if (Object.keys(autoResults).length > 0) setPhase1Results(autoResults);
                         return merged;
                     });
-                    toast({ title: 'Phase 1 session restored', description: `${dataRows.length} event(s) loaded and validated.` });
+                    toast({ title: 'Phase 1 session restored', description: `${Object.keys(resultsByEvent).length} event(s) loaded.` });
                 } else {
-                    // Restore Phase 2 saved events — results come from "2. All Attributes" tab
-                    const allAttrsSheet = wb.Sheets['2. All Attributes'];
-                    const allAttrsRows = allAttrsSheet
-                        ? (XLSX.utils.sheet_to_json<any[]>(allAttrsSheet, { header: 1 }) as any[][]).slice(1)
-                        : [];
-
-                    // Build results per event from All Attributes tab
-                    const resultsByEvent: Record<string, AttrResult[]> = {};
-                    allAttrsRows.forEach(r => {
-                        const evName = String(r[0] || '').trim();
-                        if (!evName) return;
-                        const attrRaw = String(r[2] || '').trim();
-                        const isOthers = attrRaw.startsWith('others(');
-                        const attr = isOthers ? attrRaw.slice(7, -1) : attrRaw;
-                        const statusRaw = String(r[4] || '').replace('✓ ', '').trim() as ValidationStatus;
-                        const expected = String(r[5] || '').trim() || undefined;
-                        const actualRaw = String(r[6] || '').trim();
-                        const actual = actualRaw === '(absent)' ? undefined : actualRaw;
-                        const message = String(r[7] || '').trim();
-                        if (!resultsByEvent[evName]) resultsByEvent[evName] = [];
-                        resultsByEvent[evName].push({ attr, status: statusRaw, expected, actual, message, mainAttr: isOthers ? 'others' : undefined });
-                    });
-
-                    // Build p2SavedEvents from Session JSON tab
+                    // ── Phase 2 restore ──
                     const newSaved: Record<string, { json: string; results: AttrResult[]; score: number; sheet: string }> = {};
-                    dataRows.forEach(r => {
-                        const evName = String(r[0] || '').trim();
-                        const sheet = String(r[1] || '').trim();
-                        const score = Number(r[2]) || 0;
-                        const json = String(r[3] || '').trim();
-                        if (!evName) return;
-                        newSaved[evName] = { json, results: resultsByEvent[evName] || [], score, sheet };
+                    Object.keys(resultsByEvent).forEach(evName => {
+                        const results = resultsByEvent[evName];
+                        const score = Math.round((results.filter(r => r.status === 'PASS').length / (results.length || 1)) * 100);
+                        newSaved[evName] = {
+                            json: jsonByEvent[evName] || '',
+                            results,
+                            score,
+                            sheet: sheetByEvent[evName] || '',
+                        };
                     });
-
-                    // Restore sheet selection from first event
-                    const firstSheet = dataRows[0]?.[1] ? String(dataRows[0][1]).trim() : '';
+                    const firstSheet = Object.values(sheetByEvent)[0] || '';
                     if (firstSheet) setP2SelectedSheet(firstSheet);
                     setP2SavedEvents(prev => ({ ...prev, ...newSaved }));
                     toast({ title: 'Phase 2 session restored', description: `${Object.keys(newSaved).length} event(s) loaded. Click any event chip to resume.` });
