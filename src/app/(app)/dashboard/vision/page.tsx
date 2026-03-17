@@ -1271,7 +1271,7 @@ const caps = {
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-1.5">
                                   <span className="text-[11px] font-semibold" style={{ color: meta.color }}>{meta.label}</span>
-                                  {a.value && <span className="text-[10px] text-[#888] font-mono truncate max-w-[100px]">"{a.value}"</span>}
+                                  {a.value && <span className="text-[10px] text-[#888] font-mono truncate max-w-[100px]">&quot;{a.value}&quot;</span>}
                                 </div>
                                 <div className="text-[10.5px] text-[#616161] truncate mt-0.5">{a.description}</div>
                                 {bestLoc && (
@@ -1450,7 +1450,7 @@ const caps = {
                   {/* Execution logs */}
                   <div className="flex-1 min-h-0 overflow-y-auto vs-scroll bg-[#0D0D0D] p-3 font-mono">
                     {runLogs.length === 0 ? (
-                      <div className="text-[#333] text-[11px]">// Execution output will appear here…</div>
+                      <div className="text-[#333] text-[11px]">{/* Execution output will appear here… */}</div>
                     ) : (
                       runLogs.map((l, i) => (
                         <div key={i} className={`text-[11px] leading-relaxed ${l.level === 'error' ? 'text-red-400' : l.level === 'success' ? 'text-green-400' : l.level === 'warn' ? 'text-yellow-400' : 'text-[#CCCCCC]'}`}>

@@ -204,7 +204,7 @@ export default function NewTestSessionPage() {
                   <div className="space-y-3">
                     <div>
                       <p className="text-sm font-bold text-foreground">Select Platform</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Choose the platform you're testing on</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Choose the platform you&apos;re testing on</p>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
                       {platformOptions.map(p => {
