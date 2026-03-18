@@ -1372,35 +1372,54 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                 </div>
                             </div>
 
-                            {/* Sheet selector */}
+                            {/* Sheet selector — collapsed when sheet already selected */}
                             <div className="space-y-2">
-                                <Label className="text-sm font-semibold">Select Sheet *</Label>
-                                <ScrollArea className="h-44 rounded-xl border bg-muted/30 p-3">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                        {xlsxSheetNames.map(sName => (
-                                            <button key={sName}
-                                                onClick={() => {
-                                                    if (Object.keys(p2SavedEvents).length > 0) {
-                                                        const ok = window.confirm(`Switching sheet will clear ${Object.keys(p2SavedEvents).length} saved event(s). Continue?`);
-                                                        if (!ok) return;
-                                                    }
-                                                    setP2SelectedSheet(sName); setP2Results(null); setP2Score(null); setP2EventName(''); setP2Json(''); setP2SavedEvents({});
-                                                }}
-                                                className={`px-4 py-2.5 rounded-lg text-sm font-medium text-left transition-all border ${p2SelectedSheet === sName ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-card border-border hover:border-emerald-400 hover:bg-emerald-500/5'}`}>
-                                                <div className="flex items-center gap-2">
-                                                    {p2SelectedSheet === sName && <CheckCircle2 className="w-4 h-4 shrink-0" />}
-                                                    <span className="truncate">{sName}</span>
+                                <div className="flex items-center justify-between">
+                                    <Label className="text-sm font-semibold">Select Sheet *</Label>
+                                    {p2SelectedSheet && (
+                                        <button
+                                            onClick={() => {
+                                                if (Object.keys(p2SavedEvents).length > 0) {
+                                                    const ok = window.confirm(`Changing sheet will clear ${Object.keys(p2SavedEvents).length} saved event(s). Continue?`);
+                                                    if (!ok) return;
+                                                    setP2SavedEvents({});
+                                                }
+                                                setP2SelectedSheet(''); setP2Results(null); setP2Score(null); setP2EventName(''); setP2Json('');
+                                            }}
+                                            className="text-xs text-muted-foreground hover:text-foreground underline"
+                                        >
+                                            Change sheet
+                                        </button>
+                                    )}
+                                </div>
+                                {!p2SelectedSheet && (
+                                    <ScrollArea className="h-44 rounded-xl border bg-muted/30 p-3">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            {xlsxSheetNames.map(sName => (
+                                                <button key={sName}
+                                                    onClick={() => {
+                                                        if (Object.keys(p2SavedEvents).length > 0) {
+                                                            const ok = window.confirm(`Switching sheet will clear ${Object.keys(p2SavedEvents).length} saved event(s). Continue?`);
+                                                            if (!ok) return;
+                                                        }
+                                                        setP2SelectedSheet(sName); setP2Results(null); setP2Score(null); setP2EventName(''); setP2Json(''); setP2SavedEvents({});
+                                                    }}
+                                                    className={`px-4 py-2.5 rounded-lg text-sm font-medium text-left transition-all border ${p2SelectedSheet === sName ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-card border-border hover:border-emerald-400 hover:bg-emerald-500/5'}`}>
+                                                    <div className="flex items-center gap-2">
+                                                        {p2SelectedSheet === sName && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                                                        <span className="truncate">{sName}</span>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                            {xlsxSheetNames.length === 0 && (
+                                                <div className="col-span-2 text-center py-6 text-muted-foreground text-sm">
+                                                    <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                                                    No sheets loaded — ensure SunNxt Data Dictionary.xlsx is in /public
                                                 </div>
-                                            </button>
-                                        ))}
-                                        {xlsxSheetNames.length === 0 && (
-                                            <div className="col-span-2 text-center py-6 text-muted-foreground text-sm">
-                                                <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                                                No sheets loaded — ensure SunNxt Data Dictionary.xlsx is in /public
-                                            </div>
-                                        )}
-                                    </div>
-                                </ScrollArea>
+                                            )}
+                                        </div>
+                                    </ScrollArea>
+                                )}
                             </div>
 
                             {/* Selected sheet info */}
@@ -1423,13 +1442,15 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                             )}
 
                             {/* Event name chips — all events, click to switch */}
-                            {p2SelectedSheet && sheetSchema[p2SelectedSheet] && (
+                            {p2SelectedSheet && (sheetSchema[p2SelectedSheet] || Object.keys(p2SavedEvents).length > 0) && (
                                 <div className="space-y-2">
                                     <Label className="text-sm font-semibold">Select Event *</Label>
                                     <div className="flex flex-wrap gap-1.5">
-                                        {Object.keys(sheetSchema[p2SelectedSheet])
-                                            .filter(evName => evName !== 'client_remarks' && evName !== 'qa_remarks')
-                                            .map(evName => {
+                                        {/* Show events from schema if available, else fall back to saved events */}
+                                        {(sheetSchema[p2SelectedSheet]
+                                            ? Object.keys(sheetSchema[p2SelectedSheet]).filter(e => e !== 'client_remarks' && e !== 'qa_remarks')
+                                            : Object.keys(p2SavedEvents)
+                                        ).map(evName => {
                                                 const isSaved = !!p2SavedEvents[evName];
                                                 const isActive = p2EventName === evName;
                                                 const savedScore = p2SavedEvents[evName]?.score;
