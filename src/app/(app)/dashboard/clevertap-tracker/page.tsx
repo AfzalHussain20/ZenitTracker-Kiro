@@ -965,9 +965,17 @@ export default function CleverTapTrackerPage() {
                     if (!xlsxCacheRef.current) {
                         try {
                             const res = await fetch('/SunNxt Data Dictionary.xlsx');
+                            if (!res.ok) throw new Error(`HTTP ${res.status}`);
                             const buf2 = await res.arrayBuffer();
                             xlsxCacheRef.current = { wb: XLSX.read(buf2, { type: 'array' }) };
-                        } catch {}
+                        } catch (fetchErr) {
+                            console.error('[Import] Failed to fetch Data Dictionary:', fetchErr);
+                            toast({
+                                title: 'Schema load failed',
+                                description: 'Could not load Data Dictionary. Non-captured events may not appear.',
+                                variant: 'destructive',
+                            });
+                        }
                     }
 
                     // Re-normalize matchedSheet against actual workbook sheet names now that cache is warm
