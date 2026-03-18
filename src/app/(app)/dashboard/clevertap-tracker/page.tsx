@@ -809,6 +809,7 @@ export default function CleverTapTrackerPage() {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (ev) => {
+            const processImport = async () => {
             try {
                 const buf = ev.target?.result as ArrayBuffer;
                 const wb = XLSX.read(buf, { type: 'array' });
@@ -872,9 +873,6 @@ export default function CleverTapTrackerPage() {
 
                 if (!isPhase2) {
                     // ── Phase 1 restore ──
-                    // Always use pre-built results from the Excel — no re-validation needed
-                    // (schema may not be loaded yet, and results are already correct)
-                    // Post-process: reclassify WEB_NA attrs if platform is web (handles old exports)
                     const isWebPlatform = config?.platform === 'web';
                     const reclassify = (results: AttrResult[], isWeb: boolean): AttrResult[] => {
                         if (!isWeb) return results;
@@ -890,16 +888,11 @@ export default function CleverTapTrackerPage() {
                         if (jsonByEvent[ev.name]) newInputs[ev.name] = jsonByEvent[ev.name];
                         if (resultsByEvent[ev.name]) autoResults[ev.name] = reclassify(resultsByEvent[ev.name], isWebPlatform);
                     }
-                    if (Object.keys(newInputs).length > 0) {
-                        setPhase1Inputs(prev => ({ ...prev, ...newInputs }));
-                    }
-                    if (Object.keys(autoResults).length > 0) {
-                        setPhase1Results(autoResults);
-                    }
+                    if (Object.keys(newInputs).length > 0) setPhase1Inputs(prev => ({ ...prev, ...newInputs }));
+                    if (Object.keys(autoResults).length > 0) setPhase1Results(autoResults);
                     toast({ title: 'Phase 1 session restored', description: `${Object.keys(autoResults).length} event(s) loaded.` });
                 } else {
                     // ── Phase 2 restore ──
-                    // Post-process: reclassify WEB_NA attrs for web sheet (handles old exports)
                     const reclassify = (results: AttrResult[], sheet: string): AttrResult[] => {
                         if (sheet !== 'Web - Non Play Back Event') return results;
                         return results.map(r =>
@@ -913,118 +906,106 @@ export default function CleverTapTrackerPage() {
                         const sheet = sheetByEvent[evName] || '';
                         const results = reclassify(resultsByEvent[evName], sheet);
                         const score = Math.round((results.filter(r => r.status === 'PASS' || r.status === 'WEB_NA').length / (results.length || 1)) * 100);
-                        newSaved[evName] = {
-                            json: jsonByEvent[evName] || '',
-                            results,
-                            score,
-                            sheet,
-                        };
+                        newSaved[evName] = { json: jsonByEvent[evName] || '', results, score, sheet };
                     });
+
                     const firstSheet = Object.values(sheetByEvent)[0] || '';
                     let matchedSheet = firstSheet;
                     if (firstSheet) {
-                        // Normalize: exact match first, then case-insensitive, then use as-is
                         matchedSheet = xlsxSheetNames.find(s => s === firstSheet)
                             || xlsxSheetNames.find(s => s.toLowerCase() === firstSheet.toLowerCase())
                             || firstSheet;
                         setP2SelectedSheet(matchedSheet);
                     }
 
-                    // ── Instantly resolve all sheet events ──────────────────────────
-                    // Priority 1: Tab 6 from imported Excel (new exports — complete list)
-                    // Priority 2: Cached Data Dictionary workbook header row (instant if loaded)
-                    // Priority 3: Summary tab (older exports — captured events only)
-                    const importedEvents: string[] = [];
+                    // ── Helper: parse one sheet from a workbook into schema + event list ──
+                    const parseOneSheet = (dictWb: any, sName: string): { events: string[]; evSchema: Record<string, Record<string, 'yes' | 'no'>>; evMeta: Record<string, Record<string, { rule: 'yes' | 'no'; mainAttr: string }>> } => {
+                        const ws = dictWb.Sheets[sName];
+                        if (!ws) return { events: [], evSchema: {}, evMeta: {} };
+                        const rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 }) as any[][];
+                        if (!rows.length) return { events: [], evSchema: {}, evMeta: {} };
+                        const hRow = rows[0] as any[];
+                        let startCol = hRow.findIndex((cell: any, idx: number) => {
+                            if (idx < 2) return false;
+                            const s = String(cell || '').trim().toLowerCase();
+                            return s.length > 2 && (s.includes('_') || /^[a-z]/.test(s));
+                        });
+                        if (startCol < 0) startCol = sName.toLowerCase().includes('play back') ? 3 : 5;
+                        const events: string[] = [];
+                        const evSchema: Record<string, Record<string, 'yes' | 'no'>> = {};
+                        const evMeta: Record<string, Record<string, { rule: 'yes' | 'no'; mainAttr: string }>> = {};
+                        for (let c = startCol; c < hRow.length; c++) {
+                            const evName = String(hRow[c] || '').trim().toLowerCase().replace(/\s+/g, '_');
+                            if (!evName || evName === 'client_remarks' || evName === 'qa_remarks') continue;
+                            events.push(evName);
+                            evSchema[evName] = {};
+                            evMeta[evName] = {};
+                            for (let r = 1; r < rows.length; r++) {
+                                const row = rows[r] as any[];
+                                const mainAttrRaw = String(row[0] || '').trim().toLowerCase();
+                                const attrName = String(row[1] || '').trim().toLowerCase();
+                                if (!attrName) continue;
+                                const rule: 'yes' | 'no' = String(row[c] || '').trim().toUpperCase() === 'YES' ? 'yes' : 'no';
+                                evSchema[evName][attrName] = rule;
+                                evMeta[evName][attrName] = { rule, mainAttr: mainAttrRaw };
+                            }
+                        }
+                        return { events, evSchema, evMeta };
+                    };
 
-                    // Priority 1 — Tab 6
+                    // ── Ensure Data Dictionary workbook is cached ──────────────────
+                    // If cache is cold (fresh page load), fetch it now so we can resolve
+                    // the full event list and inject schema immediately.
+                    if (!xlsxCacheRef.current) {
+                        try {
+                            const res = await fetch('/SunNxt Data Dictionary.xlsx');
+                            const buf2 = await res.arrayBuffer();
+                            xlsxCacheRef.current = { wb: XLSX.read(buf2, { type: 'array' }) };
+                        } catch {}
+                    }
+
+                    // ── Priority 1: Tab 6 from imported Excel (new exports) ───────
+                    const importedEvents: string[] = [];
                     const sheetEventsTab = wb.Sheets['6. Sheet Events'];
                     if (sheetEventsTab) {
                         const evRows = (XLSX.utils.sheet_to_json<any[]>(sheetEventsTab, { header: 1 }) as any[][]).slice(1);
                         evRows.forEach(r => { const evName = String(r[0] || '').trim(); if (evName) importedEvents.push(evName); });
                     }
 
-                    // Priority 2 — Cached workbook header row
+                    // ── Priority 2: Cached Data Dictionary header row ─────────────
                     if (importedEvents.length === 0 && xlsxCacheRef.current && matchedSheet) {
-                        try {
-                            const cachedWb = xlsxCacheRef.current.wb;
-                            const ws = cachedWb.Sheets[matchedSheet];
-                            if (ws) {
-                                const rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 }) as any[][];
-                                const hRow = rows[0] as any[];
-                                let startCol = hRow.findIndex((cell: any, idx: number) => {
-                                    if (idx < 2) return false;
-                                    const s = String(cell || '').trim().toLowerCase();
-                                    return s.length > 2 && (s.includes('_') || /^[a-z]/.test(s));
-                                });
-                                if (startCol < 0) startCol = matchedSheet.toLowerCase().includes('play back') ? 3 : 5;
-                                for (let c = startCol; c < hRow.length; c++) {
-                                    const evName = String(hRow[c] || '').trim().toLowerCase().replace(/\s+/g, '_');
-                                    if (evName && evName !== 'client_remarks' && evName !== 'qa_remarks') importedEvents.push(evName);
-                                }
-                            }
-                        } catch {}
+                        const { events } = parseOneSheet(xlsxCacheRef.current.wb, matchedSheet);
+                        importedEvents.push(...events);
                     }
 
-                    // Priority 3 — Summary tab (captured events only, older exports)
+                    // ── Priority 3: Summary tab (captured events only, old exports) ─
                     if (importedEvents.length === 0) {
                         const summarySheetWb = wb.Sheets['1. Summary'];
                         if (summarySheetWb) {
-                            const summaryRows = (XLSX.utils.sheet_to_json<any[]>(summarySheetWb, { header: 1 }) as any[][]).slice(1);
-                            summaryRows.forEach(r => { const evName = String(r[0] || '').trim(); if (evName) importedEvents.push(evName); });
+                            (XLSX.utils.sheet_to_json<any[]>(summarySheetWb, { header: 1 }) as any[][]).slice(1)
+                                .forEach(r => { const evName = String(r[0] || '').trim(); if (evName) importedEvents.push(evName); });
                         }
                     }
 
                     setP2ImportedSheetEvents(importedEvents.length > 0 ? importedEvents : Object.keys(newSaved));
 
-                    // ── Eagerly inject schema for matched sheet if cache is available ──
-                    // This ensures validatePhase2 works immediately without waiting for loadSchema
+                    // ── Inject schema for matched sheet so validation works immediately ──
                     if (xlsxCacheRef.current && matchedSheet && !sheetSchema[matchedSheet]) {
-                        try {
-                            const cachedWb = xlsxCacheRef.current.wb;
-                            const ws = cachedWb.Sheets[matchedSheet];
-                            if (ws) {
-                                const rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 }) as any[][];
-                                if (rows.length) {
-                                    const hRow = rows[0] as any[];
-                                    let startCol = hRow.findIndex((cell: any, idx: number) => {
-                                        if (idx < 2) return false;
-                                        const s = String(cell || '').trim().toLowerCase();
-                                        return s.length > 2 && (s.includes('_') || /^[a-z]/.test(s));
-                                    });
-                                    if (startCol < 0) startCol = matchedSheet.toLowerCase().includes('play back') ? 3 : 5;
-                                    const evSchema: Schema[string] = {};
-                                    const evMeta: SchemaMeta[string] = {};
-                                    // Build per-event schema
-                                    const sheetEvSchema: Record<string, Record<string, 'yes' | 'no'>> = {};
-                                    const sheetEvMeta: Record<string, Record<string, { rule: 'yes' | 'no'; mainAttr: string }>> = {};
-                                    for (let c = startCol; c < hRow.length; c++) {
-                                        const evName = String(hRow[c] || '').trim().toLowerCase().replace(/\s+/g, '_');
-                                        if (!evName) continue;
-                                        sheetEvSchema[evName] = {};
-                                        sheetEvMeta[evName] = {};
-                                        for (let r = 1; r < rows.length; r++) {
-                                            const row = rows[r] as any[];
-                                            const mainAttrRaw = String(row[0] || '').trim().toLowerCase();
-                                            const attrName = String(row[1] || '').trim().toLowerCase();
-                                            if (!attrName) continue;
-                                            const val = String(row[c] || '').trim().toUpperCase();
-                                            const rule: 'yes' | 'no' = val === 'YES' ? 'yes' : 'no';
-                                            sheetEvSchema[evName][attrName] = rule;
-                                            sheetEvMeta[evName][attrName] = { rule, mainAttr: mainAttrRaw };
-                                        }
-                                    }
-                                    setSheetSchema(prev => ({ ...prev, [matchedSheet]: sheetEvSchema }));
-                                    setSheetSchemaMeta(prev => ({ ...prev, [matchedSheet]: sheetEvMeta }));
-                                }
-                            }
-                        } catch {}
+                        const { evSchema, evMeta } = parseOneSheet(xlsxCacheRef.current.wb, matchedSheet);
+                        if (Object.keys(evSchema).length) {
+                            setSheetSchema(prev => ({ ...prev, [matchedSheet]: evSchema }));
+                            setSheetSchemaMeta(prev => ({ ...prev, [matchedSheet]: evMeta }));
+                        }
                     }
+
                     setP2SavedEvents(prev => ({ ...prev, ...newSaved }));
                     toast({ title: 'Phase 2 session restored', description: `${Object.keys(newSaved).length} event(s) loaded. Click any event chip to resume.` });
                 }
             } catch {
                 toast({ title: 'Import failed', description: 'Could not read the Excel file.', variant: 'destructive' });
             }
+            };
+            processImport();
         };
         reader.readAsArrayBuffer(file);
         // reset so same file can be re-imported
