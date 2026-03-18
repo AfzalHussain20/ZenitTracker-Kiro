@@ -520,6 +520,8 @@ export default function CleverTapTrackerPage() {
     // Saved per-event data: eventName -> { json, results, score, sheet }
     const [p2SavedEvents, setP2SavedEvents] = useState<Record<string, { json: string; results: AttrResult[]; score: number; sheet: string }>>(() => lsGet('ct_p2_saved', {}));
     const [isP2ReportOpen, setIsP2ReportOpen] = useState(false);
+    // Events imported from Excel Summary tab — used as chip fallback before schema loads
+    const [p2ImportedSheetEvents, setP2ImportedSheetEvents] = useState<string[]>(() => lsGet('ct_p2_imported_events', []));
 
     // ── Persist to localStorage on change ──
     useEffect(() => { lsSet('ct_step', step); }, [step]);
@@ -536,6 +538,7 @@ export default function CleverTapTrackerPage() {
     useEffect(() => { lsSet('ct_p2_results', p2Results); }, [p2Results]);
     useEffect(() => { lsSet('ct_p2_score', p2Score); }, [p2Score]);
     useEffect(() => { lsSet('ct_p2_saved', p2SavedEvents); }, [p2SavedEvents]);
+    useEffect(() => { lsSet('ct_p2_imported_events', p2ImportedSheetEvents); }, [p2ImportedSheetEvents]);
 
     // Schema: flat (event → attrs) for Phase 1, and per-sheet for Phase 2
     const [schema, setSchema] = useState<Schema>({});
@@ -922,6 +925,14 @@ export default function CleverTapTrackerPage() {
                             || firstSheet;
                         setP2SelectedSheet(matchedSheet);
                     }
+                    // Read Summary tab for all event names — used as chip fallback before schema loads
+                    const summarySheetWb = wb.Sheets['1. Summary'];
+                    const importedEvents: string[] = [];
+                    if (summarySheetWb) {
+                        const summaryRows = (XLSX.utils.sheet_to_json<any[]>(summarySheetWb, { header: 1 }) as any[][]).slice(1);
+                        summaryRows.forEach(r => { const evName = String(r[0] || '').trim(); if (evName) importedEvents.push(evName); });
+                    }
+                    setP2ImportedSheetEvents(importedEvents.length > 0 ? importedEvents : Object.keys(newSaved));
                     setP2SavedEvents(prev => ({ ...prev, ...newSaved }));
                     toast({ title: 'Phase 2 session restored', description: `${Object.keys(newSaved).length} event(s) loaded. Click any event chip to resume.` });
                 }
@@ -1317,7 +1328,6 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
 
                             {/* Single validate all button */}
                             <div className="flex gap-3 pt-2">
-                                <input ref={importInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportExcel} />
                                 <Button onClick={validatePhase1} className="flex-1 h-11 bg-gradient-to-r from-purple-500 to-violet-600 text-white font-semibold">
                                     <Shield className="w-4 h-4 mr-2" /> Validate All Events
                                 </Button>
@@ -1408,7 +1418,7 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                                             const ok = window.confirm(`Switching sheet will clear ${Object.keys(p2SavedEvents).length} saved event(s). Continue?`);
                                                             if (!ok) return;
                                                         }
-                                                        setP2SelectedSheet(sName); setP2Results(null); setP2Score(null); setP2EventName(''); setP2Json(''); setP2SavedEvents({});
+                                                        setP2SelectedSheet(sName); setP2Results(null); setP2Score(null); setP2EventName(''); setP2Json(''); setP2SavedEvents({}); setP2ImportedSheetEvents([]);
                                                     }}
                                                     className={`px-4 py-2.5 rounded-lg text-sm font-medium text-left transition-all border ${p2SelectedSheet === sName ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-card border-border hover:border-emerald-400 hover:bg-emerald-500/5'}`}>
                                                     <div className="flex items-center gap-2">
@@ -1456,30 +1466,11 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                             const schemaEvents = sheetSchema[p2SelectedSheet]
                                                 ? Object.keys(sheetSchema[p2SelectedSheet]).filter(e => e !== 'client_remarks' && e !== 'qa_remarks')
                                                 : [];
-                                            const savedKeys = Object.keys(p2SavedEvents).filter(k => !schemaEvents.includes(k));
-                                            const allEvents = [...schemaEvents, ...savedKeys];
-
-                                            // Schema not loaded yet but we have saved events — show saved + loading notice
-                                            if (schemaEvents.length === 0 && savedKeys.length > 0) {
-                                                return (
-                                                    <>
-                                                        {savedKeys.map(evName => {
-                                                            const isActive = p2EventName === evName;
-                                                            const savedScore = p2SavedEvents[evName]?.score;
-                                                            return (
-                                                                <button key={evName} onClick={() => selectP2Event(evName)}
-                                                                    className={`relative px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${isActive ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-purple-500/10 border-purple-400 text-purple-700 dark:text-purple-300 hover:bg-purple-500/20'}`}>
-                                                                    {evName}
-                                                                    <span className={`ml-1.5 text-xs font-bold ${savedScore === 100 ? 'text-emerald-400' : savedScore! >= 70 ? 'text-amber-400' : 'text-red-400'}`}>
-                                                                        {savedScore}%
-                                                                    </span>
-                                                                </button>
-                                                            );
-                                                        })}
-                                                        <span className="text-xs text-muted-foreground self-center italic">Schema loading — other events will appear shortly</span>
-                                                    </>
-                                                );
-                                            }
+                                            const baseEvents = schemaEvents.length > 0 ? schemaEvents
+                                                : p2ImportedSheetEvents.length > 0 ? p2ImportedSheetEvents
+                                                : Object.keys(p2SavedEvents);
+                                            const savedKeys = Object.keys(p2SavedEvents).filter(k => !baseEvents.includes(k));
+                                            const allEvents = [...baseEvents, ...savedKeys];
 
                                             return allEvents.map(evName => {
                                                 const isSaved = !!p2SavedEvents[evName];
@@ -1614,6 +1605,7 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                             )}
                         </div>
                     )}
+                    <input ref={importInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportExcel} />
                 </DialogContent>
             </Dialog>
 
