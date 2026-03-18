@@ -869,11 +869,21 @@ export default function CleverTapTrackerPage() {
                     // ── Phase 1 restore ──
                     // Always use pre-built results from the Excel — no re-validation needed
                     // (schema may not be loaded yet, and results are already correct)
+                    // Post-process: reclassify WEB_NA attrs if platform is web (handles old exports)
+                    const isWebPlatform = config?.platform === 'web';
+                    const reclassify = (results: AttrResult[], isWeb: boolean): AttrResult[] => {
+                        if (!isWeb) return results;
+                        return results.map(r =>
+                            WEB_NA_ATTRS.has(r.attr) && r.status !== 'PASS' && r.status !== 'WEB_NA'
+                                ? { ...r, status: 'WEB_NA' as ValidationStatus, message: 'Web sheet — dev team does not capture this attribute' }
+                                : r
+                        );
+                    };
                     const newInputs: Record<string, string> = {};
                     const autoResults: Record<string, AttrResult[]> = {};
                     for (const ev of PHASE1_EVENTS) {
                         if (jsonByEvent[ev.name]) newInputs[ev.name] = jsonByEvent[ev.name];
-                        if (resultsByEvent[ev.name]) autoResults[ev.name] = resultsByEvent[ev.name];
+                        if (resultsByEvent[ev.name]) autoResults[ev.name] = reclassify(resultsByEvent[ev.name], isWebPlatform);
                     }
                     if (Object.keys(newInputs).length > 0) {
                         setPhase1Inputs(prev => ({ ...prev, ...newInputs }));
@@ -884,15 +894,25 @@ export default function CleverTapTrackerPage() {
                     toast({ title: 'Phase 1 session restored', description: `${Object.keys(autoResults).length} event(s) loaded.` });
                 } else {
                     // ── Phase 2 restore ──
+                    // Post-process: reclassify WEB_NA attrs for web sheet (handles old exports)
+                    const reclassify = (results: AttrResult[], sheet: string): AttrResult[] => {
+                        if (sheet !== 'Web - Non Play Back Event') return results;
+                        return results.map(r =>
+                            WEB_NA_ATTRS.has(r.attr) && r.status !== 'PASS' && r.status !== 'WEB_NA'
+                                ? { ...r, status: 'WEB_NA' as ValidationStatus, message: 'Web sheet — dev team does not capture this attribute' }
+                                : r
+                        );
+                    };
                     const newSaved: Record<string, { json: string; results: AttrResult[]; score: number; sheet: string }> = {};
                     Object.keys(resultsByEvent).forEach(evName => {
-                        const results = resultsByEvent[evName];
-                        const score = Math.round((results.filter(r => r.status === 'PASS').length / (results.length || 1)) * 100);
+                        const sheet = sheetByEvent[evName] || '';
+                        const results = reclassify(resultsByEvent[evName], sheet);
+                        const score = Math.round((results.filter(r => r.status === 'PASS' || r.status === 'WEB_NA').length / (results.length || 1)) * 100);
                         newSaved[evName] = {
                             json: jsonByEvent[evName] || '',
                             results,
                             score,
-                            sheet: sheetByEvent[evName] || '',
+                            sheet,
                         };
                     });
                     const firstSheet = Object.values(sheetByEvent)[0] || '';
