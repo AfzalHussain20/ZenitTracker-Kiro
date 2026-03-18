@@ -975,6 +975,50 @@ export default function CleverTapTrackerPage() {
                     }
 
                     setP2ImportedSheetEvents(importedEvents.length > 0 ? importedEvents : Object.keys(newSaved));
+
+                    // ── Eagerly inject schema for matched sheet if cache is available ──
+                    // This ensures validatePhase2 works immediately without waiting for loadSchema
+                    if (xlsxCacheRef.current && matchedSheet && !sheetSchema[matchedSheet]) {
+                        try {
+                            const cachedWb = xlsxCacheRef.current.wb;
+                            const ws = cachedWb.Sheets[matchedSheet];
+                            if (ws) {
+                                const rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 }) as any[][];
+                                if (rows.length) {
+                                    const hRow = rows[0] as any[];
+                                    let startCol = hRow.findIndex((cell: any, idx: number) => {
+                                        if (idx < 2) return false;
+                                        const s = String(cell || '').trim().toLowerCase();
+                                        return s.length > 2 && (s.includes('_') || /^[a-z]/.test(s));
+                                    });
+                                    if (startCol < 0) startCol = matchedSheet.toLowerCase().includes('play back') ? 3 : 5;
+                                    const evSchema: Schema[string] = {};
+                                    const evMeta: SchemaMeta[string] = {};
+                                    // Build per-event schema
+                                    const sheetEvSchema: Record<string, Record<string, 'yes' | 'no'>> = {};
+                                    const sheetEvMeta: Record<string, Record<string, { rule: 'yes' | 'no'; mainAttr: string }>> = {};
+                                    for (let c = startCol; c < hRow.length; c++) {
+                                        const evName = String(hRow[c] || '').trim().toLowerCase().replace(/\s+/g, '_');
+                                        if (!evName) continue;
+                                        sheetEvSchema[evName] = {};
+                                        sheetEvMeta[evName] = {};
+                                        for (let r = 1; r < rows.length; r++) {
+                                            const row = rows[r] as any[];
+                                            const mainAttrRaw = String(row[0] || '').trim().toLowerCase();
+                                            const attrName = String(row[1] || '').trim().toLowerCase();
+                                            if (!attrName) continue;
+                                            const val = String(row[c] || '').trim().toUpperCase();
+                                            const rule: 'yes' | 'no' = val === 'YES' ? 'yes' : 'no';
+                                            sheetEvSchema[evName][attrName] = rule;
+                                            sheetEvMeta[evName][attrName] = { rule, mainAttr: mainAttrRaw };
+                                        }
+                                    }
+                                    setSheetSchema(prev => ({ ...prev, [matchedSheet]: sheetEvSchema }));
+                                    setSheetSchemaMeta(prev => ({ ...prev, [matchedSheet]: sheetEvMeta }));
+                                }
+                            }
+                        } catch {}
+                    }
                     setP2SavedEvents(prev => ({ ...prev, ...newSaved }));
                     toast({ title: 'Phase 2 session restored', description: `${Object.keys(newSaved).length} event(s) loaded. Click any event chip to resume.` });
                 }
