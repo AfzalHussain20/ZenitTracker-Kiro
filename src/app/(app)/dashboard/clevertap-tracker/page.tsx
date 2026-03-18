@@ -964,6 +964,18 @@ export default function CleverTapTrackerPage() {
                         } catch {}
                     }
 
+                    // Re-normalize matchedSheet against actual workbook sheet names now that cache is warm
+                    if (xlsxCacheRef.current && firstSheet) {
+                        const dictSheetNames: string[] = xlsxCacheRef.current.wb.SheetNames;
+                        const normalized = dictSheetNames.find(s => s === firstSheet)
+                            || dictSheetNames.find(s => s.toLowerCase() === firstSheet.toLowerCase())
+                            || firstSheet;
+                        if (normalized !== matchedSheet) {
+                            matchedSheet = normalized;
+                            setP2SelectedSheet(matchedSheet);
+                        }
+                    }
+
                     // ── Priority 1: Tab 6 from imported Excel (new exports) ───────
                     const importedEvents: string[] = [];
                     const sheetEventsTab = wb.Sheets['6. Sheet Events'];
