@@ -450,13 +450,17 @@ function ValidationPanel({ results, eventName }: { results: AttrResult[]; eventN
             {webNa.length > 0 && (
                 <div className="space-y-1">
                     <div className={`text-xs font-semibold px-2 py-1 rounded ${statusColor['WEB_NA']}`}>
-                        Web Team — NA Expected ({webNa.length})
+                        Web Platform Bypass — Not captured by dev team ({webNa.length})
                     </div>
-                    <div className="flex flex-wrap gap-1.5 pl-2">
+                    <div className="space-y-1 pl-1">
                         {webNa.map((r, i) => (
-                            <span key={i} className="text-xs px-2 py-0.5 rounded bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300 font-mono border border-cyan-200 dark:border-cyan-700">
-                                {r.attr}
-                            </span>
+                            <div key={i} className={`text-xs p-2 rounded border ${statusColor['WEB_NA']}`}>
+                                <div className="flex items-center justify-between">
+                                    <span className="font-mono font-semibold">{r.attr}</span>
+                                    <Badge variant="outline" className="text-xs border-current">WEB_NA</Badge>
+                                </div>
+                                <p className="opacity-80 mt-0.5">Web sheet — dev team does not capture this attribute</p>
+                            </div>
                         ))}
                     </div>
                 </div>
@@ -1502,12 +1506,18 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                         })}
                                         {p2Results.filter(r => r.status === 'WEB_NA').length > 0 && (
                                             <div className="space-y-1.5">
-                                                <div className={`text-xs font-semibold px-2 py-1 rounded ${statusColor['WEB_NA']}`}>Web Team — NA Expected ({p2Results.filter(r => r.status === 'WEB_NA').length})</div>
-                                                <div className="flex flex-wrap gap-1.5 pl-2">
+                                                <div className={`text-xs font-semibold px-2 py-1 rounded ${statusColor['WEB_NA']}`}>Web Platform Bypass — Not captured by dev team ({p2Results.filter(r => r.status === 'WEB_NA').length})</div>
+                                                <div className="space-y-1 pl-2">
                                                     {p2Results.filter(r => r.status === 'WEB_NA').map((r, i) => (
-                                                        <span key={i} className="text-xs px-2 py-0.5 rounded bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300 font-mono border border-cyan-200 dark:border-cyan-700">
-                                                            {r.mainAttr === 'others' ? `others(${r.attr})` : r.attr}
-                                                        </span>
+                                                        <div key={i} className={`text-xs p-2 rounded border ${statusColor['WEB_NA']}`}>
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="font-mono font-semibold">
+                                                                    {r.mainAttr === 'others' ? `others(${r.attr})` : r.attr}
+                                                                </span>
+                                                                <Badge variant="outline" className="text-xs border-current">WEB_NA</Badge>
+                                                            </div>
+                                                            <p className="opacity-80 mt-0.5">Web sheet — dev team does not capture this attribute</p>
+                                                        </div>
                                                     ))}
                                                 </div>
                                             </div>
