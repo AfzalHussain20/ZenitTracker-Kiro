@@ -119,7 +119,8 @@ export function buildPhase1Tabs(
 
 export function buildPhase2Tabs(
     savedEvents: Record<string, { json: string; results: AttrResult[]; score: number; sheet: string }>,
-    config: { platform: string; environment: string; appVersion: string }
+    config: { platform: string; environment: string; appVersion: string },
+    allSheetEvents?: string[]
 ): SheetTab[] {
     const tabs: SheetTab[] = [];
     const saved = Object.entries(savedEvents);
@@ -179,6 +180,16 @@ export function buildPhase2Tabs(
         headers: ['Event', 'Sheet', 'Score', 'JSON'],
         rows: saved.map(([evName, data]) => [evName, data.sheet, data.score, data.json]),
     });
+
+    // ── 6. Sheet Events (all events in sheet, for instant chip restore) ──
+    if (allSheetEvents && allSheetEvents.length > 0) {
+        tabs.push({
+            tabName: '6. Sheet Events',
+            headerColor: { red: 0.2, green: 0.4, blue: 0.6 },
+            headers: ['Event'],
+            rows: allSheetEvents.map(e => [e]),
+        });
+    }
 
     return tabs;
 }

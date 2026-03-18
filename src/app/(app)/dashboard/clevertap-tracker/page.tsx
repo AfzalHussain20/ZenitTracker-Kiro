@@ -788,11 +788,14 @@ export default function CleverTapTrackerPage() {
     // ── Export Phase 2 to Excel ──
     const exportPhase2ToSheets = () => {
         if (!Object.keys(p2SavedEvents).length) { toast({ title: 'No validated events to export', variant: 'destructive' }); return; }
+        const allSheetEvents = sheetSchema[p2SelectedSheet]
+            ? Object.keys(sheetSchema[p2SelectedSheet]).filter(e => e !== 'client_remarks' && e !== 'qa_remarks')
+            : [];
         const tabs = buildPhase2Tabs(p2SavedEvents, {
             platform: PLATFORMS.find(p => p.id === config?.platform)?.label || '',
             environment: config?.environment || '',
             appVersion: config?.appVersion || '',
-        });
+        }, allSheetEvents);
         const filename = `CleverTap_Phase2_${p2SelectedSheet}_${format(new Date(), 'ddMMMyyy_HHmm')}`;
         downloadAsExcel(tabs, filename);
         toast({ title: 'Downloaded as Excel' });
@@ -925,12 +928,20 @@ export default function CleverTapTrackerPage() {
                             || firstSheet;
                         setP2SelectedSheet(matchedSheet);
                     }
-                    // Read Summary tab for all event names — used as chip fallback before schema loads
-                    const summarySheetWb = wb.Sheets['1. Summary'];
+                    // Read '6. Sheet Events' tab (new exports) for full event list — instant chips
+                    // Fall back to '1. Summary' tab (captured events only) for older exports
+                    const sheetEventsTab = wb.Sheets['6. Sheet Events'];
                     const importedEvents: string[] = [];
-                    if (summarySheetWb) {
-                        const summaryRows = (XLSX.utils.sheet_to_json<any[]>(summarySheetWb, { header: 1 }) as any[][]).slice(1);
-                        summaryRows.forEach(r => { const evName = String(r[0] || '').trim(); if (evName) importedEvents.push(evName); });
+                    if (sheetEventsTab) {
+                        const evRows = (XLSX.utils.sheet_to_json<any[]>(sheetEventsTab, { header: 1 }) as any[][]).slice(1);
+                        evRows.forEach(r => { const evName = String(r[0] || '').trim(); if (evName) importedEvents.push(evName); });
+                    } else {
+                        // Older export — read from Summary (captured events only)
+                        const summarySheetWb = wb.Sheets['1. Summary'];
+                        if (summarySheetWb) {
+                            const summaryRows = (XLSX.utils.sheet_to_json<any[]>(summarySheetWb, { header: 1 }) as any[][]).slice(1);
+                            summaryRows.forEach(r => { const evName = String(r[0] || '').trim(); if (evName) importedEvents.push(evName); });
+                        }
                     }
                     setP2ImportedSheetEvents(importedEvents.length > 0 ? importedEvents : Object.keys(newSaved));
                     setP2SavedEvents(prev => ({ ...prev, ...newSaved }));
