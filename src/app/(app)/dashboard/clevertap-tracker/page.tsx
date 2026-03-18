@@ -1473,7 +1473,6 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                     </div>
                                 )}
                                 <div className="flex gap-2">
-                                    <input ref={importInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportExcel} />
                                     <Button size="sm" variant="outline" className="border-amber-500 text-amber-600 gap-1" onClick={() => importInputRef.current?.click()}>
                                         <UploadCloud className="w-3.5 h-3.5" /> Import Session
                                     </Button>
