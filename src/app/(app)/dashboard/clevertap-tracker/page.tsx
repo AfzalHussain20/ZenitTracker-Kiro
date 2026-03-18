@@ -790,7 +790,7 @@ export default function CleverTapTrackerPage() {
         if (!Object.keys(p2SavedEvents).length) { toast({ title: 'No validated events to export', variant: 'destructive' }); return; }
         const allSheetEvents = sheetSchema[p2SelectedSheet]
             ? Object.keys(sheetSchema[p2SelectedSheet]).filter(e => e !== 'client_remarks' && e !== 'qa_remarks')
-            : [];
+            : p2ImportedSheetEvents;
         const tabs = buildPhase2Tabs(p2SavedEvents, {
             platform: PLATFORMS.find(p => p.id === config?.platform)?.label || '',
             environment: config?.environment || '',
@@ -921,28 +921,59 @@ export default function CleverTapTrackerPage() {
                         };
                     });
                     const firstSheet = Object.values(sheetByEvent)[0] || '';
+                    let matchedSheet = firstSheet;
                     if (firstSheet) {
                         // Normalize: exact match first, then case-insensitive, then use as-is
-                        const matchedSheet = xlsxSheetNames.find(s => s === firstSheet)
+                        matchedSheet = xlsxSheetNames.find(s => s === firstSheet)
                             || xlsxSheetNames.find(s => s.toLowerCase() === firstSheet.toLowerCase())
                             || firstSheet;
                         setP2SelectedSheet(matchedSheet);
                     }
-                    // Read '6. Sheet Events' tab (new exports) for full event list — instant chips
-                    // Fall back to '1. Summary' tab (captured events only) for older exports
-                    const sheetEventsTab = wb.Sheets['6. Sheet Events'];
+
+                    // ── Instantly resolve all sheet events ──────────────────────────
+                    // Priority 1: Tab 6 from imported Excel (new exports — complete list)
+                    // Priority 2: Cached Data Dictionary workbook header row (instant if loaded)
+                    // Priority 3: Summary tab (older exports — captured events only)
                     const importedEvents: string[] = [];
+
+                    // Priority 1 — Tab 6
+                    const sheetEventsTab = wb.Sheets['6. Sheet Events'];
                     if (sheetEventsTab) {
                         const evRows = (XLSX.utils.sheet_to_json<any[]>(sheetEventsTab, { header: 1 }) as any[][]).slice(1);
                         evRows.forEach(r => { const evName = String(r[0] || '').trim(); if (evName) importedEvents.push(evName); });
-                    } else {
-                        // Older export — read from Summary (captured events only)
+                    }
+
+                    // Priority 2 — Cached workbook header row
+                    if (importedEvents.length === 0 && xlsxCacheRef.current && matchedSheet) {
+                        try {
+                            const cachedWb = xlsxCacheRef.current.wb;
+                            const ws = cachedWb.Sheets[matchedSheet];
+                            if (ws) {
+                                const rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 }) as any[][];
+                                const hRow = rows[0] as any[];
+                                let startCol = hRow.findIndex((cell: any, idx: number) => {
+                                    if (idx < 2) return false;
+                                    const s = String(cell || '').trim().toLowerCase();
+                                    return s.length > 2 && (s.includes('_') || /^[a-z]/.test(s));
+                                });
+                                if (startCol < 0) startCol = matchedSheet.toLowerCase().includes('play back') ? 3 : 5;
+                                for (let c = startCol; c < hRow.length; c++) {
+                                    const evName = String(hRow[c] || '').trim().toLowerCase().replace(/\s+/g, '_');
+                                    if (evName && evName !== 'client_remarks' && evName !== 'qa_remarks') importedEvents.push(evName);
+                                }
+                            }
+                        } catch {}
+                    }
+
+                    // Priority 3 — Summary tab (captured events only, older exports)
+                    if (importedEvents.length === 0) {
                         const summarySheetWb = wb.Sheets['1. Summary'];
                         if (summarySheetWb) {
                             const summaryRows = (XLSX.utils.sheet_to_json<any[]>(summarySheetWb, { header: 1 }) as any[][]).slice(1);
                             summaryRows.forEach(r => { const evName = String(r[0] || '').trim(); if (evName) importedEvents.push(evName); });
                         }
                     }
+
                     setP2ImportedSheetEvents(importedEvents.length > 0 ? importedEvents : Object.keys(newSaved));
                     setP2SavedEvents(prev => ({ ...prev, ...newSaved }));
                     toast({ title: 'Phase 2 session restored', description: `${Object.keys(newSaved).length} event(s) loaded. Click any event chip to resume.` });
