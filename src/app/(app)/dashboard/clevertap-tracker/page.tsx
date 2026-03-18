@@ -578,14 +578,14 @@ export default function CleverTapTrackerPage() {
     // ── Load schema from xlsx ──
     useEffect(() => {
         const PLATFORM_SHEET_MAP: Record<string, string> = {
-            'android': 'Android - Non Play Back Event',
-            'android-tv': 'Android TV- Non Play Back Eve',
-            'ios': 'iOS - Non Play Back Event',
-            'apple-tv': 'Apple TV - Non Play Back Event',
-            'samsung-tv': 'Samsung - Non Play Back Event',
-            'web': 'Web - Non Play Back Event',
-            'roku': 'Roku - Non Play Back Event',
-            'lg-tv': 'LG - Non Play Back Event',
+            'android': 'Android Mobile- Non Play Back',
+            'android-tv': 'Android TV- Non Play Back Even',
+            'ios': 'Ios Mobile- Non Play Back',
+            'apple-tv': 'Apple TV- Non Play Back',
+            'samsung-tv': 'Samsung TV- Non Play Back',
+            'web': 'Web- Non Play Back',
+            'roku': 'Roku- Non Play Back',
+            'lg-tv': 'LG TV- Non Play Back',
         };
 
         const loadSchema = async () => {
@@ -612,18 +612,19 @@ export default function CleverTapTrackerPage() {
                     const rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 });
                     if (!rows.length) return;
                     const headerRow = rows[0] as any[];
-                    // Dynamically detect the first event column (snake_case names, skip attr cols)
+                    // Dynamically detect the first event column (snake_case names with underscore, skip attr/definition cols)
                     let startCol = headerRow.findIndex((cell: any, idx: number) => {
                         if (idx < 2) return false;
                         const s = String(cell || '').trim().toLowerCase();
-                        return s.length > 2 && (s.includes('_') || /^[a-z]/.test(s));
+                        // Event names always contain underscore; skip "Technical Definition" and similar
+                        return s.length > 2 && s.includes('_');
                     });
-                    if (startCol < 0) startCol = sName.toLowerCase().includes('play back') ? 3 : 5;
+                    if (startCol < 0) startCol = sName.toLowerCase().includes('play back') ? 3 : 3;
                     const sheetEvSchema: Schema = {};
                     const sheetEvMeta: SchemaMeta = {};
                     for (let c = startCol; c < headerRow.length; c++) {
                         const evName = String(headerRow[c] || '').trim().toLowerCase().replace(/\s+/g, '_');
-                        if (!evName) continue;
+                        if (!evName || evName === 'client_remarks' || evName === 'qa_remarks' || evName === 'technical_definition') continue;
                         if (!sheetEvSchema[evName]) sheetEvSchema[evName] = {};
                         if (!sheetEvMeta[evName]) sheetEvMeta[evName] = {};
                         for (let r = 1; r < rows.length; r++) {
@@ -705,7 +706,7 @@ export default function CleverTapTrackerPage() {
         if (!p2SelectedSheet) { toast({ title: 'Select a sheet first', variant: 'destructive' }); return; }
         if (!p2Json.trim()) { toast({ title: 'Paste a JSON to validate', variant: 'destructive' }); return; }
         if (!p2EventName.trim()) { toast({ title: 'Select or enter an event name', variant: 'destructive' }); return; }
-        const isWeb = p2SelectedSheet === 'Web - Non Play Back Event';
+        const isWeb = p2SelectedSheet === 'Web- Non Play Back' || p2SelectedSheet === 'Web - Non Play Back Event';
         try {
             const params = parseJsonToParams(p2Json);
             const sheetEvs = sheetSchema[p2SelectedSheet] || {};
@@ -894,7 +895,8 @@ export default function CleverTapTrackerPage() {
                 } else {
                     // ── Phase 2 restore ──
                     const reclassify = (results: AttrResult[], sheet: string): AttrResult[] => {
-                        if (sheet !== 'Web - Non Play Back Event') return results;
+                        const isWebSheet = sheet === 'Web- Non Play Back' || sheet === 'Web - Non Play Back Event';
+                        if (!isWebSheet) return results;
                         return results.map(r =>
                             WEB_NA_ATTRS.has(r.attr) && r.status !== 'PASS' && r.status !== 'WEB_NA'
                                 ? { ...r, status: 'WEB_NA' as ValidationStatus, message: 'Web sheet — dev team does not capture this attribute' }
@@ -934,15 +936,15 @@ export default function CleverTapTrackerPage() {
                         let startCol = hRow.findIndex((cell: any, idx: number) => {
                             if (idx < 2) return false;
                             const s = String(cell || '').trim().toLowerCase();
-                            return s.length > 2 && (s.includes('_') || /^[a-z]/.test(s));
+                            return s.length > 2 && s.includes('_');
                         });
-                        if (startCol < 0) startCol = actualName.toLowerCase().includes('play back') ? 3 : 5;
+                        if (startCol < 0) startCol = actualName.toLowerCase().includes('play back') ? 3 : 3;
                         const events: string[] = [];
                         const evSchema: Record<string, Record<string, 'yes' | 'no'>> = {};
                         const evMeta: Record<string, Record<string, { rule: 'yes' | 'no'; mainAttr: string }>> = {};
                         for (let c = startCol; c < hRow.length; c++) {
                             const evName = String(hRow[c] || '').trim().toLowerCase().replace(/\s+/g, '_');
-                            if (!evName || evName === 'client_remarks' || evName === 'qa_remarks') continue;
+                            if (!evName || evName === 'client_remarks' || evName === 'qa_remarks' || evName === 'technical_definition') continue;
                             events.push(evName);
                             evSchema[evName] = {};
                             evMeta[evName] = {};
@@ -981,8 +983,14 @@ export default function CleverTapTrackerPage() {
                     // Re-normalize matchedSheet against actual workbook sheet names now that cache is warm
                     if (xlsxCacheRef.current && firstSheet) {
                         const dictSheetNames: string[] = xlsxCacheRef.current.wb.SheetNames;
+                        // 1. Exact match
+                        // 2. Case-insensitive match
+                        // 3. Fuzzy: strip spaces/dashes/punctuation and compare (handles old exports with different spacing)
+                        const strip = (s: string) => s.toLowerCase().replace(/[\s\-_]/g, '');
                         const normalized = dictSheetNames.find(s => s === firstSheet)
                             || dictSheetNames.find(s => s.toLowerCase() === firstSheet.toLowerCase())
+                            || dictSheetNames.find(s => strip(s) === strip(firstSheet))
+                            || dictSheetNames.find(s => strip(s).startsWith(strip(firstSheet).slice(0, 8)) || strip(firstSheet).startsWith(strip(s).slice(0, 8)))
                             || firstSheet;
                         if (normalized !== matchedSheet) {
                             matchedSheet = normalized;
