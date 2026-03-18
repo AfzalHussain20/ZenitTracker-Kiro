@@ -457,9 +457,8 @@ function ValidationPanel({ results, eventName }: { results: AttrResult[]; eventN
                             <div key={i} className={`text-xs p-2 rounded border ${statusColor['WEB_NA']}`}>
                                 <div className="flex items-center justify-between">
                                     <span className="font-mono font-semibold">{r.attr}</span>
-                                    <Badge variant="outline" className="text-xs border-current">WEB_NA</Badge>
+                                    <span className="opacity-70 font-mono">{r.actual ?? 'na'}</span>
                                 </div>
-                                <p className="opacity-80 mt-0.5">Web sheet — dev team does not capture this attribute</p>
                             </div>
                         ))}
                     </div>
@@ -1534,9 +1533,8 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                                                 <span className="font-mono font-semibold">
                                                                     {r.mainAttr === 'others' ? `others(${r.attr})` : r.attr}
                                                                 </span>
-                                                                <Badge variant="outline" className="text-xs border-current">WEB_NA</Badge>
+                                                                <span className="opacity-70 font-mono">{r.actual ?? 'na'}</span>
                                                             </div>
-                                                            <p className="opacity-80 mt-0.5">Web sheet — dev team does not capture this attribute</p>
                                                         </div>
                                                     ))}
                                                 </div>
