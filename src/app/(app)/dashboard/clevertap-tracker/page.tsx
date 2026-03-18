@@ -919,18 +919,24 @@ export default function CleverTapTrackerPage() {
                     }
 
                     // ── Helper: parse one sheet from a workbook into schema + event list ──
-                    const parseOneSheet = (dictWb: any, sName: string): { events: string[]; evSchema: Record<string, Record<string, 'yes' | 'no'>>; evMeta: Record<string, Record<string, { rule: 'yes' | 'no'; mainAttr: string }>> } => {
-                        const ws = dictWb.Sheets[sName];
-                        if (!ws) return { events: [], evSchema: {}, evMeta: {} };
+                    const parseOneSheet = (dictWb: any, sName: string): { events: string[]; evSchema: Record<string, Record<string, 'yes' | 'no'>>; evMeta: Record<string, Record<string, { rule: 'yes' | 'no'; mainAttr: string }>>, resolvedName: string } => {
+                        // Fuzzy-match sheet name: exact → case-insensitive → trimmed case-insensitive
+                        const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+                        const actualName = dictWb.SheetNames.find((n: string) => n === sName)
+                            || dictWb.SheetNames.find((n: string) => n.toLowerCase() === sName.toLowerCase())
+                            || dictWb.SheetNames.find((n: string) => norm(n) === norm(sName))
+                            || sName;
+                        const ws = dictWb.Sheets[actualName];
+                        if (!ws) return { events: [], evSchema: {}, evMeta: {}, resolvedName: actualName };
                         const rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 }) as any[][];
-                        if (!rows.length) return { events: [], evSchema: {}, evMeta: {} };
+                        if (!rows.length) return { events: [], evSchema: {}, evMeta: {}, resolvedName: actualName };
                         const hRow = rows[0] as any[];
                         let startCol = hRow.findIndex((cell: any, idx: number) => {
                             if (idx < 2) return false;
                             const s = String(cell || '').trim().toLowerCase();
                             return s.length > 2 && (s.includes('_') || /^[a-z]/.test(s));
                         });
-                        if (startCol < 0) startCol = sName.toLowerCase().includes('play back') ? 3 : 5;
+                        if (startCol < 0) startCol = actualName.toLowerCase().includes('play back') ? 3 : 5;
                         const events: string[] = [];
                         const evSchema: Record<string, Record<string, 'yes' | 'no'>> = {};
                         const evMeta: Record<string, Record<string, { rule: 'yes' | 'no'; mainAttr: string }>> = {};
@@ -950,7 +956,7 @@ export default function CleverTapTrackerPage() {
                                 evMeta[evName][attrName] = { rule, mainAttr: mainAttrRaw };
                             }
                         }
-                        return { events, evSchema, evMeta };
+                        return { events, evSchema, evMeta, resolvedName: actualName };
                     };
 
                     // ── Ensure Data Dictionary workbook is cached ──────────────────
@@ -985,9 +991,19 @@ export default function CleverTapTrackerPage() {
                     }
 
                     // ── Priority 2: Cached Data Dictionary header row ─────────────
-                    if (importedEvents.length === 0 && xlsxCacheRef.current && matchedSheet) {
-                        const { events } = parseOneSheet(xlsxCacheRef.current.wb, matchedSheet);
-                        importedEvents.push(...events);
+                    let cachedEvSchema: Record<string, Record<string, 'yes' | 'no'>> = {};
+                    let cachedEvMeta: Record<string, Record<string, { rule: 'yes' | 'no'; mainAttr: string }>> = {};
+                    if (xlsxCacheRef.current && matchedSheet) {
+                        const { events, evSchema, evMeta, resolvedName } = parseOneSheet(xlsxCacheRef.current.wb, matchedSheet);
+                        if (resolvedName !== matchedSheet) {
+                            matchedSheet = resolvedName;
+                            setP2SelectedSheet(matchedSheet);
+                        }
+                        cachedEvSchema = evSchema;
+                        cachedEvMeta = evMeta;
+                        if (importedEvents.length === 0) {
+                            importedEvents.push(...events);
+                        }
                     }
 
                     // ── Priority 3: Summary tab (captured events only, old exports) ─
@@ -1002,12 +1018,9 @@ export default function CleverTapTrackerPage() {
                     setP2ImportedSheetEvents(importedEvents.length > 0 ? importedEvents : Object.keys(newSaved));
 
                     // ── Inject schema for matched sheet so validation works immediately ──
-                    if (xlsxCacheRef.current && matchedSheet && !sheetSchema[matchedSheet]) {
-                        const { evSchema, evMeta } = parseOneSheet(xlsxCacheRef.current.wb, matchedSheet);
-                        if (Object.keys(evSchema).length) {
-                            setSheetSchema(prev => ({ ...prev, [matchedSheet]: evSchema }));
-                            setSheetSchemaMeta(prev => ({ ...prev, [matchedSheet]: evMeta }));
-                        }
+                    if (Object.keys(cachedEvSchema).length) {
+                        setSheetSchema(prev => ({ ...prev, [matchedSheet]: cachedEvSchema }));
+                        setSheetSchemaMeta(prev => ({ ...prev, [matchedSheet]: cachedEvMeta }));
                     }
 
                     setP2SavedEvents(prev => ({ ...prev, ...newSaved }));
