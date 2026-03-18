@@ -1,7 +1,7 @@
 // src/lib/export-to-sheets.ts
 import { format } from 'date-fns';
 
-export type ValidationStatus = 'VALUE_REQUIRED' | 'UNEXPECTED_VALUE' | 'CAPITAL_ATTR' | 'MISSING' | 'EXTRA' | 'PASS';
+export type ValidationStatus = 'VALUE_REQUIRED' | 'UNEXPECTED_VALUE' | 'CAPITAL_ATTR' | 'MISSING' | 'EXTRA' | 'PASS' | 'WEB_NA';
 
 export interface AttrResult {
     attr: string;
@@ -30,6 +30,7 @@ function getStatusLabel(status: ValidationStatus): string {
     const map: Record<ValidationStatus, string> = {
         PASS: '✓ PASS', MISSING: 'MISSING', VALUE_REQUIRED: 'VALUE_REQUIRED',
         UNEXPECTED_VALUE: 'UNEXPECTED_VALUE', CAPITAL_ATTR: 'CAPITAL_ATTR', EXTRA: 'EXTRA',
+        WEB_NA: 'WEB_NA — Web team sends NA',
     };
     return map[status] ?? status;
 }
@@ -42,6 +43,7 @@ function getActionRequired(status: ValidationStatus): string {
         UNEXPECTED_VALUE: 'Set this attribute to null/NA when not applicable',
         CAPITAL_ATTR: 'Rename key to lowercase snake_case',
         EXTRA: 'Remove from payload or add to schema if intentional',
+        WEB_NA: 'Web team always sends NA for this attribute — expected behaviour',
     };
     return map[status] ?? '';
 }

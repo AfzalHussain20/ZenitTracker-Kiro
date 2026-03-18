@@ -31,7 +31,7 @@ import { buildPhase1Tabs, buildPhase2Tabs } from '@/lib/export-to-sheets';
 type Step = 1 | 2 | 3;
 type Platform = { id: string; label: string; icon: React.ElementType; gradient: string };
 type ContentType = { id: string; label: string; icon: React.ElementType; color: string };
-type ValidationStatus = 'VALUE_REQUIRED' | 'UNEXPECTED_VALUE' | 'CAPITAL_ATTR' | 'MISSING' | 'EXTRA' | 'PASS';
+type ValidationStatus = 'VALUE_REQUIRED' | 'UNEXPECTED_VALUE' | 'CAPITAL_ATTR' | 'MISSING' | 'EXTRA' | 'PASS' | 'WEB_NA';
 type InHousePhase = 'choose' | 'phase1' | 'phase2';
 
 interface AttrResult {
@@ -162,6 +162,7 @@ const statusColor: Record<ValidationStatus, string> = {
     CAPITAL_ATTR: 'text-amber-600 bg-amber-50 dark:bg-amber-950 border-amber-200',
     MISSING: 'text-rose-600 bg-rose-50 dark:bg-rose-950 border-rose-200',
     EXTRA: 'text-blue-600 bg-blue-50 dark:bg-blue-950 border-blue-200',
+    WEB_NA: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950 border-cyan-200',
 };
 
 // ─── Helper Functions ─────────────────────────────────────────────────────────
@@ -305,9 +306,9 @@ function validateParams(
             continue;
         }
 
-        // ── Web platform: these attrs always send NA — treat as PASS silently ──
+        // ── Web platform: these attrs always send NA — show as WEB_NA section ──
         if (isWeb && WEB_NA_ATTRS.has(schemaKey)) {
-            results.push({ attr: schemaKey, status: 'PASS', actual: actual ?? 'na', message: 'Web platform — NA expected', mainAttr });
+            results.push({ attr: schemaKey, status: 'WEB_NA', actual: actual ?? 'na', message: 'Web team sends NA — expected behaviour', mainAttr });
             continue;
         }
 
@@ -404,19 +405,21 @@ function validateParams(
 
 function calcScore(results: AttrResult[]): number {
     if (!results.length) return 0;
-    return Math.round((results.filter(r => r.status === 'PASS').length / results.length) * 100);
+    return Math.round((results.filter(r => r.status === 'PASS' || r.status === 'WEB_NA').length / results.length) * 100);
 }
 
 // ─── Validation Results Panel ─────────────────────────────────────────────────
 function ValidationPanel({ results, eventName }: { results: AttrResult[]; eventName?: string }) {
     const score = calcScore(results);
     const passes = results.filter(r => r.status === 'PASS');
-    const failures = results.filter(r => r.status !== 'PASS');
+    const webNa = results.filter(r => r.status === 'WEB_NA');
+    const failures = results.filter(r => r.status !== 'PASS' && r.status !== 'WEB_NA');
     return (
         <div className="mt-3 space-y-3">
             <div className="flex items-center justify-between">
                 <div className="flex gap-3 text-xs">
                     <span className="flex items-center gap-1 text-emerald-600"><CheckCircle2 className="w-3 h-3" />{passes.length} Pass</span>
+                    {webNa.length > 0 && <span className="flex items-center gap-1 text-cyan-600"><Globe className="w-3 h-3" />{webNa.length} Web NA</span>}
                     <span className="flex items-center gap-1 text-red-500"><XCircle className="w-3 h-3" />{failures.length} Fail</span>
                 </div>
                 <Badge className={score === 100 ? 'bg-emerald-500 text-white' : score >= 70 ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'}>
@@ -444,9 +447,28 @@ function ValidationPanel({ results, eventName }: { results: AttrResult[]; eventN
                     </div>
                 </ScrollArea>
             )}
-            {failures.length === 0 && (
+            {webNa.length > 0 && (
+                <div className="space-y-1">
+                    <div className={`text-xs font-semibold px-2 py-1 rounded ${statusColor['WEB_NA']}`}>
+                        Web Team — NA Expected ({webNa.length})
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 pl-2">
+                        {webNa.map((r, i) => (
+                            <span key={i} className="text-xs px-2 py-0.5 rounded bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300 font-mono border border-cyan-200 dark:border-cyan-700">
+                                {r.attr}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
+            {failures.length === 0 && webNa.length === 0 && (
                 <div className="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 dark:bg-emerald-950 p-2 rounded-lg">
                     <CheckCircle2 className="w-4 h-4" /> All attributes passed
+                </div>
+            )}
+            {failures.length === 0 && webNa.length > 0 && (
+                <div className="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 dark:bg-emerald-950 p-2 rounded-lg">
+                    <CheckCircle2 className="w-4 h-4" /> All non-web attributes passed
                 </div>
             )}
         </div>
@@ -1295,17 +1317,7 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                     })}
                                 </div>
                             )}
-                            {/* Web platform notice */}
-                            {config?.platform === 'web' && (
-                                <div className="flex items-start gap-3 p-3 rounded-xl bg-yellow-50 dark:bg-yellow-950/40 border border-yellow-300 dark:border-yellow-700 text-xs text-yellow-800 dark:text-yellow-300">
-                                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-yellow-600" />
-                                    <div>
-                                        <p className="font-semibold mb-1">Web Team Notice — NA attributes bypassed</p>
-                                        <p className="opacity-80">The following attributes are expected as NA on Web platform and are treated as PASS:</p>
-                                        <p className="font-mono mt-1 leading-relaxed">{Array.from(WEB_NA_ATTRS).join(', ')}</p>
-                                    </div>
-                                </div>
-                            )}
+                            {/* Web platform notice removed — WEB_NA shown as section in ValidationPanel */}
                         </div>
                     )}
 
@@ -1488,6 +1500,18 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                                 </div>
                                             );
                                         })}
+                                        {p2Results.filter(r => r.status === 'WEB_NA').length > 0 && (
+                                            <div className="space-y-1.5">
+                                                <div className={`text-xs font-semibold px-2 py-1 rounded ${statusColor['WEB_NA']}`}>Web Team — NA Expected ({p2Results.filter(r => r.status === 'WEB_NA').length})</div>
+                                                <div className="flex flex-wrap gap-1.5 pl-2">
+                                                    {p2Results.filter(r => r.status === 'WEB_NA').map((r, i) => (
+                                                        <span key={i} className="text-xs px-2 py-0.5 rounded bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300 font-mono border border-cyan-200 dark:border-cyan-700">
+                                                            {r.mainAttr === 'others' ? `others(${r.attr})` : r.attr}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                         {p2Results.filter(r => r.status === 'PASS').length > 0 && (
                                             <div className="space-y-1.5">
                                                 <div className={`text-xs font-semibold px-2 py-1 rounded ${statusColor['PASS']}`}>Passed ({p2Results.filter(r => r.status === 'PASS').length})</div>
@@ -1502,17 +1526,6 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                         )}
                                     </CardContent>
                                 </Card>
-                            )}
-                            {/* Web platform notice */}
-                            {p2SelectedSheet === 'Web - Non Play Back Event' && (
-                                <div className="flex items-start gap-3 p-3 rounded-xl bg-yellow-50 dark:bg-yellow-950/40 border border-yellow-300 dark:border-yellow-700 text-xs text-yellow-800 dark:text-yellow-300">
-                                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-yellow-600" />
-                                    <div>
-                                        <p className="font-semibold mb-1">Web Team Notice — NA attributes bypassed</p>
-                                        <p className="opacity-80">The following attributes are expected as NA on Web platform and are treated as PASS:</p>
-                                        <p className="font-mono mt-1 leading-relaxed">{Array.from(WEB_NA_ATTRS).join(', ')}</p>
-                                    </div>
-                                </div>
                             )}
                         </div>
                     )}
