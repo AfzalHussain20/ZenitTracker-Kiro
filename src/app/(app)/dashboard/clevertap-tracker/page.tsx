@@ -915,7 +915,13 @@ export default function CleverTapTrackerPage() {
                         };
                     });
                     const firstSheet = Object.values(sheetByEvent)[0] || '';
-                    if (firstSheet) setP2SelectedSheet(firstSheet);
+                    if (firstSheet) {
+                        // Normalize: exact match first, then case-insensitive, then use as-is
+                        const matchedSheet = xlsxSheetNames.find(s => s === firstSheet)
+                            || xlsxSheetNames.find(s => s.toLowerCase() === firstSheet.toLowerCase())
+                            || firstSheet;
+                        setP2SelectedSheet(matchedSheet);
+                    }
                     setP2SavedEvents(prev => ({ ...prev, ...newSaved }));
                     toast({ title: 'Phase 2 session restored', description: `${Object.keys(newSaved).length} event(s) loaded. Click any event chip to resume.` });
                 }
@@ -1442,25 +1448,50 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                             )}
 
                             {/* Event name chips — all events, click to switch */}
-                            {p2SelectedSheet && (sheetSchema[p2SelectedSheet] || Object.keys(p2SavedEvents).length > 0) && (
+                            {p2SelectedSheet && (
                                 <div className="space-y-2">
                                     <Label className="text-sm font-semibold">Select Event *</Label>
                                     <div className="flex flex-wrap gap-1.5">
-                                        {/* Always show ALL events from schema; if schema missing, fall back to saved keys */}
                                         {(() => {
                                             const schemaEvents = sheetSchema[p2SelectedSheet]
                                                 ? Object.keys(sheetSchema[p2SelectedSheet]).filter(e => e !== 'client_remarks' && e !== 'qa_remarks')
                                                 : [];
-                                            // Merge: schema events + any saved events not in schema (from old imports)
                                             const savedKeys = Object.keys(p2SavedEvents).filter(k => !schemaEvents.includes(k));
                                             const allEvents = [...schemaEvents, ...savedKeys];
+
+                                            // Schema not loaded yet but we have saved events — show saved + loading notice
+                                            if (schemaEvents.length === 0 && savedKeys.length > 0) {
+                                                return (
+                                                    <>
+                                                        {savedKeys.map(evName => {
+                                                            const isActive = p2EventName === evName;
+                                                            const savedScore = p2SavedEvents[evName]?.score;
+                                                            return (
+                                                                <button key={evName} onClick={() => selectP2Event(evName)}
+                                                                    className={`relative px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${isActive ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-purple-500/10 border-purple-400 text-purple-700 dark:text-purple-300 hover:bg-purple-500/20'}`}>
+                                                                    {evName}
+                                                                    <span className={`ml-1.5 text-xs font-bold ${savedScore === 100 ? 'text-emerald-400' : savedScore! >= 70 ? 'text-amber-400' : 'text-red-400'}`}>
+                                                                        {savedScore}%
+                                                                    </span>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                        <span className="text-xs text-muted-foreground self-center italic">Schema loading — other events will appear shortly</span>
+                                                    </>
+                                                );
+                                            }
+
                                             return allEvents.map(evName => {
                                                 const isSaved = !!p2SavedEvents[evName];
                                                 const isActive = p2EventName === evName;
                                                 const savedScore = p2SavedEvents[evName]?.score;
                                                 return (
                                                     <button key={evName} onClick={() => selectP2Event(evName)}
-                                                        className={`relative px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${isActive ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : isSaved ? 'bg-purple-500/10 border-purple-400 text-purple-700 dark:text-purple-300 hover:bg-purple-500/20' : 'bg-muted border-border hover:border-emerald-400 hover:bg-emerald-500/5'}`}>
+                                                        className={`relative px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+                                                            isActive ? 'bg-emerald-500 text-white border-emerald-500 shadow-md'
+                                                            : isSaved ? 'bg-purple-500/10 border-purple-400 text-purple-700 dark:text-purple-300 hover:bg-purple-500/20'
+                                                            : 'bg-muted border-border hover:border-emerald-400 hover:bg-emerald-500/5'
+                                                        }`}>
                                                         {evName}
                                                         {isSaved && (
                                                             <span className={`ml-1.5 text-xs font-bold ${savedScore === 100 ? 'text-emerald-400' : savedScore! >= 70 ? 'text-amber-400' : 'text-red-400'}`}>
@@ -1472,7 +1503,7 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                             });
                                         })()}
                                     </div>
-                                    <p className="text-xs text-muted-foreground">Purple = saved · Green = active · Click to switch</p>
+                                    <p className="text-xs text-muted-foreground">Purple = saved · Green = active · Grey = not yet validated · Click to switch</p>
                                 </div>
                             )}
 
