@@ -59,30 +59,19 @@ export default function AppHeader() {
 
         {/* Navigation */}
         <nav className="hidden md:flex items-center gap-1">
-          <Link href="/dashboard">
-            <Button variant={pathname === '/dashboard' ? 'secondary' : 'ghost'} size="sm">
-              <LayoutDashboard className="h-4 w-4 mr-2" />
-              Dashboard
-            </Button>
-          </Link>
           <Link href="/apps">
             <Button variant={pathname === '/apps' ? 'secondary' : 'ghost'} size="sm">
               Apps
             </Button>
           </Link>
-          <Link href="/automation">
-            <Button variant={pathname?.startsWith('/automation') ? 'secondary' : 'ghost'} size="sm">
-              Automation
-            </Button>
-          </Link>
-          <Link href="/tasks">
-            <Button variant={pathname?.startsWith('/tasks') ? 'secondary' : 'ghost'} size="sm">
-              <ClipboardList className="h-4 w-4 mr-2" />
-              Tasks
+          <Link href="/analytics/bugs">
+            <Button variant={pathname?.startsWith('/analytics/bugs') ? 'secondary' : 'ghost'} size="sm">
+              Jira Dashboard
             </Button>
           </Link>
           <Link href="/about">
             <Button variant={pathname === '/about' ? 'secondary' : 'ghost'} size="sm">
+              <Info className="h-4 w-4 mr-2" />
               About
             </Button>
           </Link>

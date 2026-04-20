@@ -9,12 +9,15 @@ import {
   Download, CheckCircle2, XCircle, Clock, Activity, Zap,
   Layout, Eye, ArrowLeft, ArrowUp, ArrowDown, ArrowRight,
   ChevronLeft, RotateCw, Home, Code2, BookOpen, PlayCircle,
-  Wifi, MousePointer, Power, Circle, Square, MoreHorizontal,
+  MousePointer, Power, Circle, Square,
   Tag, Hash, AlignLeft, Link2, Crosshair, Terminal, Cpu,
-  Signal, Battery, Maximize2, Minimize2, AlertCircle
+  Signal, Maximize2, Minimize2,
+  Package, Blocks, Table2, AlertTriangle, Filter, Wifi
 } from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
+import SaveModuleDialog from '@/components/vision/SaveModuleDialog';
+import ModuleLibraryPanel from '@/components/vision/ModuleLibraryPanel';
+import CodelessBuilder from '@/components/vision/CodelessBuilder';
+import DataSetEditor from '@/components/vision/DataSetEditor';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { trackerApi } from '@/lib/tracker-api';
@@ -94,10 +97,27 @@ const TreeNode = ({ node, level = 0, selectedId, onSelect }: any) => {
 // ─────────────────────────────────────────────────────────────
 // ELEMENT OVERLAYS
 // ─────────────────────────────────────────────────────────────
-const Overlays = ({ node, onSelect, selectedId }: any) => {
+const Overlays = ({ node, onSelect, selectedId, isLandscape }: any) => {
   if (!node) return null;
   const b = node.attributes?.bounds;
-  const style = b ? { left: `${b.x * 100}%`, top: `${b.y * 100}%`, width: `${b.width * 100}%`, height: `${b.height * 100}%` } : { display: 'none' as const };
+  let style: React.CSSProperties = { display: 'none' };
+  if (b) {
+    if (isLandscape) {
+      style = {
+        position: 'absolute',
+        left:   `${(1 - b.y - b.height) * 100}%`,
+        top:    `${b.x * 100}%`,
+        width:  `${b.height * 100}%`,
+        height: `${b.width * 100}%`,
+      };
+    } else {
+      style = {
+        position: 'absolute',
+        left: `${b.x * 100}%`, top: `${b.y * 100}%`,
+        width: `${b.width * 100}%`, height: `${b.height * 100}%`,
+      };
+    }
+  }
   return (
     <>
       {b && (
@@ -108,7 +128,7 @@ const Overlays = ({ node, onSelect, selectedId }: any) => {
           onClick={e => { e.stopPropagation(); onSelect(node); }}
         />
       )}
-      {node.children?.map((c: any) => <Overlays key={c.id} node={c} onSelect={onSelect} selectedId={selectedId} />)}
+      {node.children?.map((c: any) => <Overlays key={c.id} node={c} onSelect={onSelect} selectedId={selectedId} isLandscape={isLandscape} />)}
     </>
   );
 };
@@ -193,12 +213,16 @@ export default function ZenitVisionPage() {
   const [interactionMode, setInteractionMode] = useState<'interact' | 'inspect'>('interact');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLandscape, setIsLandscape] = useState(false);
+  const [leftPanelMode, setLeftPanelMode] = useState<'tree' | 'modules'>('tree');
+  const [showSaveModule, setShowSaveModule] = useState(false);
 
   // Interaction state
   const screenRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [dragEnd, setDragEnd] = useState<{ x: number; y: number } | null>(null);
+  const [dragStartVisual, setDragStartVisual] = useState<{ x: number; y: number } | null>(null);
+  const [dragEndVisual, setDragEndVisual] = useState<{ x: number; y: number } | null>(null);
   const [tapFeedback, setTapFeedback] = useState<{ x: number; y: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; screenX: number; screenY: number } | null>(null);
   const [keyboardInput, setKeyboardInput] = useState('');
@@ -223,6 +247,23 @@ export default function ZenitVisionPage() {
   const [selectedCaseId, setSelectedCaseId] = useState('');
   const [scriptCopied, setScriptCopied] = useState(false);
 
+  // Logcat state
+  const [logcatLines, setLogcatLines] = useState<{ text: string; level: 'crash' | 'error' | 'warn' | 'drm' | 'info' }[]>([]);
+  const [logcatRunning, setLogcatRunning] = useState(false);
+  const [logcatFilter, setLogcatFilter] = useState<'all' | 'crash' | 'error' | 'drm'>('all');
+  const logcatEndRef = useRef<HTMLDivElement>(null);
+
+  // Native runner state
+  const [nativeRunStatus, setNativeRunStatus] = useState<'idle' | 'running' | 'passed' | 'failed'>('idle');
+  const [nativeStepResults, setNativeStepResults] = useState<Record<string, { passed: boolean; detail: string }>>({});
+
+  // WiFi ADB state
+  const [showWifiPanel, setShowWifiPanel] = useState(false);
+  const [wifiIp, setWifiIp] = useState('');
+  const [wifiPort, setWifiPort] = useState('5555');
+  const [wifiStatus, setWifiStatus] = useState<'idle' | 'enabling' | 'connecting' | 'connected' | 'error'>('idle');
+  const [wifiMessage, setWifiMessage] = useState('');
+
   // Refs
   const wsRef = useRef<WebSocket | null>(null);
   const frameCountRef = useRef(0);
@@ -232,12 +273,18 @@ export default function ZenitVisionPage() {
   const logsEndRef = useRef<HTMLDivElement>(null);
   const actionQueue = useRef<any[]>([]);
   const actionsRef = useRef<VisionAction[]>([]);
+  const isSyncingRef = useRef(false);
 
   // Keep actionsRef in sync
   useEffect(() => { actionsRef.current = actions; }, [actions]);
 
-  // Auto-scroll logs
-  useEffect(() => { logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [runLogs]);
+  // Auto-fetch device IP when WiFi panel opens
+  useEffect(() => {
+    if (showWifiPanel && wsStatus === 'connected' && !wifiIp) {
+      wsRef.current?.send(JSON.stringify({ type: 'wifi_get_ip' }));
+    }
+  }, [showWifiPanel, wsStatus]);
+  useEffect(() => { logcatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logcatLines]);
 
   // ── WebSocket ──
   const connectWebSocket = useCallback(() => {
@@ -255,6 +302,22 @@ export default function ZenitVisionPage() {
           setScreenshotUrl(prev => { if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev); return newUrl; });
           frameCountRef.current++;
           setIsSyncing(false);
+          isSyncingRef.current = false;
+          // Auto-detect orientation from image dimensions
+          const img = new Image();
+          img.onload = () => {
+            const frameIsLandscape = img.naturalWidth > img.naturalHeight;
+            setIsLandscape(prev => {
+              if (prev !== frameIsLandscape) {
+                setTimeout(() => {
+                  if (wsRef.current?.readyState === WebSocket.OPEN)
+                    wsRef.current.send(JSON.stringify({ type: 'refresh_hierarchy' }));
+                }, 600);
+              }
+              return frameIsLandscape;
+            });
+          };
+          img.src = newUrl;
         } catch (e) { console.error('[Vision WS] Binary error:', e); }
         return;
       }
@@ -264,11 +327,32 @@ export default function ZenitVisionPage() {
           case 'frame':
             setScreenshotUrl(`data:image/png;base64,${msg.screenshot}`);
             frameCountRef.current++;
-            if (msg.afterAction) setIsSyncing(false);
+            if (msg.afterAction) {
+              setIsSyncing(false);
+              isSyncingRef.current = false;
+              if (actionQueue.current.length > 0) {
+                const next = actionQueue.current.shift();
+                sendWsAction(next);
+              }
+            }
+            // Auto-detect orientation from frame dimensions
+            if (msg.width && msg.height) {
+              const frameIsLandscape = msg.width > msg.height;
+              setIsLandscape(prev => {
+                if (prev !== frameIsLandscape) {
+                  setTimeout(() => {
+                    if (wsRef.current?.readyState === WebSocket.OPEN)
+                      wsRef.current.send(JSON.stringify({ type: 'refresh_hierarchy' }));
+                  }, 600);
+                }
+                return frameIsLandscape;
+              });
+            }
             break;
           case 'state':
             if (!msg.screenWidth || !msg.screenHeight) console.warn('[Vision WS] state message missing screenWidth/screenHeight — falling back to 1080×1920');
-            setHierarchy(normalizeHierarchy(msg.hierarchy, msg.screenWidth || 1080, msg.screenHeight || 1920));
+            // Server already sends normalised 0-1 bounds — use directly, no re-normalisation
+            setHierarchy(msg.hierarchy);
             setCurrentPackage(msg.currentPackage || '');
             setDeviceModel(msg.deviceModel || '');
             break;
@@ -278,23 +362,83 @@ export default function ZenitVisionPage() {
             break;
           case 'action_done':
             setIsSyncing(false);
+            isSyncingRef.current = false;
             if (msg.locators && actionsRef.current.length > 0) {
-              setActions(prev => {
-                const updated = [...prev];
-                const last = { ...updated[updated.length - 1] };
-                last.locator = { ...last.locator, ...msg.locators };
-                updated[updated.length - 1] = last;
-                return updated;
-              });
+              const loc = msg.locators;
+              // Only upgrade if server found a real stable locator (not just a fallback xpath)
+              if (loc.resourceId || loc.accessibilityId || loc.text) {
+                setActions(prev => {
+                  const updated = [...prev];
+                  const last = { ...updated[updated.length - 1] };
+                  last.locator = { ...last.locator, ...loc };
+                  updated[updated.length - 1] = last;
+                  return updated;
+                });
+              }
             }
+            // Drain queue inline — avoids useEffect race with isSyncingRef
+            if (actionQueue.current.length > 0) {
+              const next = actionQueue.current.shift();
+              sendWsAction(next);
+            }
+            break;
+          case 'assertionResult':
+            setIsSyncing(false);
+            isSyncingRef.current = false;
+            setRunLogs(prev => [...prev, {
+              text: msg.message || (msg.passed ? 'Assertion passed' : 'Assertion failed'),
+              level: msg.passed ? 'success' : 'error',
+            }]);
             break;
           case 'log':
             setRunLogs(prev => [...prev, { text: msg.message, level: msg.level || 'info' }]);
             if (msg.level === 'success') setRunStatus('passed');
             if (msg.level === 'error') setRunStatus('failed');
             break;
+          case 'logcat_line': {
+            const raw: string = msg.line || '';
+            let level: 'crash' | 'error' | 'warn' | 'drm' | 'info' = 'info';
+            if (/FATAL EXCEPTION|ANR in|Process.*died|SIGSEGV|force.clos/i.test(raw)) level = 'crash';
+            else if (/ E[ /]|ERROR/i.test(raw)) level = 'error';
+            else if (/ W[ /]|WARN/i.test(raw)) level = 'warn';
+            else if (/drm|widevine|clearkey|mediadrm|DrmManager/i.test(raw)) level = 'drm';
+            setLogcatLines(prev => {
+              const next = [...prev, { text: raw, level }];
+              return next.length > 2000 ? next.slice(-2000) : next; // cap at 2000 lines
+            });
+            break;
+          }
+          case 'logcat_status':
+            setLogcatRunning(msg.running === true);
+            break;
+          case 'native_run_start':
+            setNativeRunStatus('running');
+            setNativeStepResults({});
+            setRunLogs([{ text: `▶  Native runner — ${msg.total} step(s)`, level: 'info' }]);
+            setRunStatus('running');
+            setRightTab('runner');
+            break;
+          case 'native_step_result':
+            setNativeStepResults(prev => ({ ...prev, [msg.stepId]: { passed: msg.passed, detail: msg.detail } }));
+            break;
+          case 'native_run_done':
+            setNativeRunStatus(msg.failed === 0 ? 'passed' : 'failed');
+            setRunStatus(msg.failed === 0 ? 'passed' : 'failed');
+            break;
+          case 'wifi_status':
+            setWifiStatus(msg.status);
+            setWifiMessage(msg.message || '');
+            if (msg.ip) setWifiIp(msg.ip);
+            break;
+          case 'wifi_ip':
+            if (msg.ip) { setWifiIp(msg.ip); setWifiMessage(`Device IP detected: ${msg.ip}`); }
+            else setWifiMessage('Could not detect IP — check Settings → About → Status → IP address');
+            break;
           case 'recording_saved': toast({ title: 'Recording Saved', description: `Saved to: ${msg.path}` }); break;
-          case 'orientation': setIsLandscape(msg.landscape === true); setTimeout(() => refreshHierarchy(), 800); break;
+          case 'orientation': setIsLandscape(msg.landscape === true); setTimeout(() => {
+            if (wsRef.current?.readyState === WebSocket.OPEN)
+              wsRef.current.send(JSON.stringify({ type: 'refresh_hierarchy' }));
+          }, 800); break;
         }
       } catch (err) { console.error('[Vision WS] Parse error:', err); }
     };
@@ -322,23 +466,19 @@ export default function ZenitVisionPage() {
     return () => { if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current); };
   }, [isSyncing]);
 
+  // Keep isSyncingRef in sync with state
+  useEffect(() => { isSyncingRef.current = isSyncing; }, [isSyncing]);
+
   const sendWsAction = useCallback((payload: any) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-    if (isSyncing) {
+    if (isSyncingRef.current) {
       actionQueue.current.push(payload);
       return;
     }
     setIsSyncing(true);
+    isSyncingRef.current = true;
     wsRef.current.send(JSON.stringify({ type: 'action', payload }));
-  }, [isSyncing]);
-
-  // Drain queued actions when syncing finishes
-  useEffect(() => {
-    if (!isSyncing && actionQueue.current.length > 0) {
-      const next = actionQueue.current.shift();
-      sendWsAction(next);
-    }
-  }, [isSyncing, sendWsAction]);
+  }, []); // no deps — uses ref, not state
 
   const refreshHierarchy = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN)
@@ -351,8 +491,7 @@ export default function ZenitVisionPage() {
     const rect = screenRef.current.getBoundingClientRect();
     const rawRx = (e.clientX - rect.left) / rect.width;
     const rawRy = (e.clientY - rect.top) / rect.height;
-    // In landscape the device rendered a rotated frame.
-    // Visual top→device right, visual left→device top.
+    // Android landscape is 90° CCW: device_x = rawRy, device_y = 1 - rawRx
     const rx = isLandscape ? rawRy : rawRx;
     const ry = isLandscape ? 1 - rawRx : rawRy;
     return { rx, ry, relX: e.clientX - rect.left, relY: e.clientY - rect.top };
@@ -369,6 +508,14 @@ export default function ZenitVisionPage() {
   const boundsStyle = (n: any) => {
     if (!n?.attributes?.bounds) return { display: 'none' as const };
     const { x, y, width, height } = n.attributes.bounds;
+    if (isLandscape) {
+      return {
+        left:   `${y * 100}%`,
+        top:    `${(1 - x - width) * 100}%`,
+        width:  `${height * 100}%`,
+        height: `${width * 100}%`,
+      };
+    }
     return { left: `${x * 100}%`, top: `${y * 100}%`, width: `${width * 100}%`, height: `${height * 100}%` };
   };
 
@@ -423,7 +570,7 @@ export default function ZenitVisionPage() {
   };
 
   const sendKeyInput = (text: string, enter = false) => {
-    if (isSyncing || !wsRef.current) return;
+    if (!text.trim() || !wsRef.current) return;
     sendWsAction({ action: 'type', text, enter });
     showActionFeedback(`Type: "${text}"`);
     if (isRecording) { const hit = selectedElement || (hierarchy ? findElementAt(hierarchy, 0.5, 0.5) : null); recordAction('TYPE', `Type "${text}"`, text, hit); }
@@ -460,11 +607,20 @@ export default function ZenitVisionPage() {
   const handleScreenMouseDown = (e: React.MouseEvent) => {
     if (interactionMode !== 'interact' || e.button === 2) return;
     const c = getScreenCoords(e); if (!c) return;
-    setIsDragging(true); setDragStart({ x: c.rx, y: c.ry }); setDragEnd(null);
+    const rect = screenRef.current!.getBoundingClientRect();
+    const rawRx = (e.clientX - rect.left) / rect.width;
+    const rawRy = (e.clientY - rect.top) / rect.height;
+    setIsDragging(true);
+    setDragStart({ x: c.rx, y: c.ry }); setDragEnd(null);
+    setDragStartVisual({ x: rawRx, y: rawRy }); setDragEndVisual(null);
   };
   const handleScreenMouseMove = (e: React.MouseEvent) => {
     if (isDragging && interactionMode === 'interact') {
       const c = getScreenCoords(e); if (c) setDragEnd({ x: c.rx, y: c.ry });
+      if (screenRef.current) {
+        const rect = screenRef.current.getBoundingClientRect();
+        setDragEndVisual({ x: (e.clientX - rect.left) / rect.width, y: (e.clientY - rect.top) / rect.height });
+      }
     }
     if (interactionMode === 'inspect' && hierarchy) {
       const c2 = getScreenCoords(e);
@@ -482,6 +638,7 @@ export default function ZenitVisionPage() {
       sendTap(c.rx, c.ry);
     } else { sendSwipe(dragStart.x, dragStart.y, c.rx, c.ry); }
     setIsDragging(false); setDragStart(null); setDragEnd(null);
+    setDragStartVisual(null); setDragEndVisual(null);
   };
   const handleScreenWheel = (e: React.WheelEvent) => { if (interactionMode !== 'interact') return; sendScroll(e.deltaY > 0 ? 'down' : 'up'); };
   const handleScreenContextMenu = (e: React.MouseEvent) => {
@@ -515,6 +672,24 @@ export default function ZenitVisionPage() {
     const currentActions = actionsRef.current;
     const udid = deviceId || 'YOUR_DEVICE_UDID';
     const pkg = currentPackage || 'com.your.app';
+
+    // Filter out useless container taps (ScrollView, FrameLayout, etc. with no resource-id)
+    const CONTAINER_TYPES = ['ScrollView', 'FrameLayout', 'LinearLayout', 'RelativeLayout', 'ConstraintLayout', 'CoordinatorLayout', 'ViewGroup', 'View'];
+    const isUselessContainerTap = (a: VisionAction) => {
+      if (a.type.toString().toUpperCase() !== 'CLICK') return false;
+      if (a.locator?.resourceId) return false;
+      if (a.locator?.accessibilityId) return false;
+      if (a.locator?.text) return false; // labeled element — keep it
+      const comp = a.componentName || '';
+      return CONTAINER_TYPES.some(c => comp.includes(c));
+    };
+
+    // Warn if a TYPE target looks like a label/hint rather than an input field
+    const isLikelyNotInput = (rid: string | undefined) => {
+      if (!rid) return false;
+      return /helper|hint|label|title|subtitle|description|caption/i.test(rid);
+    };
+
     let s = '';
     if (scriptLang === 'python') {
       s = `# ═══════════════════════════════════════════════════════════
@@ -523,30 +698,39 @@ export default function ZenitVisionPage() {
 # UDID   : ${udid}
 # Package: ${pkg}
 # Steps  : ${currentActions.length}
+# Appium : 2.x  |  UiAutomator2
 # ═══════════════════════════════════════════════════════════
 import time
 from appium import webdriver
+from appium.options.android import UiAutomator2Options
 from appium.webdriver.common.appiumby import AppiumBy
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from appium.webdriver.common.touch_action import TouchAction
 
-desired_caps = {
-    "platformName": "Android",
-    "appium:automationName": "UiAutomator2",
-    "appium:udid": "${udid}",
-    "appium:appPackage": "${pkg}",
-    "appium:noReset": True,
-    "appium:newCommandTimeout": 300,
-}
+options = UiAutomator2Options()
+options.platform_name = "Android"
+options.udid = "${udid}"
+options.app_package = "${pkg}"
+options.no_reset = True
+options.new_command_timeout = 300
 
-driver = webdriver.Remote("http://127.0.0.1:4723", desired_caps)
+# Verify Appium is reachable before creating session
+import urllib.request, urllib.error
+try:
+    urllib.request.urlopen("http://127.0.0.1:4723/status", timeout=5)
+except urllib.error.URLError as e:
+    print(f"[ERROR] Appium server not reachable at http://127.0.0.1:4723 — {e}")
+    print("[ERROR] Start Appium first: appium --port 4723")
+    exit(1)
+
+driver = webdriver.Remote("http://127.0.0.1:4723", options=options)
 wait = WebDriverWait(driver, 15)
-ta = TouchAction(driver)
 
 try:
 `;
+      let stepNum = 1;
       currentActions.forEach((a, i) => {
+        if (isUselessContainerTap(a)) return; // skip useless container taps
         const rid = a.locator?.resourceId, cd = a.locator?.accessibilityId, txt = a.locator?.text, xp = a.locator?.xpath;
         let by = 'AppiumBy.XPATH', val = '//*';
         if (rid) { by = 'AppiumBy.ID'; val = rid; }
@@ -554,19 +738,36 @@ try:
         else if (txt) { by = 'AppiumBy.XPATH'; val = `//*[@text="${txt}"]`; }
         else if (xp) { by = 'AppiumBy.XPATH'; val = xp; }
         const t = a.type.toString().toUpperCase();
-        s += `    # Step ${i + 1}: ${a.description || t}\n`;
+        // Warn if typing into a likely label element
+        if (t === 'TYPE' && isLikelyNotInput(rid)) {
+          s += `    # ⚠ WARNING: Step ${stepNum} — "${rid}" looks like a label/hint, not an input field.\n`;
+          s += `    # Inspect the element in Zenit and replace with the actual EditText resource-id.\n`;
+        }
+        s += `    # Step ${stepNum}: ${a.description || t}\n`;
         if (t === 'CLICK') s += `    wait.until(EC.element_to_be_clickable((${by}, "${val}"))).click()\n\n`;
-        else if (t === 'TYPE') s += `    wait.until(EC.presence_of_element_located((${by}, "${val}"))).send_keys("${a.value || ''}")\n\n`;
-        else if (t === 'LONG_PRESS') s += `    el = wait.until(EC.presence_of_element_located((${by}, "${val}")))\n    ta.long_press(el).perform()\n\n`;
-        else if (t === 'DOUBLE_TAP') s += `    el = wait.until(EC.presence_of_element_located((${by}, "${val}")))\n    ta.tap(el).tap(el).perform()\n\n`;
-        else if (t === 'SWIPE_UP' || t === 'SCROLL_UP') s += `    driver.execute_script("mobile: scroll", {"direction": "up"})\n\n`;
-        else if (t === 'SWIPE_DOWN' || t === 'SCROLL_DOWN') s += `    driver.execute_script("mobile: scroll", {"direction": "down"})\n\n`;
-        else if (t === 'SWIPE_LEFT') s += `    driver.execute_script("mobile: swipe", {"direction": "left"})\n\n`;
-        else if (t === 'SWIPE_RIGHT') s += `    driver.execute_script("mobile: swipe", {"direction": "right"})\n\n`;
+        else if (t === 'TYPE') {
+          s += `    el = wait.until(EC.element_to_be_clickable((${by}, "${val}")))\n`;
+          s += `    el.click()\n`;
+          s += `    el.clear()\n`;
+          s += `    el.send_keys("${a.value || ''}")\n`;
+          const nextAction = currentActions.slice(i + 1).find(na => !isUselessContainerTap(na));
+          if (nextAction && nextAction.type.toString().toUpperCase() === 'CLICK') {
+            s += `    driver.hide_keyboard()\n`;
+            s += `    time.sleep(0.5)  # wait for keyboard to dismiss\n`;
+          }
+          s += `\n`;
+        }
+        else if (t === 'LONG_PRESS') s += `    el = wait.until(EC.presence_of_element_located((${by}, "${val}")))\n    driver.execute_script("mobile: longClickGesture", {"elementId": el.id, "duration": 1500})\n\n`;
+        else if (t === 'DOUBLE_TAP') s += `    el = wait.until(EC.presence_of_element_located((${by}, "${val}")))\n    driver.execute_script("mobile: doubleClickGesture", {"elementId": el.id})\n\n`;
+        else if (t === 'SWIPE_UP' || t === 'SCROLL_UP') s += `    driver.execute_script("mobile: scrollGesture", {"left": 100, "top": 300, "width": 200, "height": 400, "direction": "up", "percent": 0.75})\n\n`;
+        else if (t === 'SWIPE_DOWN' || t === 'SCROLL_DOWN') s += `    driver.execute_script("mobile: scrollGesture", {"left": 100, "top": 300, "width": 200, "height": 400, "direction": "down", "percent": 0.75})\n\n`;
+        else if (t === 'SWIPE_LEFT') s += `    driver.execute_script("mobile: swipeGesture", {"left": 100, "top": 400, "width": 600, "height": 100, "direction": "left", "percent": 0.75})\n\n`;
+        else if (t === 'SWIPE_RIGHT') s += `    driver.execute_script("mobile: swipeGesture", {"left": 100, "top": 400, "width": 600, "height": 100, "direction": "right", "percent": 0.75})\n\n`;
         else if (t === 'HOME') s += `    driver.press_keycode(3)  # HOME\n\n`;
         else if (t === 'BACK') s += `    driver.press_keycode(4)  # BACK\n\n`;
         else if (t === 'WAIT') s += `    time.sleep(${a.value || '2'})\n\n`;
         else s += `    # TODO: ${t} — ${a.description}\n\n`;
+        stepNum++;
       });
       s += `finally:\n    driver.quit()\n`;
     } else if (scriptLang === 'java') {
@@ -576,25 +777,23 @@ try:
 // UDID   : ${udid}
 // Package: ${pkg}
 // Steps  : ${currentActions.length}
+// Appium : 2.x  |  UiAutomator2
 // ═══════════════════════════════════════════════════════════
 package com.zenit.generated;
 
 import java.net.URL;
 import java.time.Duration;
+import java.util.Map;
 import org.openqa.selenium.By;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import io.appium.java_client.AppiumBy;
 import io.appium.java_client.android.AndroidDriver;
 import io.appium.java_client.android.options.UiAutomator2Options;
-import io.appium.java_client.TouchAction;
-import io.appium.java_client.touch.WaitOptions;
-import io.appium.java_client.touch.offset.ElementOption;
 
 public class ZenitGeneratedTest {
     public static void main(String[] args) throws Exception {
         UiAutomator2Options options = new UiAutomator2Options();
-        options.setPlatformName("Android");
         options.setUdid("${udid}");
         options.setAppPackage("${pkg}");
         options.setNoReset(true);
@@ -602,24 +801,37 @@ public class ZenitGeneratedTest {
 
         AndroidDriver driver = new AndroidDriver(new URL("http://127.0.0.1:4723"), options);
         WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(15));
-        TouchAction<?> ta = new TouchAction<>(driver);
 
         try {
 `;
+      let stepNum = 1;
       currentActions.forEach((a, i) => {
+        if (isUselessContainerTap(a)) return;
         const rid = a.locator?.resourceId, cd = a.locator?.accessibilityId, txt = a.locator?.text, xp = a.locator?.xpath;
         let sel = rid ? `By.id("${rid}")` : cd ? `AppiumBy.accessibilityId("${cd}")` : txt ? `By.xpath("//*[@text=\\"${txt}\\"]")` : xp ? `By.xpath("${xp.replace(/"/g, '\\"')}")` : `By.xpath("//*")`;
         const t = a.type.toString().toUpperCase();
-        s += `            // Step ${i + 1}: ${a.description || t}\n`;
+        if (t === 'TYPE' && isLikelyNotInput(rid)) {
+          s += `            // ⚠ WARNING: "${rid}" looks like a label/hint — replace with actual EditText id\n`;
+        }
+        s += `            // Step ${stepNum}: ${a.description || t}\n`;
         if (t === 'CLICK') s += `            wait.until(ExpectedConditions.elementToBeClickable(${sel})).click();\n\n`;
-        else if (t === 'TYPE') s += `            wait.until(ExpectedConditions.presenceOfElementLocated(${sel})).sendKeys("${a.value || ''}");\n\n`;
-        else if (t === 'LONG_PRESS') s += `            ta.longPress(ElementOption.element(wait.until(ExpectedConditions.presenceOfElementLocated(${sel})))).perform();\n\n`;
-        else if (t === 'SWIPE_UP' || t === 'SCROLL_UP') s += `            driver.executeScript("mobile: scroll", Map.of("direction", "up"));\n\n`;
-        else if (t === 'SWIPE_DOWN' || t === 'SCROLL_DOWN') s += `            driver.executeScript("mobile: scroll", Map.of("direction", "down"));\n\n`;
+        else if (t === 'TYPE') {
+          s += `            wait.until(ExpectedConditions.elementToBeClickable(${sel})).click();\n`;
+          s += `            wait.until(ExpectedConditions.presenceOfElementLocated(${sel})).sendKeys("${a.value || ''}");\n`;
+          const nextAction = currentActions.slice(i + 1).find(na => !isUselessContainerTap(na));
+          if (nextAction && nextAction.type.toString().toUpperCase() === 'CLICK') {
+            s += `            driver.hideKeyboard();\n`;
+          }
+          s += `\n`;
+        }
+        else if (t === 'LONG_PRESS') s += `            var el = wait.until(ExpectedConditions.presenceOfElementLocated(${sel}));\n            driver.executeScript("mobile: longClickGesture", Map.of("elementId", el.getId(), "duration", 1500));\n\n`;
+        else if (t === 'SWIPE_UP' || t === 'SCROLL_UP') s += `            driver.executeScript("mobile: scrollGesture", Map.of("left", 100, "top", 300, "width", 200, "height", 400, "direction", "up", "percent", 0.75));\n\n`;
+        else if (t === 'SWIPE_DOWN' || t === 'SCROLL_DOWN') s += `            driver.executeScript("mobile: scrollGesture", Map.of("left", 100, "top", 300, "width", 200, "height", 400, "direction", "down", "percent", 0.75));\n\n`;
         else if (t === 'HOME') s += `            driver.pressKey(new KeyEvent(AndroidKey.HOME));\n\n`;
         else if (t === 'BACK') s += `            driver.pressKey(new KeyEvent(AndroidKey.BACK));\n\n`;
         else if (t === 'WAIT') s += `            Thread.sleep(${(parseFloat(a.value || '2') * 1000).toFixed(0)});\n\n`;
         else s += `            // TODO: ${t} — ${a.description}\n\n`;
+        stepNum++;
       });
       s += `        } finally {\n            driver.quit();\n        }\n    }\n}\n`;
     } else {
@@ -629,6 +841,7 @@ public class ZenitGeneratedTest {
 // UDID   : ${udid}
 // Package: ${pkg}
 // Steps  : ${currentActions.length}
+// Appium : 2.x  |  UiAutomator2
 // ═══════════════════════════════════════════════════════════
 const { remote } = require('webdriverio');
 
@@ -645,19 +858,36 @@ const caps = {
     const driver = await remote({ hostname: '127.0.0.1', port: 4723, capabilities: caps });
     try {
 `;
+      let stepNum = 1;
       currentActions.forEach((a, i) => {
+        if (isUselessContainerTap(a)) return;
         const rid = a.locator?.resourceId, cd = a.locator?.accessibilityId, txt = a.locator?.text, xp = a.locator?.xpath;
         const loc = rid ? `id:${rid}` : cd ? `~${cd}` : txt ? `//*[@text="${txt}"]` : xp || '//*';
         const t = a.type.toString().toUpperCase();
-        s += `        // Step ${i + 1}: ${a.description || t}\n`;
+        if (t === 'TYPE' && isLikelyNotInput(rid)) {
+          s += `        // ⚠ WARNING: "${rid}" looks like a label/hint — replace with actual input id\n`;
+        }
+        s += `        // Step ${stepNum}: ${a.description || t}\n`;
         if (t === 'CLICK') s += `        await $('${loc}').click();\n\n`;
-        else if (t === 'TYPE') s += `        await $('${loc}').setValue('${a.value || ''}');\n\n`;
-        else if (t === 'SWIPE_UP' || t === 'SCROLL_UP') s += `        await driver.execute('mobile: scroll', { direction: 'up' });\n\n`;
-        else if (t === 'SWIPE_DOWN' || t === 'SCROLL_DOWN') s += `        await driver.execute('mobile: scroll', { direction: 'down' });\n\n`;
+        else if (t === 'TYPE') {
+          s += `        await $('${loc}').click();\n`;
+          s += `        await $('${loc}').setValue('${a.value || ''}');\n`;
+          const nextAction = currentActions.slice(i + 1).find(na => !isUselessContainerTap(na));
+          if (nextAction && nextAction.type.toString().toUpperCase() === 'CLICK') {
+            s += `        await driver.hideKeyboard();\n`;
+          }
+          s += `\n`;
+        }
+        else if (t === 'LONG_PRESS') s += `        await driver.execute('mobile: longClickGesture', { element: await $('${loc}').elementId, duration: 1500 });\n\n`;
+        else if (t === 'SWIPE_UP' || t === 'SCROLL_UP') s += `        await driver.execute('mobile: scrollGesture', { left: 100, top: 300, width: 200, height: 400, direction: 'up', percent: 0.75 });\n\n`;
+        else if (t === 'SWIPE_DOWN' || t === 'SCROLL_DOWN') s += `        await driver.execute('mobile: scrollGesture', { left: 100, top: 300, width: 200, height: 400, direction: 'down', percent: 0.75 });\n\n`;
+        else if (t === 'SWIPE_LEFT') s += `        await driver.execute('mobile: swipeGesture', { left: 100, top: 400, width: 600, height: 100, direction: 'left', percent: 0.75 });\n\n`;
+        else if (t === 'SWIPE_RIGHT') s += `        await driver.execute('mobile: swipeGesture', { left: 100, top: 400, width: 600, height: 100, direction: 'right', percent: 0.75 });\n\n`;
         else if (t === 'HOME') s += `        await driver.pressKeyCode(3);\n\n`;
         else if (t === 'BACK') s += `        await driver.pressKeyCode(4);\n\n`;
         else if (t === 'WAIT') s += `        await driver.pause(${(parseFloat(a.value || '2') * 1000).toFixed(0)});\n\n`;
         else s += `        // TODO: ${t} — ${a.description}\n\n`;
+        stepNum++;
       });
       s += `    } finally {\n        await driver.deleteSession();\n    }\n})();\n`;
     }
@@ -720,6 +950,19 @@ const caps = {
     <div className="fixed inset-0 flex flex-col overflow-hidden" style={{ background: '#F0F2F5', fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif", height: '100dvh' }}>
       <Toaster />
 
+      {/* SaveModuleDialog — rendered at root to escape overflow:hidden tabs */}
+      {showSaveModule && selectedElement && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40">
+          <SaveModuleDialog
+            element={selectedElement}
+            currentPackage={currentPackage}
+            screenshotUrl={screenshotUrl}
+            onSave={(m) => { setShowSaveModule(false); toast({ title: `Module "${m.name}" saved` }); }}
+            onClose={() => setShowSaveModule(false)}
+          />
+        </div>
+      )}
+
       {/* ══════════════════════════════════════════════════════
           TOP TOOLBAR
       ══════════════════════════════════════════════════════ */}
@@ -780,6 +1023,13 @@ const caps = {
           {isRecording ? <><StopCircle className="w-3.5 h-3.5" /> Stop · {actions.length}</> : <><Circle className="w-3 h-3 fill-current" /> Record</>}
         </button>
 
+        {/* WiFi ADB connect */}
+        <button onClick={() => setShowWifiPanel(p => !p)} title="Connect via WiFi"
+          className={`flex items-center justify-center w-8 h-8 mx-0.5 rounded hover:bg-white/10 transition-colors
+            ${wifiStatus === 'connected' ? 'text-green-400' : showWifiPanel ? 'text-white bg-white/10' : 'text-white/60 hover:text-white'}`}>
+          <Wifi className="w-3.5 h-3.5" />
+        </button>
+
         {/* Refresh */}
         <button onClick={refreshHierarchy} title="Refresh hierarchy"
           className={`flex items-center justify-center w-8 h-8 mx-0.5 rounded hover:bg-white/10 transition-colors ${isSyncing ? 'text-yellow-400' : 'text-white/60 hover:text-white'}`}>
@@ -794,6 +1044,72 @@ const caps = {
       </div>
 
       {/* ══════════════════════════════════════════════════════
+          WIFI CONNECT PANEL
+      ══════════════════════════════════════════════════════ */}
+      {showWifiPanel && (
+        <div className="shrink-0 bg-[#2A2A2A] border-b border-white/10 px-4 py-3 flex items-center gap-3 z-40">
+          <Wifi className="w-4 h-4 text-[#0078D4] shrink-0" />
+          <div className="flex flex-col gap-0.5 shrink-0">
+            <span className="text-[11px] font-semibold text-white">WiFi ADB</span>
+            <span className="text-[10px] text-white/40">USB required for first-time setup</span>
+          </div>
+          <div className="w-px h-8 bg-white/10 mx-1" />
+          {/* Step 1: Enable tcpip */}
+          <button
+            onClick={async () => {
+              setWifiStatus('enabling');
+              setWifiMessage('Enabling TCP/IP…');
+              wsRef.current?.send(JSON.stringify({ type: 'wifi_enable_tcpip', port: parseInt(wifiPort) }));
+            }}
+            disabled={wifiStatus === 'enabling' || wsStatus !== 'connected'}
+            className="flex items-center gap-1.5 px-3 h-7 text-[11px] rounded bg-white/10 text-white hover:bg-white/20 disabled:opacity-40 font-medium transition-colors shrink-0">
+            {wifiStatus === 'enabling' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <span className="text-white/60 mr-0.5">1.</span>}
+            Enable TCP/IP
+          </button>
+          <div className="w-px h-8 bg-white/10 mx-1" />
+          {/* Step 2: Enter IP and connect */}
+          <span className="text-[11px] text-white/60 shrink-0">2. Device IP:</span>
+          <input
+            value={wifiIp}
+            onChange={e => setWifiIp(e.target.value)}
+            placeholder="192.168.1.x"
+            className="w-[120px] h-7 px-2 text-[11px] bg-white/10 border border-white/20 rounded text-white placeholder:text-white/30 outline-none focus:border-[#0078D4]"
+          />
+          <span className="text-white/40 text-[11px]">:</span>
+          <input
+            value={wifiPort}
+            onChange={e => setWifiPort(e.target.value)}
+            className="w-[52px] h-7 px-2 text-[11px] bg-white/10 border border-white/20 rounded text-white outline-none focus:border-[#0078D4]"
+          />
+          <button
+            onClick={() => wsRef.current?.send(JSON.stringify({ type: 'wifi_connect', ip: wifiIp, port: parseInt(wifiPort) }))}
+            disabled={!wifiIp.trim() || wifiStatus === 'connecting' || wsStatus !== 'connected'}
+            className="flex items-center gap-1.5 px-3 h-7 text-[11px] rounded bg-[#0078D4] text-white hover:bg-[#106EBE] disabled:opacity-40 font-medium transition-colors shrink-0">
+            {wifiStatus === 'connecting' ? <RefreshCw className="w-3 h-3 animate-spin" /> : null}
+            Connect
+          </button>
+          {/* Status message */}
+          {wifiMessage && (
+            <span className={`text-[11px] ml-1 ${wifiStatus === 'connected' ? 'text-green-400' : wifiStatus === 'error' ? 'text-red-400' : 'text-white/60'}`}>
+              {wifiMessage}
+            </span>
+          )}
+          <div className="flex-1" />
+          {/* Disconnect */}
+          {wifiStatus === 'connected' && (
+            <button
+              onClick={() => wsRef.current?.send(JSON.stringify({ type: 'wifi_disconnect', ip: wifiIp, port: parseInt(wifiPort) }))}
+              className="flex items-center gap-1.5 px-3 h-7 text-[11px] rounded bg-red-500/20 text-red-300 hover:bg-red-500/30 font-medium transition-colors shrink-0">
+              Disconnect
+            </button>
+          )}
+          <button onClick={() => setShowWifiPanel(false)} className="p-1 hover:bg-white/10 rounded text-white/40 hover:text-white transition-colors">
+            <XCircle className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════
           MAIN WORKSPACE
       ══════════════════════════════════════════════════════ */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -806,8 +1122,14 @@ const caps = {
               {leftOpen && (
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                   <Layers className="w-3.5 h-3.5 text-[#0078D4] shrink-0" />
-                  <span className="text-[11px] font-semibold text-[#2D2D2D] uppercase tracking-wider">Element Tree</span>
-                  {hierarchy && <span className="ml-auto text-[10px] text-[#999] bg-[#F0F0F0] px-1.5 py-0.5 rounded-full">Live</span>}
+                  <span className="text-[11px] font-semibold text-[#2D2D2D] uppercase tracking-wider">
+                    {leftPanelMode === 'tree' ? 'Element Tree' : 'Modules'}
+                  </span>
+                  {hierarchy && leftPanelMode === 'tree' && <span className="text-[10px] text-[#999] bg-[#F0F0F0] px-1.5 py-0.5 rounded-full">Live</span>}
+                  <div className="flex rounded overflow-hidden border border-[#E0E0E0] ml-auto">
+                    <button onClick={() => setLeftPanelMode('tree')} className={`px-2 py-0.5 text-[10px] transition-colors ${leftPanelMode === 'tree' ? 'bg-[#0078D4] text-white' : 'text-[#616161] hover:bg-[#F0F0F0]'}`}>Tree</button>
+                    <button onClick={() => setLeftPanelMode('modules')} className={`px-2 py-0.5 text-[10px] transition-colors ${leftPanelMode === 'modules' ? 'bg-[#0078D4] text-white' : 'text-[#616161] hover:bg-[#F0F0F0]'}`}>Modules</button>
+                  </div>
                 </div>
               )}
               <button onClick={() => setLeftOpen(o => !o)} className={`${leftOpen ? 'ml-1' : 'mx-auto'} p-1 hover:bg-[#F0F0F0] rounded transition-colors`}>
@@ -817,34 +1139,42 @@ const caps = {
 
             {leftOpen && (
               <>
-                {/* Search */}
-                <div className="px-2 py-2 border-b border-[#F0F0F0] shrink-0">
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-[#ABABAB]" />
-                    <input value={treeSearch} onChange={e => setTreeSearch(e.target.value)}
-                      placeholder="Filter elements…"
-                      className="w-full pl-7 pr-2 py-1.5 text-[11px] bg-[#F5F5F5] border border-[#E0E0E0] rounded-md outline-none focus:border-[#0078D4] focus:bg-white transition-colors placeholder:text-[#ABABAB]" />
-                  </div>
-                </div>
+                {leftPanelMode === 'tree' ? (
+                  <>
+                    {/* Search */}
+                    <div className="px-2 py-2 border-b border-[#F0F0F0] shrink-0">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-[#ABABAB]" />
+                        <input value={treeSearch} onChange={e => setTreeSearch(e.target.value)}
+                          placeholder="Filter elements…"
+                          className="w-full pl-7 pr-2 py-1.5 text-[11px] bg-[#F5F5F5] border border-[#E0E0E0] rounded-md outline-none focus:border-[#0078D4] focus:bg-white transition-colors placeholder:text-[#ABABAB]" />
+                      </div>
+                    </div>
 
-                {/* Tree */}
-                <div className="flex-1 min-h-0 overflow-y-auto vs-scroll">
-                  <div className="p-1.5">
-                    {filteredHierarchy
-                      ? <TreeNode node={filteredHierarchy} level={0} selectedId={selectedElement?.id} onSelect={setSelectedElement} />
-                      : (
-                        <div className="flex flex-col items-center justify-center py-12 gap-3 text-center px-4">
-                          <div className="w-10 h-10 rounded-full bg-[#F0F0F0] flex items-center justify-center">
-                            <Smartphone className="w-5 h-5 text-[#ABABAB]" />
-                          </div>
-                          <div>
-                            <div className="text-[12px] font-medium text-[#424242]">No hierarchy</div>
-                            <div className="text-[11px] text-[#999] mt-0.5">Connect a device to inspect elements</div>
-                          </div>
-                        </div>
-                      )}
+                    {/* Tree */}
+                    <div className="flex-1 min-h-0 overflow-y-auto vs-scroll">
+                      <div className="p-1.5">
+                        {filteredHierarchy
+                          ? <TreeNode node={filteredHierarchy} level={0} selectedId={selectedElement?.id} onSelect={setSelectedElement} />
+                          : (
+                            <div className="flex flex-col items-center justify-center py-12 gap-3 text-center px-4">
+                              <div className="w-10 h-10 rounded-full bg-[#F0F0F0] flex items-center justify-center">
+                                <Smartphone className="w-5 h-5 text-[#ABABAB]" />
+                              </div>
+                              <div>
+                                <div className="text-[12px] font-medium text-[#424242]">No hierarchy</div>
+                                <div className="text-[11px] text-[#999] mt-0.5">Connect a device to inspect elements</div>
+                              </div>
+                            </div>
+                          )}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    <ModuleLibraryPanel currentPackage={currentPackage} hierarchy={hierarchy} screenshotUrl={screenshotUrl} />
                   </div>
-                </div>
+                )}
               </>
             )}
           </div>
@@ -962,7 +1292,7 @@ const caps = {
                   {/* Inspect overlays */}
                   {interactionMode === 'inspect' && hierarchy && (
                     <div className="absolute inset-0 z-50">
-                      <Overlays node={hierarchy} onSelect={setSelectedElement} selectedId={selectedElement?.id} />
+                      <Overlays node={hierarchy} onSelect={setSelectedElement} selectedId={selectedElement?.id} isLandscape={isLandscape} />
                     </div>
                   )}
 
@@ -983,16 +1313,16 @@ const caps = {
                   )}
 
                   {/* Swipe trail */}
-                  {isDragging && dragStart && dragEnd && (
+                  {isDragging && dragStartVisual && dragEndVisual && (
                     <svg className="absolute inset-0 w-full h-full pointer-events-none z-50">
                       <defs>
                         <marker id="arrowhead" markerWidth="6" markerHeight="4" refX="3" refY="2" orient="auto">
                           <polygon points="0 0, 6 2, 0 4" fill="#0078D4" />
                         </marker>
                       </defs>
-                      <line x1={`${dragStart.x * 100}%`} y1={`${dragStart.y * 100}%`} x2={`${dragEnd.x * 100}%`} y2={`${dragEnd.y * 100}%`}
+                      <line x1={`${dragStartVisual.x * 100}%`} y1={`${dragStartVisual.y * 100}%`} x2={`${dragEndVisual.x * 100}%`} y2={`${dragEndVisual.y * 100}%`}
                         stroke="#0078D4" strokeWidth="2.5" strokeDasharray="6 3" markerEnd="url(#arrowhead)" opacity="0.8" />
-                      <circle cx={`${dragStart.x * 100}%`} cy={`${dragStart.y * 100}%`} r="5" fill="#0078D4" opacity="0.5" />
+                      <circle cx={`${dragStartVisual.x * 100}%`} cy={`${dragStartVisual.y * 100}%`} r="5" fill="#0078D4" opacity="0.5" />
                     </svg>
                   )}
 
@@ -1003,7 +1333,7 @@ const caps = {
                         onKeyDown={e => { if (e.key === 'Enter') { sendKeyInput(keyboardInput, true); setShowKeyboardBar(false); } if (e.key === 'Escape') setShowKeyboardBar(false); }}
                         placeholder="Type and press Enter to send…"
                         className="flex-1 text-[12px] px-3 py-1.5 border border-[#D0D0D0] rounded-md outline-none focus:border-[#0078D4] bg-white" />
-                      <button onClick={() => { sendKeyInput(keyboardInput); setShowKeyboardBar(false); }} className="px-3 py-1.5 bg-[#0078D4] text-white text-[11px] rounded-md font-medium hover:bg-[#106EBE]">Send</button>
+                      <button onClick={() => { const t = keyboardInput; sendKeyInput(t); if (t.trim()) setShowKeyboardBar(false); }} className="px-3 py-1.5 bg-[#0078D4] text-white text-[11px] rounded-md font-medium hover:bg-[#106EBE]">Send</button>
                       <button onClick={() => setShowKeyboardBar(false)} className="px-2 py-1.5 text-[#616161] text-[11px] hover:bg-[#E8E8E8] rounded-md">✕</button>
                     </div>
                   )}
@@ -1094,15 +1424,18 @@ const caps = {
                 {/* Tab bar */}
                 <TabsList className="flex h-9 bg-[#F8F8F8] border-b border-[#E8E8E8] rounded-none px-0 gap-0 shrink-0 overflow-x-auto no-scrollbar">
                   {[
-                    { v: 'inspector', icon: <Eye className="w-3 h-3" />, label: 'Inspector' },
-                    { v: 'recorder',  icon: <Activity className="w-3 h-3" />, label: `Recorder${actions.length > 0 ? ` (${actions.length})` : ''}` },
+                    { v: 'inspector', icon: <Eye className="w-3 h-3" />,         label: 'Inspect' },
+                    { v: 'recorder',  icon: <Activity className="w-3 h-3" />,    label: actions.length > 0 ? `Rec (${actions.length})` : 'Rec' },
                     { v: 'gestures',  icon: <MousePointer2 className="w-3 h-3" />, label: 'Gestures' },
-                    { v: 'script',    icon: <Code2 className="w-3 h-3" />, label: 'Script' },
-                    { v: 'runner',    icon: <Terminal className="w-3 h-3" />, label: 'Runner' },
-                    { v: 'docs',      icon: <BookOpen className="w-3 h-3" />, label: 'Docs' },
-                  ].map(t => (
-                    <TabsTrigger key={t.v} value={t.v}
-                      className="flex items-center gap-1.5 px-3 h-full text-[10.5px] font-medium rounded-none border-b-2 border-transparent
+                    { v: 'script',    icon: <Code2 className="w-3 h-3" />,       label: 'Script' },
+                    { v: 'runner',    icon: <Terminal className="w-3 h-3" />,    label: 'Runner' },
+                    { v: 'docs',      icon: <BookOpen className="w-3 h-3" />,    label: 'Docs' },
+                    { v: 'modules',   icon: <Package className="w-3 h-3" />,     label: 'Modules' },
+                    { v: 'builder',   icon: <Blocks className="w-3 h-3" />,      label: 'Build' },
+                    { v: 'data',      icon: <Table2 className="w-3 h-3" />,      label: 'Data' },
+                    { v: 'logcat',    icon: <FileText className="w-3 h-3" />,    label: logcatRunning ? 'Logs ●' : 'Logs' },
+                  ].map(t => (                    <TabsTrigger key={t.v} value={t.v}
+                      className="flex items-center gap-1.5 px-2 h-full text-[10.5px] font-medium rounded-none border-b-2 border-transparent
                         data-[state=active]:border-[#0078D4] data-[state=active]:text-[#0078D4] data-[state=active]:bg-white
                         text-[#616161] hover:text-[#2D2D2D] hover:bg-[#F0F0F0] transition-colors whitespace-nowrap">
                       {t.icon}{t.label}
@@ -1113,7 +1446,7 @@ const caps = {
                 {/* ── INSPECTOR TAB ── */}
                 <TabsContent value="inspector" className="flex-1 min-h-0 overflow-y-auto vs-scroll m-0 data-[state=inactive]:hidden">
                   {selectedElement ? (
-                    <div className="p-3 space-y-3">
+                    <div className="p-3 space-y-3 pb-6">
                       {/* Element header */}
                       <div className="bg-gradient-to-r from-[#EBF4FF] to-[#F0F7FF] rounded-lg p-3 border border-[#C7E0F4]">
                         <div className="flex items-start gap-2">
@@ -1200,6 +1533,10 @@ const caps = {
                           <Type className="w-3 h-3" /> Type Into
                         </button>
                       </div>
+                      <button onClick={() => setShowSaveModule(true)}
+                        className="w-full py-2 border border-dashed border-[#0078D4] text-[#0078D4] text-[11px] rounded-lg hover:bg-[#EBF4FF] font-medium transition-colors flex items-center justify-center gap-1.5 mt-1">
+                        <Package className="w-3 h-3" /> Save as Module
+                      </button>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full gap-4 p-6 text-center">
@@ -1217,10 +1554,10 @@ const caps = {
                 {/* ── RECORDER TAB ── */}
                 <TabsContent value="recorder" className="flex-1 min-h-0 flex flex-col overflow-hidden m-0 data-[state=inactive]:hidden">
                   {/* Toolbar */}
-                  <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[#F0F0F0] shrink-0 bg-[#FAFAFA]">
+                  <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 border-b border-[#F0F0F0] shrink-0 bg-[#FAFAFA]">
                     <div className="flex-1">
                       <div className="text-[12px] font-semibold text-[#2D2D2D]">{actions.length} Recorded Actions</div>
-                      {actions.length > 0 && <div className="text-[10px] text-[#999] mt-0.5">Ready to generate script</div>}
+                      {actions.length > 0 && <div className="text-[10px] text-[#999] mt-0.5">Ready to run or generate script</div>}
                     </div>
                     <button onClick={downloadRecording} disabled={actions.length === 0} title="Download JSON"
                       className="p-1.5 hover:bg-[#E8E8E8] rounded-md transition-colors disabled:opacity-40 text-[#616161]">
@@ -1230,9 +1567,27 @@ const caps = {
                       className="p-1.5 hover:bg-[#E8E8E8] rounded-md transition-colors disabled:opacity-40 text-[#616161]">
                       <Link2 className="w-3.5 h-3.5" />
                     </button>
+                    {/* Run on Device — native ADB runner, no Appium needed */}
+                    <button
+                      onClick={() => {
+                        if (nativeRunStatus === 'running') {
+                          wsRef.current?.send(JSON.stringify({ type: 'stop_script' }));
+                          setNativeRunStatus('idle');
+                          setRunStatus('idle');
+                        } else {
+                          setNativeStepResults({});
+                          setRightTab('runner');
+                          wsRef.current?.send(JSON.stringify({ type: 'run_native_steps', steps: actionsRef.current }));
+                        }
+                      }}
+                      disabled={actions.length === 0 || wsStatus !== 'connected'}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-white text-[11px] rounded-md font-medium transition-colors disabled:opacity-40
+                        ${nativeRunStatus === 'running' ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-700'}`}>
+                      {nativeRunStatus === 'running' ? <><StopCircle className="w-3 h-3" /> Stop</> : <><Play className="w-3 h-3" /> Run</>}
+                    </button>
                     <button onClick={() => { generateScript(); setRightTab('script'); }} disabled={actions.length === 0}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0078D4] text-white text-[11px] rounded-md hover:bg-[#106EBE] disabled:opacity-40 font-medium transition-colors">
-                      <Code2 className="w-3 h-3" /> Generate Script
+                      <Code2 className="w-3 h-3" /> Script
                     </button>
                     <button onClick={() => setActions([])} disabled={actions.length === 0} title="Clear all"
                       className="p-1.5 hover:bg-red-50 rounded-md transition-colors disabled:opacity-40 text-red-400 hover:text-red-500">
@@ -1257,11 +1612,18 @@ const caps = {
                         {actions.map((a, i) => {
                           const meta = getActionMeta(a.type.toString());
                           const bestLoc = a.locator?.resourceId || a.locator?.accessibilityId || a.locator?.text || a.locator?.xpath || '';
+                          const stepResult = nativeStepResults[a.id];
                           return (
-                            <div key={a.id} className="group flex items-start gap-2.5 p-2.5 rounded-lg border border-[#F0F0F0] hover:border-[#E0E0E0] hover:bg-[#FAFAFA] transition-all">
-                              {/* Step number */}
-                              <div className="w-5 h-5 rounded-full bg-[#F0F0F0] flex items-center justify-center shrink-0 mt-0.5">
-                                <span className="text-[9px] font-bold text-[#888]">{i + 1}</span>
+                            <div key={a.id} className={`group flex items-start gap-2.5 p-2.5 rounded-lg border transition-all
+                              ${stepResult ? (stepResult.passed ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50') : 'border-[#F0F0F0] hover:border-[#E0E0E0] hover:bg-[#FAFAFA]'}`}>
+                              {/* Step number / result indicator */}
+                              <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5
+                                ${stepResult ? (stepResult.passed ? 'bg-green-500' : 'bg-red-500') : 'bg-[#F0F0F0]'}`}>
+                                {stepResult
+                                  ? (stepResult.passed
+                                    ? <CheckCircle2 className="w-3 h-3 text-white" />
+                                    : <XCircle className="w-3 h-3 text-white" />)
+                                  : <span className="text-[9px] font-bold text-[#888]">{i + 1}</span>}
                               </div>
                               {/* Action type badge */}
                               <div className="flex items-center justify-center w-6 h-6 rounded-md shrink-0 mt-0.5" style={{ background: meta.bg, color: meta.color }}>
@@ -1274,6 +1636,9 @@ const caps = {
                                   {a.value && <span className="text-[10px] text-[#888] font-mono truncate max-w-[100px]">&quot;{a.value}&quot;</span>}
                                 </div>
                                 <div className="text-[10.5px] text-[#616161] truncate mt-0.5">{a.description}</div>
+                                {stepResult && !stepResult.passed && (
+                                  <div className="text-[10px] text-red-500 mt-0.5 truncate">{stepResult.detail}</div>
+                                )}
                                 {bestLoc && (
                                   <div className="flex items-center gap-1 mt-1">
                                     <Hash className="w-2.5 h-2.5 text-[#ABABAB] shrink-0" />
@@ -1435,7 +1800,19 @@ const caps = {
                   </div>
 
                   {/* Script input */}
-                  <div className="px-3 py-2 border-b border-[#F0F0F0] shrink-0" style={{ height: '40%', minHeight: '120px' }}>
+                  {runnerMode === 'appium' && (
+                    <div className="flex items-start gap-2 px-3 py-2 bg-amber-50 border-b border-amber-200 shrink-0">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                      <div className="text-[10.5px] text-amber-700 leading-relaxed">
+                        <span className="font-semibold">Appium script runner</span> requires Appium server + Python packages installed separately.
+                        {' '}<span className="font-mono bg-amber-100 px-1 rounded">pip install Appium-Python-Client selenium</span>
+                        <span className="ml-1 text-amber-600">· For zero-setup execution, use the </span>
+                        <button onClick={() => setRightTab('recorder')} className="underline font-semibold text-amber-700 hover:text-amber-900">Recorder tab → Run</button>
+                        <span className="text-amber-600"> button instead.</span>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex flex-col border-b border-[#F0F0F0] shrink-0" style={{ height: '160px' }}>
                     <textarea
                       value={manualScript}
                       onChange={e => setManualScript(e.target.value)}
@@ -1488,6 +1865,107 @@ const caps = {
                     className="flex-1 min-h-0 text-[11px] bg-white border-0 p-4 resize-none outline-none vs-scroll leading-relaxed text-[#2D2D2D]"
                     placeholder="Generated test documentation will appear here…"
                   />
+                </TabsContent>
+
+                {/* ── MODULES TAB ── */}
+                <TabsContent value="modules" className="flex-1 min-h-0 overflow-hidden m-0 data-[state=inactive]:hidden">
+                  <ModuleLibraryPanel currentPackage={currentPackage} hierarchy={hierarchy} screenshotUrl={screenshotUrl} />
+                </TabsContent>
+
+                {/* ── BUILDER TAB ── */}
+                <TabsContent value="builder" className="flex-1 min-h-0 overflow-hidden m-0 data-[state=inactive]:hidden">
+                  <CodelessBuilder hierarchy={hierarchy} currentPackage={currentPackage} wsRef={wsRef} onToast={(msg, v) => toast({ title: msg, variant: v })} />
+                </TabsContent>
+
+                {/* ── DATA TAB ── */}
+                <TabsContent value="data" className="flex-1 min-h-0 overflow-hidden m-0 data-[state=inactive]:hidden">
+                  <DataSetEditor />
+                </TabsContent>
+
+                {/* ── LOGCAT TAB ── */}
+                <TabsContent value="logcat" className="flex-1 min-h-0 flex flex-col overflow-hidden m-0 data-[state=inactive]:hidden">
+                  {/* Toolbar */}
+                  <div className="flex items-center gap-2 px-3 py-2 border-b border-[#F0F0F0] shrink-0 bg-[#FAFAFA]">
+                    <button
+                      onClick={() => {
+                        if (logcatRunning) {
+                          wsRef.current?.send(JSON.stringify({ type: 'logcat_stop' }));
+                        } else {
+                          setLogcatLines([]);
+                          wsRef.current?.send(JSON.stringify({ type: 'logcat_start', package: currentPackage }));
+                        }
+                      }}
+                      className={`flex items-center gap-1.5 px-3 h-7 text-[11px] rounded-md font-medium transition-colors
+                        ${logcatRunning ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-[#0078D4] text-white hover:bg-[#106EBE]'}`}>
+                      {logcatRunning ? <><StopCircle className="w-3 h-3" /> Stop</> : <><Play className="w-3 h-3" /> Start Logcat</>}
+                    </button>
+                    {/* Filter chips */}
+                    <div className="flex gap-1">
+                      {(['all', 'crash', 'error', 'drm'] as const).map(f => (
+                        <button key={f} onClick={() => setLogcatFilter(f)}
+                          className={`px-2 py-0.5 text-[10px] rounded-full border font-medium transition-colors
+                            ${logcatFilter === f
+                              ? f === 'crash' ? 'bg-red-500 text-white border-red-500'
+                              : f === 'error' ? 'bg-orange-500 text-white border-orange-500'
+                              : f === 'drm' ? 'bg-purple-500 text-white border-purple-500'
+                              : 'bg-[#0078D4] text-white border-[#0078D4]'
+                              : 'bg-white text-[#616161] border-[#D0D0D0] hover:bg-[#F0F0F0]'}`}>
+                          {f === 'all' ? 'All' : f === 'crash' ? '💥 Crash' : f === 'error' ? '🔴 Error' : '🔒 DRM'}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex-1" />
+                    <span className="text-[10px] text-[#999]">{logcatLines.length} lines</span>
+                    <button onClick={() => {
+                      const filtered = logcatLines.filter(l => logcatFilter === 'all' || l.level === logcatFilter);
+                      const blob = new Blob([filtered.map(l => l.text).join('\n')], { type: 'text/plain' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a'); a.href = url; a.download = `logcat_${Date.now()}.txt`;
+                      document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                    }} disabled={logcatLines.length === 0}
+                      className="p-1.5 hover:bg-[#E8E8E8] rounded-md transition-colors disabled:opacity-40 text-[#616161]" title="Download log">
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => setLogcatLines([])} disabled={logcatLines.length === 0}
+                      className="p-1.5 hover:bg-red-50 rounded-md transition-colors disabled:opacity-40 text-red-400" title="Clear">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Log lines */}
+                  <div className="flex-1 min-h-0 overflow-y-auto vs-scroll bg-[#0D0D0D] p-2 font-mono">
+                    {logcatLines.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+                        <FileText className="w-8 h-8 text-[#333]" />
+                        <div className="text-[#444] text-[11px]">
+                          {logcatRunning ? 'Waiting for log output…' : 'Click Start Logcat to capture device logs'}
+                        </div>
+                        {currentPackage && <div className="text-[#333] text-[10px] font-mono">{currentPackage}</div>}
+                      </div>
+                    ) : (
+                      logcatLines
+                        .filter(l => logcatFilter === 'all' || l.level === logcatFilter)
+                        .map((l, i) => (
+                          <div key={i} className={`text-[10px] leading-relaxed whitespace-pre-wrap break-all
+                            ${l.level === 'crash' ? 'text-red-400 font-bold' :
+                              l.level === 'error' ? 'text-orange-400' :
+                              l.level === 'drm' ? 'text-purple-400' :
+                              l.level === 'warn' ? 'text-yellow-400' : 'text-[#AAAAAA]'}`}>
+                            {l.level === 'crash' && '💥 '}{l.level === 'drm' && '🔒 '}{l.text}
+                          </div>
+                        ))
+                    )}
+                    <div ref={logcatEndRef} />
+                  </div>
+
+                  {/* Crash summary banner */}
+                  {logcatLines.some(l => l.level === 'crash') && (
+                    <div className="flex items-center gap-2 px-3 py-2 bg-red-900/80 text-red-200 text-[11px] shrink-0 border-t border-red-700">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span className="font-semibold">{logcatLines.filter(l => l.level === 'crash').length} crash event(s) detected</span>
+                      <button onClick={() => setLogcatFilter('crash')} className="ml-auto text-[10px] underline opacity-80 hover:opacity-100">View crashes</button>
+                    </div>
+                  )}
                 </TabsContent>
               </Tabs>
             )}

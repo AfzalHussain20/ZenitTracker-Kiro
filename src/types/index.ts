@@ -113,3 +113,52 @@ export interface Task {
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
 }
+
+// ─── Bug Tracker ──────────────────────────────────────────────────────────────
+export type BugSeverity = 'Critical' | 'High' | 'Medium' | 'Low';
+export type BugPriority = 'P1' | 'P2' | 'P3' | 'P4';
+export type BugStatus = 'Open' | 'In Progress' | 'Resolved' | 'Closed' | "Won't Fix";
+
+export interface Bug {
+  id: string;
+  title: string;
+  description: string;
+  stepsToReproduce: string;
+  expectedResult: string;
+  actualResult: string;
+  severity: BugSeverity;
+  priority: BugPriority;
+  status: BugStatus;
+  platform: string;
+  appVersion?: string;
+  environment?: string;
+  labels: string[];
+  assignedToUid?: string;
+  assignedToName?: string;
+  reportedByUid: string;
+  reportedByName: string;
+  sessionId?: string;       // link to TestSession
+  testCaseId?: string;      // link to ManagedTestCase
+  jiraTicketId?: string;    // for future Jira sync
+  jiraTicketUrl?: string;
+  attachments?: string[];
+  createdAt: Date | Timestamp;
+  updatedAt: Date | Timestamp;
+  resolvedAt?: Date | Timestamp;
+}
+
+// ─── Firebase Schema Exports ──────────────────────────────────────────────────
+export type {
+  UserDocument,
+  TaskDocument,
+  WorklogDocument,
+  TeamMetricsCacheDocument,
+  TaskPriority as FirebaseTaskPriority,
+  TaskStatus as FirebaseTaskStatus,
+  WorkDistribution,
+  UserDocumentUpdate,
+  TaskDocumentUpdate,
+  WorklogDocumentUpdate,
+} from './firebase-schema';
+
+export { isTaskPriority, isTaskStatus } from './firebase-schema';

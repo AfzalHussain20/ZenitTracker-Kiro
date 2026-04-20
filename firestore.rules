@@ -31,5 +31,11 @@ service cloud.firestore {
       allow create, delete: if isLead();
       allow update: if isLead() || request.auth.uid == resource.data.assignedToUid;
     }
+
+    match /bugs/{bugId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
   }
 }

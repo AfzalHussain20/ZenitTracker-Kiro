@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZenitPerf — Performance Profiler</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0a0e;
+  --bg-page: #050508;
+  --card: #16161d;
+  --border: #2a2a36;
+  --text: #e8e8f0;
+  --text-muted: #6b6b80;
+  --primary: #6366f1;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8f8fc;
+    --bg-page: #f0f0f8;
+    --card: #ffffff;
+    --border: #e2e2ee;
+    --text: #1a1a2e;
+    --text-muted: #8888a0;
+  }
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg-page);
+  color: var(--text);
+  overflow: hidden;
+  height: 100vh;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Navbar */
+.navbar {
+  height: 60px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+}
+
+.logo-text {
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: -0.5px;
+}
+
+.logo-accent { color: var(--primary); }
+
+.timer-island {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-page);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 6px 18px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6b7280;
+  transition: all 0.3s;
+}
+
+.status-dot.running {
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+}
+
+.timer-text {
+  font-family: 'Courier New', monospace;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn:hover { opacity: 0.8; }
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: white;
+  border-color: var(--danger);
+}
+
+.btn-icon {
+  padding: 7px 14px;
+}
+
+/* Main layout */
+.main-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 260px;
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  padding: 20px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* KPI Cards */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.kpi-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kpi-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.kpi-icon {
+  padding: 8px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kpi-value {
+  font-size: 28px;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+  letter-spacing: -1px;
+}
+
+.kpi-unit {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-left: 4px;
+}
+
+.kpi-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 2px;
+}
+
+.kpi-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Chart container */
+.chart-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.chart-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chart-body {
+  padding: 12px 8px 8px;
+  height: 240px;
+}
+
+/* Canvas */
+canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* Sidebar elements */
+.side-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+.platform-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.tab-btn {
+  padding: 7px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.tab-btn.active {
+  border: 1.5px solid var(--primary);
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--primary);
+}
+
+select, input[type="text"] {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-page);
+  color: var(--text);
+  outline: none;
+}
+
+.idle-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  opacity: 0.5;
+}
+
+.idle-icon {
+  font-size: 48px;
+  color: var(--primary);
+}
+
+.error-bar {
+  background: rgba(239, 68, 68, 0.1);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 8px 24px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--danger);
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Navbar -->
+  <header class="navbar">
+    <div class="logo">
+      <div class="logo-icon">⚡</div>
+      <div>
+        <div class="logo-text">Zenit<span class="logo-accent">Perf</span></div>
+        <div style="font-size: 10px; color: var(--text-muted); font-weight: 600; letter-spacing: 0.08em;">PRO SUITE</div>
+      </div>
+    </div>
+
+    <div class="timer-island">
+      <div class="status-dot" id="statusDot"></div>
+      <span class="timer-text" id="timerText">00:00</span>
+    </div>
+
+    <div class="controls">
+      <button class="btn btn-icon" id="resetBtn" title="Reset">↻</button>
+      <button class="btn btn-primary" id="startBtn">▶ Start test</button>
+    </div>
+  </header>
+
+  <!-- Error bar -->
+  <div class="error-bar" id="errorBar" style="display: none;">
+    <span>⚠</span>
+    <span id="errorText"></span>
+  </div>
+
+  <div class="main-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div>
+        <div class="side-label">Platform</div>
+        <div class="platform-tabs">
+          <button class="tab-btn active" data-platform="android">📱 Android</button>
+          <button class="tab-btn" data-platform="web">🌐 Web</button>
+        </div>
+      </div>
+
+      <div id="androidConfig">
+        <div class="side-label">Device</div>
+        <select id="deviceSelect">
+          <option value="">Loading devices...</option>
+        </select>
+        <div class="side-label" style="margin-top: 12px;">App package</div>
+        <select id="packageSelect">
+          <option value="">Select package...</option>
+        </select>
+      </div>
+
+      <div id="webConfig" style="display: none;">
+        <div class="side-label">Target URL</div>
+        <input type="text" id="urlInput" placeholder="https://your-app.com" style="font-family: 'Courier New', monospace; font-size: 11px;">
+      </div>
+
+      <div>
+        <div class="side-label">Duration limit</div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+          <input type="checkbox" id="autoStopCheck" checked style="accent-color: var(--primary);">
+          <span style="font-size: 12px; color: var(--text-muted);">Auto-stop at <span id="durationValue">60</span>s</span>
+        </div>
+        <input type="range" id="durationSlider" min="10" max="300" step="10" value="60" style="width: 100%; margin-top: 8px; accent-color: var(--primary);">
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main-content" id="mainContent">
+      <!-- KPI Cards -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <div class="kpi-icon" style="background: rgba(99, 102, 241, 0.1); color: #6366f1;">⚙</div>
+          </div>
+          <div>
+            <div><span class="kpi-value" id="cpuValue">0</span><span class="kpi-unit">%</span></div>
+            <div class="kpi-title">Processor</div>
+            <div class="kpi-sub" id="cpuSub">Threads: 0</div>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <div class="kpi-icon" style="background: rgba(139, 92, 246, 0.1); color: #8b5cf6;">💾</div>
+          </div>
+          <div>
+            <div><span class="kpi-value" id="memValue">0</span><span class="kpi-unit">MB</span></div>
+            <div class="kpi-title">Memory</div>
+            <div class="kpi-sub" id="memSub">Peak: 0 MB</div>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <div class="kpi-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">📡</div>
+          </div>
+          <div>
+            <div><span class="kpi-value" id="netValue">0</span><span class="kpi-unit">KB/s</span></div>
+            <div class="kpi-title">Network</div>
+            <div class="kpi-sub" id="netSub">Total: 0 MB</div>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <div class="kpi-icon" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b;">🌡</div>
+          </div>
+          <div>
+            <div><span class="kpi-value" id="tempValue">0</span><span class="kpi-unit">°C</span></div>
+            <div class="kpi-title">Temperature</div>
+            <div class="kpi-sub" id="tempSub">Battery: 0%</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      <div class="chart-card">
+        <div class="chart-header">CPU & Memory Timeline</div>
+        <div class="chart-body">
+          <canvas id="chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Idle state -->
+      <div class="idle-state" id="idleState">
+        <div class="idle-icon">⚡</div>
+        <div style="font-size: 18px; font-weight: 700;">Ready to profile</div>
+        <div style="font-size: 13px; color: var(--text-muted); text-align: center; max-width: 300px;">
+          Configure your device and app package, then press Start test
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

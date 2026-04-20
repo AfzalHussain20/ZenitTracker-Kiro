@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
@@ -128,7 +128,7 @@ const FLEXIBLE_VALUE_ATTRS = new Set([
     'funnel_step',
 ]);
 
-// Web platform always sends NA for these — treat as PASS, show web team notice
+// Web platform always sends NA for these - treat as PASS, show web team notice
 const WEB_NA_ATTRS = new Set([
     'device_id', 'server_timestamp', 'app_id', 'app_build', 'new_app_version',
     'device_manufacturer', 'device_model', 'region_code', 'force_update',
@@ -192,7 +192,7 @@ function parseJsonToParams(jsonStr: string): Record<string, string> {
             if (data === null || data === undefined) return;
             for (const [key, value] of Object.entries(data)) {
                 const newKey = prefix ? `${prefix}.${key}` : key;
-                // Top-level 'others' object — emit each sub-key as others(subkey)
+                // Top-level 'others' object - emit each sub-key as others(subkey)
                 // Handles both parsed object and JSON-stringified string
                 if (key === 'others' && !prefix) {
                     let othersObj: Record<string, any> | null = null;
@@ -206,7 +206,7 @@ function parseJsonToParams(jsonStr: string): Record<string, string> {
                             params[`others(${subKey})`] = Array.isArray(subVal) ? JSON.stringify(subVal) : String(subVal ?? '');
                         }
                     }
-                    // Always continue — never emit 'others' as a flat key, even if unparseable
+                    // Always continue - never emit 'others' as a flat key, even if unparseable
                     continue;
                 }
                 if (typeof value === 'object' && value !== null && !Array.isArray(value)) flatten(value, newKey);
@@ -224,7 +224,7 @@ function cleanAttributeName(attrName: string): string {
         .replace(/^event\.original\./i, '')
         .replace(/^_source\./i, '')
         .toLowerCase().trim();
-    // No timestamp normalisation here — handled via alias in validateParams
+    // No timestamp normalisation here - handled via alias in validateParams
 }
 
 function isInvalidNAValue(v: string | undefined | null): boolean {
@@ -257,7 +257,7 @@ function validateParams(
         } else {
             const cleaned = cleanAttributeName(key);
             if (/[A-Z]/.test(cleaned)) {
-                results.push({ attr: cleaned, status: 'CAPITAL_ATTR', actual: value, message: `Key "${cleaned}" contains uppercase letters — must be snake_case` });
+                results.push({ attr: cleaned, status: 'CAPITAL_ATTR', actual: value, message: `Key "${cleaned}" contains uppercase letters - must be snake_case` });
             }
             if (!(cleaned in cleanedParams)) cleanedParams[cleaned] = value;
         }
@@ -296,7 +296,7 @@ function validateParams(
                     attr: schemaKey, status: 'MISSING',
                     expected: '<any value>',
                     actual: undefined,
-                    message: 'Must be present — any value including NA is accepted',
+                    message: 'Must be present - any value including NA is accepted',
                     mainAttr,
                 });
             } else {
@@ -306,9 +306,9 @@ function validateParams(
             continue;
         }
 
-        // ── Web platform: these attrs always send NA — show as WEB_NA section ──
+        // ── Web platform: these attrs always send NA - show as WEB_NA section ──
         if (isWeb && WEB_NA_ATTRS.has(schemaKey)) {
-            results.push({ attr: schemaKey, status: 'WEB_NA', actual: actual ?? 'na', message: 'Web team sends NA — expected behaviour', mainAttr });
+            results.push({ attr: schemaKey, status: 'WEB_NA', actual: actual ?? 'na', message: 'Web team sends NA - expected behaviour', mainAttr });
             continue;
         }
 
@@ -324,7 +324,7 @@ function validateParams(
 
         if (rule === 'yes') {
             if (isInvalidNAValue(actual)) {
-                results.push({ attr: schemaKey, status: 'VALUE_REQUIRED', expected: '<real value>', actual, message: `Value Required — YES rule, got NA/null/blank/false`, mainAttr });
+                results.push({ attr: schemaKey, status: 'VALUE_REQUIRED', expected: '<real value>', actual, message: `Value Required - YES rule, got NA/null/blank/false`, mainAttr });
             } else {
                 results.push({ attr: schemaKey, status: 'PASS', actual, message: 'OK', mainAttr });
             }
@@ -369,7 +369,7 @@ function validateParams(
             results.push({
                 attr: schemaKey, status: 'VALUE_REQUIRED',
                 expected: '<real value>', actual,
-                message: `Value Required — YES rule, got NA/null/blank/false`,
+                message: `Value Required - YES rule, got NA/null/blank/false`,
                 mainAttr: 'others',
             });
         } else {
@@ -450,7 +450,7 @@ function ValidationPanel({ results, eventName }: { results: AttrResult[]; eventN
             {webNa.length > 0 && (
                 <div className="space-y-1">
                     <div className={`text-xs font-semibold px-2 py-1 rounded ${statusColor['WEB_NA']}`}>
-                        Web Platform Bypass — Not captured by dev team ({webNa.length})
+                        Web Platform Bypass - Not captured by dev team ({webNa.length})
                     </div>
                     <div className="space-y-1 pl-1">
                         {webNa.map((r, i) => (
@@ -480,9 +480,11 @@ function ValidationPanel({ results, eventName }: { results: AttrResult[]; eventN
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 function lsGet<T>(key: string, fallback: T): T {
+    if (typeof window === 'undefined') return fallback; // SSR guard
     try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
 }
 function lsSet(key: string, value: any) {
+    if (typeof window === 'undefined') return; // SSR guard
     try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
 }
 
@@ -490,17 +492,18 @@ function lsSet(key: string, value: any) {
 export default function CleverTapTrackerPage() {
     const { toast } = useToast();
     const xlsxInputRef = useRef<HTMLInputElement>(null);
+    const [mounted, setMounted] = useState(false);
 
-    const [step, setStep] = useState<Step>(() => lsGet('ct_step', 1) as Step);
+    const [step, setStep] = useState<Step>(1);
     const form = useForm<ConfigForm>({
         resolver: zodResolver(configSchema),
-        defaultValues: lsGet<ConfigForm>('ct_config', { platform: '', environment: 'Production', appVersion: '' }) as ConfigForm,
+        defaultValues: { platform: '', environment: 'Production', appVersion: '' },
     });
-    const [config, setConfig] = useState<ConfigForm | null>(() => lsGet('ct_config', null));
-    const [selectedContentTypes, setSelectedContentTypes] = useState<string[]>(() => lsGet('ct_content_types', []));
-    const [includeAds, setIncludeAds] = useState<boolean>(() => lsGet('ct_include_ads', false));
-    const [htmlInputs, setHtmlInputs] = useState<Record<string, Record<string, string>>>(() => lsGet('ct_html_inputs', {}));
-    const [capturedEvents, setCapturedEvents] = useState<Record<string, Record<string, EventCapture>>>(() => lsGet('ct_captured_events', {}));
+    const [config, setConfig] = useState<ConfigForm | null>(null);
+    const [selectedContentTypes, setSelectedContentTypes] = useState<string[]>([]);
+    const [includeAds, setIncludeAds] = useState<boolean>(false);
+    const [htmlInputs, setHtmlInputs] = useState<Record<string, Record<string, string>>>({});
+    const [capturedEvents, setCapturedEvents] = useState<Record<string, Record<string, EventCapture>>>({});
     const [activeHtmlModal, setActiveHtmlModal] = useState<string | null>(null);
 
     // In-House modal state
@@ -508,20 +511,44 @@ export default function CleverTapTrackerPage() {
     const [inHousePhase, setInHousePhase] = useState<InHousePhase>('choose');
 
     // Phase 1 state: eventName -> { json, results }
-    const [phase1Inputs, setPhase1Inputs] = useState<Record<string, string>>(() => lsGet('ct_p1_inputs', {}));
-    const [phase1Results, setPhase1Results] = useState<Record<string, AttrResult[]>>(() => lsGet('ct_p1_results', {}));
+    const [phase1Inputs, setPhase1Inputs] = useState<Record<string, string>>({});
+    const [phase1Results, setPhase1Results] = useState<Record<string, AttrResult[]>>({});
 
     // Phase 2 state
-    const [p2SelectedSheet, setP2SelectedSheet] = useState<string>(() => lsGet('ct_p2_sheet', ''));
-    const [p2EventName, setP2EventName] = useState<string>(() => lsGet('ct_p2_event', ''));
-    const [p2Json, setP2Json] = useState<string>(() => lsGet('ct_p2_json', ''));
-    const [p2Results, setP2Results] = useState<AttrResult[] | null>(() => lsGet('ct_p2_results', null));
-    const [p2Score, setP2Score] = useState<number | null>(() => lsGet('ct_p2_score', null));
+    const [p2SelectedSheet, setP2SelectedSheet] = useState<string>('');
+    const [p2EventName, setP2EventName] = useState<string>('');
+    const [p2Json, setP2Json] = useState<string>('');
+    const [p2Results, setP2Results] = useState<AttrResult[] | null>(null);
+    const [p2Score, setP2Score] = useState<number | null>(null);
     // Saved per-event data: eventName -> { json, results, score, sheet }
-    const [p2SavedEvents, setP2SavedEvents] = useState<Record<string, { json: string; results: AttrResult[]; score: number; sheet: string }>>(() => lsGet('ct_p2_saved', {}));
+    const [p2SavedEvents, setP2SavedEvents] = useState<Record<string, { json: string; results: AttrResult[]; score: number; sheet: string }>>({});
     const [isP2ReportOpen, setIsP2ReportOpen] = useState(false);
-    // Events imported from Excel Summary tab — used as chip fallback before schema loads
-    const [p2ImportedSheetEvents, setP2ImportedSheetEvents] = useState<string[]>(() => lsGet('ct_p2_imported_events', []));
+    // Events imported from Excel Summary tab - used as chip fallback before schema loads
+    const [p2ImportedSheetEvents, setP2ImportedSheetEvents] = useState<string[]>([]);
+
+    // Load from localStorage on mount (client-side only)
+    useEffect(() => {
+        setStep(lsGet('ct_step', 1) as Step);
+        const savedConfig = lsGet<ConfigForm | null>('ct_config', null);
+        if (savedConfig) {
+            setConfig(savedConfig);
+            form.reset(savedConfig);
+        }
+        setSelectedContentTypes(lsGet('ct_content_types', []));
+        setIncludeAds(lsGet('ct_include_ads', false));
+        setHtmlInputs(lsGet('ct_html_inputs', {}));
+        setCapturedEvents(lsGet('ct_captured_events', {}));
+        setPhase1Inputs(lsGet('ct_p1_inputs', {}));
+        setPhase1Results(lsGet('ct_p1_results', {}));
+        setP2SelectedSheet(lsGet('ct_p2_sheet', ''));
+        setP2EventName(lsGet('ct_p2_event', ''));
+        setP2Json(lsGet('ct_p2_json', ''));
+        setP2Results(lsGet('ct_p2_results', null));
+        setP2Score(lsGet('ct_p2_score', null));
+        setP2SavedEvents(lsGet('ct_p2_saved', {}));
+        setP2ImportedSheetEvents(lsGet('ct_p2_imported_events', []));
+        setMounted(true);
+    }, []);
 
     // ── Persist to localStorage on change ──
     useEffect(() => { lsSet('ct_step', step); }, [step]);
@@ -563,17 +590,8 @@ export default function CleverTapTrackerPage() {
     const [customEventJson, setCustomEventJson] = useState('');
     const [customResults, setCustomResults] = useState<AttrResult[] | null>(null);
 
-    // XLSX workbook cache — avoid re-fetching on every platform change
+    // XLSX workbook cache - avoid re-fetching on every platform change
     const xlsxCacheRef = useRef<{ wb: any } | null>(null);
-
-    // ── Restore form values from persisted config on mount ──
-    useEffect(() => {
-        const saved = lsGet<ConfigForm | null>('ct_config', null);
-        if (saved) {
-            form.reset(saved);
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     // ── Load schema from xlsx ──
     useEffect(() => {
@@ -726,7 +744,7 @@ export default function CleverTapTrackerPage() {
             const score = calcScore(results);
             setP2Results(results);
             setP2Score(score);
-            // Save this event's data (capture sheet at save time — Bug 9 fix)
+            // Save this event's data (capture sheet at save time - Bug 9 fix)
             setP2SavedEvents(prev => ({ ...prev, [resolvedEventName]: { json: p2Json, results, score, sheet: p2SelectedSheet } }));
             toast({ title: `Saved & validated "${resolvedEventName}"`, description: `Score: ${score}%` });
         } catch {
@@ -760,7 +778,7 @@ export default function CleverTapTrackerPage() {
         toast({ title: `Cleared "${evName}"` });
     };
 
-    // ── Download as Excel helper ──
+    // ── Download as Excel helper (fallback) ──
     const downloadAsExcel = (tabs: import('@/lib/export-to-sheets').SheetTab[], filename: string) => {
         const wb = XLSX.utils.book_new();
         tabs.forEach(tab => {
@@ -771,35 +789,128 @@ export default function CleverTapTrackerPage() {
     };
 
     // ── Export Phase 1 to Excel ──
-    const exportToSheets = () => {
+    const exportToExcel = () => {
         const liveData = PHASE1_EVENTS
             .filter(ev => phase1Results[ev.name])
             .map(ev => ({ event: ev.name, results: phase1Results[ev.name], score: calcScore(phase1Results[ev.name]) }));
         if (!liveData.length) { toast({ title: 'No validated events to export', variant: 'destructive' }); return; }
+        
         const tabs = buildPhase1Tabs(liveData, {
             platform: PLATFORMS.find(p => p.id === config?.platform)?.label || '',
             environment: config?.environment || '',
             appVersion: config?.appVersion || '',
         }, phase1Inputs);
+        
         const filename = `CleverTap_Phase1_${PLATFORMS.find(p => p.id === config?.platform)?.label || ''}_${format(new Date(), 'ddMMMyyy_HHmm')}`;
         downloadAsExcel(tabs, filename);
-        toast({ title: 'Downloaded as Excel' });
+        toast({ title: '✅ Exported to Excel!', description: 'File downloaded successfully' });
     };
 
     // ── Export Phase 2 to Excel ──
-    const exportPhase2ToSheets = () => {
+    const exportPhase2ToExcel = () => {
         if (!Object.keys(p2SavedEvents).length) { toast({ title: 'No validated events to export', variant: 'destructive' }); return; }
+        
         const allSheetEvents = sheetSchema[p2SelectedSheet]
             ? Object.keys(sheetSchema[p2SelectedSheet]).filter(e => e !== 'client_remarks' && e !== 'qa_remarks')
             : p2ImportedSheetEvents;
+        
         const tabs = buildPhase2Tabs(p2SavedEvents, {
             platform: PLATFORMS.find(p => p.id === config?.platform)?.label || '',
             environment: config?.environment || '',
             appVersion: config?.appVersion || '',
         }, allSheetEvents);
+        
         const filename = `CleverTap_Phase2_${p2SelectedSheet}_${format(new Date(), 'ddMMMyyy_HHmm')}`;
         downloadAsExcel(tabs, filename);
-        toast({ title: 'Downloaded as Excel' });
+        toast({ title: '✅ Exported to Excel!', description: 'File downloaded successfully' });
+    };
+
+    // -- Bug Report  grouped format matching the standard template --
+    const generateBugReport = () => {
+        const platform = PLATFORMS.find(p => p.id === config?.platform)?.label || '';
+        const version = config?.appVersion || '';
+        const environment = config?.environment || '';
+
+        // Infrastructure attrs always missing  not actionable, suppress from report
+        const INFRA_ATTRS = new Set([
+            'server_timestamp', 'app_build', 'asn', 'asn_latitude', 'asn_longitude', 'asn_owner',
+            'region_code', 'city', 'carrier', 'cdn', 'last_interaction_ts',
+            'time_to_app_start_ms', 'time_since_load_ms', 'time_to_splash_ms',
+            'time_to_app_config_ms', 'time_to_storefront_ms',
+            'error_code', 'error_message', 'error_type', 'error_severity',
+            'session_start_time', 'session_end_time',
+        ]);
+
+        const allEvents: { evName: string; results: AttrResult[] }[] = [];
+        PHASE1_EVENTS.forEach(ev => {
+            const results = phase1Results[ev.name];
+            if (results?.length) allEvents.push({ evName: ev.name.toUpperCase(), results });
+        });
+        Object.entries(p2SavedEvents).forEach(([evName, data]) => {
+            if (data.results?.length) allEvents.push({ evName: evName.toUpperCase(), results: data.results });
+        });
+
+        if (!allEvents.length) {
+            toast({ title: 'No validated events', description: 'Validate some events first.' });
+            return;
+        }
+
+        const headers = ['Bug ID', 'Event', 'Platform', 'Version', 'Environment', 'Issue Type', 'Details'];
+        const rows: any[][] = [];
+        let bugId = 1;
+
+        allEvents.forEach(({ evName, results }) => {
+            const failing = results.filter(r => r.status !== 'PASS' && r.status !== 'WEB_NA');
+            if (!failing.length) return;
+
+            // Mandatory Fields NA  MISSING non-others, excluding infra attrs
+            const mandatoryFields = failing
+                .filter(r => r.status === 'MISSING' && r.mainAttr !== 'others' && !INFRA_ATTRS.has(r.attr))
+                .map(r => r.attr);
+            if (mandatoryFields.length) {
+                rows.push([bugId++, evName, platform, version, environment, 'Mandatory Fields NA', mandatoryFields.join(', ')]);
+            }
+
+            // Mandatory Others NA  MISSING others group, excluding infra attrs
+            const mandatoryOthers = failing
+                .filter(r => r.status === 'MISSING' && r.mainAttr === 'others' && !INFRA_ATTRS.has(r.attr))
+                .map(r => r.attr);
+            if (mandatoryOthers.length) {
+                rows.push([bugId++, evName, platform, version, environment, 'Mandatory Others NA', mandatoryOthers.join(', ')]);
+            }
+
+            // Attributes Missing  EXTRA (present but not in schema)
+            const extraAttrs = failing.filter(r => r.status === 'EXTRA').map(r => r.attr);
+            if (extraAttrs.length) {
+                rows.push([bugId++, evName, platform, version, environment, 'Attributes Missing', extraAttrs.join(', ')]);
+            }
+
+            // Incorrect Value  UNEXPECTED_VALUE only, one row per attr
+            failing
+                .filter(r => r.status === 'UNEXPECTED_VALUE')
+                .forEach(r => {
+                    const detail = r.actual
+                        ? `${r.attr} = ${r.actual} (expected ${r.expected || 'na'})`
+                        : `${r.attr} populated`;
+                    rows.push([bugId++, evName, platform, version, environment, 'Incorrect Value', detail]);
+                });
+        });
+
+        if (!rows.length) {
+            toast({ title: 'No bugs found', description: 'All validated events passed.' });
+            return;
+        }
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        ws['!cols'] = [
+            { wch: 8 }, { wch: 40 }, { wch: 20 }, { wch: 10 },
+            { wch: 18 }, { wch: 25 }, { wch: 80 },
+        ];
+        XLSX.utils.book_append_sheet(wb, ws, 'Bug Report');
+        const filename = `BugReport_${platform}_${version}_${format(new Date(), 'ddMMMyyy_HHmm')}`;
+        XLSX.writeFile(wb, `${filename}.xlsx`);
+        toast({ title: `Bug report downloaded  ${rows.length} bugs` });
     };
 
     // ── Import from Excel (restore session) ──
@@ -879,7 +990,7 @@ export default function CleverTapTrackerPage() {
                         if (!isWeb) return results;
                         return results.map(r =>
                             WEB_NA_ATTRS.has(r.attr) && r.status !== 'PASS' && r.status !== 'WEB_NA'
-                                ? { ...r, status: 'WEB_NA' as ValidationStatus, message: 'Web sheet — dev team does not capture this attribute' }
+                                ? { ...r, status: 'WEB_NA' as ValidationStatus, message: 'Web sheet - dev team does not capture this attribute' }
                                 : r
                         );
                     };
@@ -899,7 +1010,7 @@ export default function CleverTapTrackerPage() {
                         if (!isWebSheet) return results;
                         return results.map(r =>
                             WEB_NA_ATTRS.has(r.attr) && r.status !== 'PASS' && r.status !== 'WEB_NA'
-                                ? { ...r, status: 'WEB_NA' as ValidationStatus, message: 'Web sheet — dev team does not capture this attribute' }
+                                ? { ...r, status: 'WEB_NA' as ValidationStatus, message: 'Web sheet - dev team does not capture this attribute' }
                                 : r
                         );
                     };
@@ -1119,7 +1230,7 @@ export default function CleverTapTrackerPage() {
                             <Database className="w-3 h-3" /> Telemetry Composer
                         </div>
                         <h1 className="text-4xl font-bold tracking-tight"><span className="text-gradient">CleverTap Tracker</span></h1>
-                        <p className="text-muted-foreground text-lg mt-1">Capture · Validate · Export analytics events</p>
+                        <p className="text-muted-foreground text-lg mt-1">Capture • Validate • Export analytics events</p>
                     </div>
                     <div className="hidden md:flex items-center gap-2">
                         {([1, 2, 3] as Step[]).map(s => (
@@ -1258,8 +1369,11 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                 <Button onClick={generateReport} variant="outline" className="border-blue-500 text-blue-600">
                                     <Shield className="w-4 h-4 mr-2" /> Validation Report
                                 </Button>
-                                <Button onClick={exportToSheets} disabled={Object.keys(phase1Results).length === 0} className="bg-gradient-to-r from-emerald-500 to-green-600 ml-auto">
-                                    <FileDown className="w-4 h-4 mr-2" /> Export to Sheets
+                                <Button onClick={generateBugReport} disabled={Object.keys(phase1Results).length === 0} variant="outline" className="border-rose-500 text-rose-600">
+                                    <FileSpreadsheet className="w-4 h-4 mr-2" /> Bug Report
+                                </Button>
+                                <Button onClick={exportToExcel} disabled={Object.keys(phase1Results).length === 0} className="bg-gradient-to-r from-emerald-500 to-green-600 ml-auto">
+                                    <FileDown className="w-4 h-4 mr-2" /> Export to Excel
                                 </Button>
                             </div>
                         </CardContent></Card>
@@ -1330,9 +1444,9 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                 );
             })()}
 
-            {/* ════════════════════════════════════════════════════════
+            {/* ••••••••••••••••••••••••••••••••••••••••••••••••••••••••
                 IN-HOUSE ANALYTICS MODAL
-            ════════════════════════════════════════════════════════ */}
+            •••••••••••••••••••••••••••••••••••••••••••••••••••••••• */}
             <Dialog open={isInHouseOpen} onOpenChange={v => { setIsInHouseOpen(v); if (!v) setInHousePhase('choose'); }}>
                 <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
                     <DialogHeader>
@@ -1341,8 +1455,8 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                         </DialogTitle>
                         <DialogDescription>
                             {inHousePhase === 'choose' && 'Select a validation phase to begin'}
-                            {inHousePhase === 'phase1' && 'Phase 1 — Core Events: app_launch · content_click · content_attempted · content_played'}
-                            {inHousePhase === 'phase2' && 'Phase 2 — Full Sheet Validation: select a sheet and paste your JSON'}
+                            {inHousePhase === 'phase1' && 'Phase 1 - Core Events: app_launch • content_click • content_attempted • content_played'}
+                            {inHousePhase === 'phase2' && 'Phase 2 - Full Sheet Validation: select a sheet and paste your JSON'}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -1457,14 +1571,14 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                         const s = r ? calcScore(r) : null;
                                         return (
                                             <div key={ev.name} className={`p-3 rounded-xl text-center border ${s === null ? 'bg-muted/40 border-border' : s === 100 ? 'bg-emerald-50 dark:bg-emerald-950 border-emerald-300' : s! >= 70 ? 'bg-amber-50 dark:bg-amber-950 border-amber-300' : 'bg-red-50 dark:bg-red-950 border-red-300'}`}>
-                                                <div className="text-lg font-bold">{s !== null ? `${s}%` : '—'}</div>
+                                                <div className="text-lg font-bold">{s !== null ? `${s}%` : '-'}</div>
                                                 <div className="text-xs text-muted-foreground truncate">{ev.name}</div>
                                             </div>
                                         );
                                     })}
                                 </div>
                             )}
-                            {/* Web platform notice removed — WEB_NA shown as section in ValidationPanel */}
+                            {/* Web platform notice removed - WEB_NA shown as section in ValidationPanel */}
                         </div>
                     )}
 
@@ -1483,8 +1597,11 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                         <Button size="sm" variant="outline" className="border-blue-500 text-blue-600 gap-1" onClick={() => setIsP2ReportOpen(true)}>
                                             <Shield className="w-3.5 h-3.5" /> Report
                                         </Button>
-                                        <Button size="sm" onClick={exportPhase2ToSheets} className="bg-gradient-to-r from-emerald-500 to-green-600 text-white gap-1">
-                                            <FileDown className="w-3.5 h-3.5" /> Export to Sheets
+                                        <Button size="sm" variant="outline" className="border-rose-500 text-rose-600 gap-1" onClick={generateBugReport}>
+                                            <FileSpreadsheet className="w-3.5 h-3.5" /> Bug Report
+                                        </Button>
+                                        <Button size="sm" onClick={exportPhase2ToExcel} className="bg-gradient-to-r from-emerald-500 to-green-600 text-white gap-1">
+                                            <FileDown className="w-3.5 h-3.5" /> Export to Excel
                                         </Button>
                                     </div>
                                 )}
@@ -1495,7 +1612,7 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                 </div>
                             </div>
 
-                            {/* Sheet selector — collapsed when sheet already selected */}
+                            {/* Sheet selector - collapsed when sheet already selected */}
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between">
                                     <Label className="text-sm font-semibold">Select Sheet *</Label>
@@ -1537,7 +1654,7 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                             {xlsxSheetNames.length === 0 && (
                                                 <div className="col-span-2 text-center py-6 text-muted-foreground text-sm">
                                                     <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                                                    No sheets loaded — ensure SunNxt Data Dictionary.xlsx is in /public
+                                                    No sheets loaded - ensure SunNxt Data Dictionary.xlsx is in /public
                                                 </div>
                                             )}
                                         </div>
@@ -1564,7 +1681,7 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                 </div>
                             )}
 
-                            {/* Event name chips — all events, click to switch */}
+                            {/* Event name chips - all events, click to switch */}
                             {p2SelectedSheet && (
                                 <div className="space-y-2">
                                     <Label className="text-sm font-semibold">Select Event *</Label>
@@ -1601,7 +1718,7 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                             });
                                         })()}
                                     </div>
-                                    <p className="text-xs text-muted-foreground">Purple = saved · Green = active · Grey = not yet validated · Click to switch</p>
+                                    <p className="text-xs text-muted-foreground">Purple = saved • Green = active • Grey = not yet validated • Click to switch</p>
                                 </div>
                             )}
 
@@ -1636,7 +1753,7 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                 <Card className={`border-2 ${p2Score === 100 ? 'border-emerald-400' : p2Score >= 70 ? 'border-amber-400' : 'border-red-400'}`}>
                                     <CardContent className="p-5 space-y-4">
                                         <div className="flex items-center justify-between">
-                                            <h4 className="font-bold text-base">Results — <span className="font-mono text-emerald-600">{p2EventName}</span></h4>
+                                            <h4 className="font-bold text-base">Results - <span className="font-mono text-emerald-600">{p2EventName}</span></h4>
                                             <div className="flex items-center gap-3">
                                                 <div className="flex gap-3 text-xs">
                                                     <span className="text-emerald-600">{p2Results.filter(r => r.status === 'PASS').length} Pass</span>
@@ -1649,11 +1766,11 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                             const items = p2Results.filter(r => r.status === status);
                                             if (!items.length) return null;
                                             const labels: Record<string, string> = {
-                                                VALUE_REQUIRED: 'Value Required — YES rule, got NA/null/blank/false',
+                                                VALUE_REQUIRED: 'Value Required - YES rule, got NA/null/blank/false',
                                                 MISSING: 'Missing Attributes',
-                                                UNEXPECTED_VALUE: 'Unexpected Value — NO rule, should be NA',
+                                                UNEXPECTED_VALUE: 'Unexpected Value - NO rule, should be NA',
                                                 CAPITAL_ATTR: 'Capital Letters in Key',
-                                                EXTRA: 'Extra Attributes — not in schema',
+                                                EXTRA: 'Extra Attributes - not in schema',
                                             };
                                             return (
                                                 <div key={status} className="space-y-1.5">
@@ -1668,7 +1785,7 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                                                     {(r.expected || r.actual) && (
                                                                         <span className="opacity-70 text-xs">
                                                                             {r.expected && <>exp: <strong>{r.expected}</strong></>}
-                                                                            {r.actual && <> · got: <strong>{r.actual}</strong></>}
+                                                                            {r.actual && <> • got: <strong>{r.actual}</strong></>}
                                                                         </span>
                                                                     )}
                                                                 </div>
@@ -1680,7 +1797,7 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                         })}
                                         {p2Results.filter(r => r.status === 'WEB_NA').length > 0 && (
                                             <div className="space-y-1.5">
-                                                <div className={`text-xs font-semibold px-2 py-1 rounded ${statusColor['WEB_NA']}`}>Web Platform Bypass — Not captured by dev team ({p2Results.filter(r => r.status === 'WEB_NA').length})</div>
+                                                <div className={`text-xs font-semibold px-2 py-1 rounded ${statusColor['WEB_NA']}`}>Web Platform Bypass - Not captured by dev team ({p2Results.filter(r => r.status === 'WEB_NA').length})</div>
                                                 <div className="space-y-1 pl-2">
                                                     {p2Results.filter(r => r.status === 'WEB_NA').map((r, i) => (
                                                         <div key={i} className={`text-xs p-2 rounded border ${statusColor['WEB_NA']}`}>
@@ -1754,8 +1871,8 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                         <div className="flex justify-end">
-                            <Button onClick={exportToSheets} className="bg-gradient-to-r from-emerald-500 to-green-600">
-                                <FileDown className="w-4 h-4 mr-2" /> Export to Sheets
+                            <Button onClick={exportToExcel} className="bg-gradient-to-r from-emerald-500 to-green-600">
+                                <FileDown className="w-4 h-4 mr-2" /> Export to Excel
                             </Button>
                         </div>
                         <ScrollArea className="h-[55vh]">
@@ -1821,7 +1938,7 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                 const isWeb = config?.platform === 'web';
                                 const results = Object.keys(schemaEvent).length ? validateParams(params, schemaEvent, eventMeta, isWeb) : [];
                                 setCustomResults(results);
-                                toast({ title: `Validated "${evName}"`, description: results.length ? `Score: ${calcScore(results)}%` : 'No schema — showing raw params' });
+                                toast({ title: `Validated "${evName}"`, description: results.length ? `Score: ${calcScore(results)}%` : 'No schema - showing raw params' });
                             } catch { toast({ title: 'Invalid JSON', variant: 'destructive' }); }
                         }} className="w-full bg-gradient-to-r from-orange-500 to-red-600">
                             <Shield className="w-4 h-4 mr-2" /> Validate
@@ -1839,13 +1956,13 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                             <Shield className="w-5 h-5 text-emerald-500" /> Phase 2 Validation Report
                         </DialogTitle>
                         <DialogDescription>
-                            Sheet: <strong>{p2SelectedSheet}</strong> · {Object.keys(p2SavedEvents).length} event(s) validated
+                            Sheet: <strong>{p2SelectedSheet}</strong> • {Object.keys(p2SavedEvents).length} event(s) validated
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-3">
                         <div className="flex justify-end">
-                            <Button onClick={exportPhase2ToSheets} className="bg-gradient-to-r from-emerald-500 to-green-600 text-white gap-2">
-                                <FileDown className="w-4 h-4" /> Export to Sheets
+                            <Button onClick={exportPhase2ToExcel} className="bg-gradient-to-r from-emerald-500 to-green-600 text-white gap-2">
+                                <FileDown className="w-4 h-4" /> Export to Excel
                             </Button>
                         </div>
                         {/* Summary table */}
@@ -1921,8 +2038,8 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                                                     <td className="px-3 py-1.5">
                                                                         <Badge variant="outline" className={`text-xs border-current ${statusColor[r.status]}`}>{r.status}</Badge>
                                                                     </td>
-                                                                    <td className="px-3 py-1.5 text-muted-foreground">{r.expected || '—'}</td>
-                                                                    <td className="px-3 py-1.5 text-muted-foreground">{r.actual || '—'}</td>
+                                                                    <td className="px-3 py-1.5 text-muted-foreground">{r.expected || '-'}</td>
+                                                                    <td className="px-3 py-1.5 text-muted-foreground">{r.actual || '-'}</td>
                                                                 </tr>
                                                             ))}
                                                         </tbody>

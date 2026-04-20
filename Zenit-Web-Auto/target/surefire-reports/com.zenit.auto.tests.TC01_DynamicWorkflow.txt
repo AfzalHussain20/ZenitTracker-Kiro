@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: com.zenit.auto.tests.TC01_DynamicWorkflow
 -------------------------------------------------------------------------------
-Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 58.54 s -- in com.zenit.auto.tests.TC01_DynamicWorkflow
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 51.73 s -- in com.zenit.auto.tests.TC01_DynamicWorkflow

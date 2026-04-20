@@ -4,17 +4,14 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Clock, Shield, Library, Crosshair, Wand2, Users, Eye, Sparkles } from 'lucide-react';
+import { ArrowLeft, Clock, Shield, Library, Wand2, Users, Sparkles, Bug, FileText, BarChart3, BookOpen } from 'lucide-react';
+
+// Apps hidden from UI (code preserved for future use):
+// - Vision (AI script generation unreliable)
+// - Automation (requires local setup)
+// - Locator Lab (requires local setup)
 
 const apps = [
-  {
-    id: 'vision',
-    name: 'Vision',
-    description: 'AI-powered visual testing and analysis',
-    icon: Eye,
-    gradient: 'from-cyan-500 to-blue-600',
-    href: '/dashboard/vision',
-  },
   {
     id: 'wrklog',
     name: 'Wrklog',
@@ -22,6 +19,7 @@ const apps = [
     icon: Clock,
     gradient: 'from-indigo-500 to-purple-600',
     href: '/wrklog',
+    status: 'live',
   },
   {
     id: 'keepr',
@@ -30,6 +28,7 @@ const apps = [
     icon: Shield,
     gradient: 'from-blue-500 to-cyan-600',
     href: '/keepr',
+    status: 'live',
   },
   {
     id: 'repository',
@@ -38,22 +37,16 @@ const apps = [
     icon: Library,
     gradient: 'from-green-500 to-emerald-600',
     href: '/dashboard/repository',
-  },
-  {
-    id: 'locator',
-    name: 'Locator Lab',
-    description: 'Element locator generator tool',
-    icon: Crosshair,
-    gradient: 'from-orange-500 to-red-600',
-    href: '/dashboard/locator-lab',
+    status: 'live',
   },
   {
     id: 'clevertap',
     name: 'CleverTap Tracker',
-    description: 'CleverTap event intelligence',
+    description: 'CleverTap analytics event validation',
     icon: Wand2,
     gradient: 'from-pink-500 to-rose-600',
     href: '/dashboard/clevertap-tracker',
+    status: 'live',
   },
   {
     id: 'team',
@@ -62,7 +55,45 @@ const apps = [
     icon: Users,
     gradient: 'from-purple-500 to-indigo-600',
     href: '/team',
+    status: 'live',
   },
+  {
+    id: 'bug-tracker',
+    name: 'Bug Tracker',
+    description: 'Log, track and manage bugs from test sessions',
+    icon: Bug,
+    gradient: 'from-red-500 to-orange-600',
+    href: '/bugs',
+    status: 'live',
+  },
+  {
+    id: 'reports',
+    name: 'Reports Hub',
+    description: 'Auto-generate test reports and export to Excel/PDF',
+    icon: FileText,
+    gradient: 'from-amber-500 to-yellow-600',
+    href: '/reports',
+    status: 'coming-soon',
+  },
+  {
+    id: 'analytics',
+    name: 'Analytics',
+    description: 'Cross-session trends, platform metrics and insights',
+    icon: BarChart3,
+    gradient: 'from-cyan-500 to-teal-600',
+    href: '/analytics',
+    status: 'live',
+  },
+  // Nexus Academy - Hidden for now
+  // {
+  //   id: 'nexus',
+  //   name: 'Nexus Academy',
+  //   description: 'QA learning resources and best practices',
+  //   icon: BookOpen,
+  //   gradient: 'from-violet-500 to-purple-600',
+  //   href: '/nexus',
+  //   status: 'live',
+  // },
 ];
 
 export default function AppsPage() {
@@ -103,6 +134,7 @@ export default function AppsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {apps.map((app, index) => {
             const AppIcon = app.icon;
+            const isComingSoon = app.status === 'coming-soon';
             return (
               <motion.div
                 key={app.id}
@@ -110,37 +142,36 @@ export default function AppsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
               >
-                <Link href={app.href}>
-                  <Card className="group relative overflow-hidden h-full hover:shadow-2xl transition-all duration-300 border-border/50 hover:border-primary/50">
-                    {/* Gradient Background */}
-                    <div className={`absolute inset-0 bg-gradient-to-br ${app.gradient} opacity-0 group-hover:opacity-10 transition-opacity duration-300`} />
-                    
-                    {/* Glow Effect */}
+                <Link href={isComingSoon ? '#' : app.href} onClick={isComingSoon ? (e) => e.preventDefault() : undefined}>
+                  <Card className={`group relative overflow-hidden h-full transition-all duration-300 border-border/50 ${isComingSoon ? 'opacity-70 cursor-not-allowed' : 'hover:shadow-2xl hover:border-primary/50'}`}>
+                    <div className={`absolute inset-0 bg-gradient-to-br ${app.gradient} opacity-0 ${!isComingSoon && 'group-hover:opacity-10'} transition-opacity duration-300`} />
                     <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary/20 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                     
                     <CardContent className="p-6 relative">
                       <div className="flex items-start gap-4">
-                        {/* Icon */}
-                        <div className={`p-4 rounded-2xl bg-gradient-to-br ${app.gradient} shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+                        <div className={`p-4 rounded-2xl bg-gradient-to-br ${app.gradient} shadow-lg ${!isComingSoon && 'group-hover:scale-110'} transition-transform duration-300`}>
                           <AppIcon className="h-8 w-8 text-white" />
                         </div>
-                        
-                        {/* Content */}
                         <div className="flex-1 min-w-0">
-                          <h3 className="font-bold text-lg mb-1 group-hover:text-primary transition-colors">
-                            {app.name}
-                          </h3>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-lg mb-1 group-hover:text-primary transition-colors">
+                              {app.name}
+                            </h3>
+                            {isComingSoon && (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 border border-amber-500/30 mb-1">
+                                SOON
+                              </span>
+                            )}
+                          </div>
                           <p className="text-sm text-muted-foreground line-clamp-2">
                             {app.description}
                           </p>
                         </div>
                       </div>
-
-                      {/* Launch Button */}
                       <div className="mt-6 flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground">Click to launch</span>
-                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary group-hover:scale-110 transition-all">
-                          <svg className="w-4 h-4 text-primary group-hover:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <span className="text-xs text-muted-foreground">{isComingSoon ? 'Coming soon' : 'Click to launch'}</span>
+                        <div className={`w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center ${!isComingSoon && 'group-hover:bg-primary group-hover:scale-110'} transition-all`}>
+                          <svg className={`w-4 h-4 text-primary ${!isComingSoon && 'group-hover:text-white'} transition-colors`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                           </svg>
                         </div>
@@ -168,8 +199,8 @@ export default function AppsPage() {
                     <Sparkles className="h-6 w-6 text-blue-600" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{apps.length}</div>
-                    <div className="text-sm text-muted-foreground">Available Apps</div>
+                    <div className="text-2xl font-bold">{apps.filter(a => a.status === 'live').length}</div>
+                    <div className="text-sm text-muted-foreground">Live Apps</div>
                   </div>
                 </div>
               </CardContent>

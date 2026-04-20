@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { 
     LayoutDashboard, Activity, Link as LinkIcon, PieChart, 
-    Settings, Search, Bell, Menu, X, Terminal, Combine
+    Settings, Search, Bell, Menu, X, Terminal, Combine, Bug
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import AdBanner from './AdBanner';
@@ -16,6 +16,7 @@ const NAV_ITEMS = [
     { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
     { label: 'Performance', href: '/performance', icon: <Activity className="w-5 h-5" /> },
     { label: 'Test Suites', href: '/test-suite', icon: <Combine className="w-5 h-5" /> },
+    { label: 'Bug Tracker', href: '/bugs', icon: <Bug className="w-5 h-5" /> },
     { label: 'Analytics', href: '/analytics', icon: <PieChart className="w-5 h-5" /> },
     { label: 'Integrations', href: '/integrations', icon: <LinkIcon className="w-5 h-5" /> },
     { label: 'Settings', href: '/profile', icon: <Settings className="w-5 h-5" /> },
