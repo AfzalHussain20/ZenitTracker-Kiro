@@ -18,7 +18,7 @@ import { useJiraKPI, type PersonKPI, type JiraIssueRaw } from '@/hooks/useJiraKP
 import { useExport } from '@/hooks/useExport';
 import { TeamCard } from '@/components/dashboard/TeamCard';
 
-// ─── Status sets ──────────────────────────────────────────────────────────────
+// --- Status sets --------------------------------------------------------------
 const CLOSED_SET = new Set([
     'done','closed','resolved','live','completed','fixed','dev completed','infra completed',
     'by design','qa verified','verified','released','deployed','deferred','not reproducing',
@@ -59,7 +59,7 @@ const PRIORITY_STYLE: Record<string,string> = {
     Lowest:'bg-slate-500/20 text-slate-600 border-slate-500/30',
 };
 
-// ─── Active Filter Bar ────────────────────────────────────────────────────────
+// --- Active Filter Bar --------------------------------------------------------
 interface ActiveFilter { key:string; label:string; value:string; onClear:()=>void; color?:string }
 function ActiveFilterBar({ filters, onClearAll }: { filters:ActiveFilter[]; onClearAll:()=>void }) {
     const active = filters.filter(f => f.value && f.value !== 'all' && f.value !== '');
@@ -80,41 +80,70 @@ function ActiveFilterBar({ filters, onClearAll }: { filters:ActiveFilter[]; onCl
     );
 }
 
-// ─── Member Profile Modal — Professional KPI Layout ──────────────────────────
-const AVATAR_PALETTE=[{bg:'bg-rose-500',text:'text-white',ring:'ring-rose-300'},{bg:'bg-blue-600',text:'text-white',ring:'ring-blue-300'},{bg:'bg-emerald-600',text:'text-white',ring:'ring-emerald-300'},{bg:'bg-violet-600',text:'text-white',ring:'ring-violet-300'},{bg:'bg-amber-500',text:'text-white',ring:'ring-amber-300'},{bg:'bg-cyan-600',text:'text-white',ring:'ring-cyan-300'},{bg:'bg-pink-600',text:'text-white',ring:'ring-pink-300'},{bg:'bg-indigo-600',text:'text-white',ring:'ring-indigo-300'}];
+
+// --- Avatar helpers ----------------------------------------------------------
+const AVATAR_PALETTE=[
+    {bg:'bg-rose-500',text:'text-white',ring:'ring-rose-300'},
+    {bg:'bg-blue-600',text:'text-white',ring:'ring-blue-300'},
+    {bg:'bg-emerald-600',text:'text-white',ring:'ring-emerald-300'},
+    {bg:'bg-violet-600',text:'text-white',ring:'ring-violet-300'},
+    {bg:'bg-amber-500',text:'text-white',ring:'ring-amber-300'},
+    {bg:'bg-cyan-600',text:'text-white',ring:'ring-cyan-300'},
+    {bg:'bg-pink-600',text:'text-white',ring:'ring-pink-300'},
+    {bg:'bg-indigo-600',text:'text-white',ring:'ring-indigo-300'},
+];
 function getAvatarStyle(name:string){let h=0;for(let i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))&0xffff;return AVATAR_PALETTE[h%AVATAR_PALETTE.length];}
 const PRIORITY_COLORS:Record<string,string>={Highest:'bg-red-500',High:'bg-orange-500',Medium:'bg-amber-400',Low:'bg-blue-400',Lowest:'bg-slate-400'};
 
+// --- Stat Card ---------------------------------------------------------------
+function StatCard({label,value,sub,color,bg,onClick,bar,barColor}:{label:string;value:string|number;sub?:string;color:string;bg:string;onClick?:()=>void;bar?:number;barColor?:string}) {
+    const Tag = onClick ? 'button' : 'div';
+    return (
+        <Tag onClick={onClick} className={cn('rounded-xl p-3 border text-left w-full transition-all',bg,onClick&&'cursor-pointer hover:scale-[1.03] hover:shadow-md active:scale-95 hover:ring-2 hover:ring-primary/30')}>
+            <div className={cn('text-2xl font-black leading-none',color)}>{value}</div>
+            <div className="text-[10px] text-muted-foreground font-semibold mt-1">{label}</div>
+            {sub&&<div className="text-[10px] text-muted-foreground/60 mt-0.5">{sub}</div>}
+            {bar!==undefined&&<div className="mt-2 h-1.5 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden"><div className={cn('h-full rounded-full',barColor||'bg-primary/60')} style={{width:`${Math.min(Math.max(bar,0),100)}%`}}/></div>}
+            {onClick&&<div className="text-[9px] text-primary/50 mt-1">view &rarr;</div>}
+        </Tag>
+    );
+}
+
+// --- SP Breakdown ------------------------------------------------------------
+function SPBreakdown({assigned,todo,inProg,done}:{assigned:number;todo:number;inProg:number;done:number}) {
+    if(assigned===0) return null;
+    const fmt=(v:number)=>v%1===0?String(v):v.toFixed(1);
+    const pct=(v:number)=>assigned>0?Math.round((v/assigned)*100):0;
+    return (
+        <div>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Story Points Breakdown</p>
+            <div className="grid grid-cols-4 gap-2">
+                {[
+                    {l:'Total SP',v:assigned,c:'text-violet-600',bg:'bg-violet-500/8 border-violet-200',bar:100,bc:'bg-violet-500'},
+                    {l:'To-Do',v:todo,c:'text-red-600',bg:'bg-red-500/8 border-red-200',bar:pct(todo),bc:'bg-red-500'},
+                    {l:'In Progress',v:inProg,c:'text-amber-600',bg:'bg-amber-500/8 border-amber-200',bar:pct(inProg),bc:'bg-amber-500'},
+                    {l:'Done',v:done,c:'text-green-600',bg:'bg-green-500/8 border-green-200',bar:pct(done),bc:'bg-green-500'},
+                ].map(s=>(
+                    <div key={s.l} className={cn('rounded-xl p-3 border text-center',s.bg)}>
+                        <div className={cn('text-xl font-black',s.c)}>{fmt(s.v)}</div>
+                        <div className="text-[10px] text-muted-foreground font-semibold mt-0.5">{s.l}</div>
+                        <div className="mt-1.5 h-1.5 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden"><div className={cn('h-full rounded-full',s.bc)} style={{width:`${s.bar}%`}}/></div>
+                        <div className="text-[9px] text-muted-foreground/60 mt-0.5">{s.bar}%</div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+
+// --- Member Profile Portal ---------------------------------------------------
 function MemberProfileModal({ person, allIssues, onClose, onFilterBugs }: { person:PersonKPI; allIssues:JiraIssueRaw[]; onClose:()=>void; onFilterBugs?:(filters:{reporterId?:string; assigneeId?:string; statusFilter?:string; priorityFilter?:string; issueType?:string})=>void }) {
     const [tab, setTab] = useState<string>('overview');
     const av = getAvatarStyle(person.name);
     const initials = person.name.split(' ').map((w:string)=>w[0]||'').join('').slice(0,2).toUpperCase();
-    
-    // Handler to filter bugs and close modal
-    const handleFilterBugs = (statusFilter?:string, priorityFilter?:string) => {
-        if(onFilterBugs) {
-            onFilterBugs({
-                reporterId: person.userId,
-                statusFilter,
-                priorityFilter
-            });
-            onClose();
-        }
-    };
-    
-    // Handler for work & story points filters
-    const handleWorkFilter = (filterType:'assigned'|'reporter', issueType?:string) => {
-        if(onFilterBugs) {
-            onFilterBugs({
-                assigneeId: filterType==='assigned' ? person.userId : undefined,
-                reporterId: filterType==='reporter' ? person.userId : undefined,
-                issueType
-            });
-            onClose();
-        }
-    };
 
-    // All issues reported by this person, grouped by type
+    // Derived data
     const myReported = useMemo(()=>allIssues.filter(i=>i.reporter?.accountId===person.userId),[allIssues,person.userId]);
     const myBugs     = useMemo(()=>myReported.filter(i=>i.issueType==='Bug'),[myReported]);
     const myStories  = useMemo(()=>myReported.filter(i=>i.issueType==='Story'),[myReported]);
@@ -122,48 +151,66 @@ function MemberProfileModal({ person, allIssues, onClose, onFilterBugs }: { pers
     const myTasks    = useMemo(()=>myReported.filter(i=>i.issueType==='Task'),[myReported]);
     const myLive     = useMemo(()=>allIssues.filter(i=>i.assignee?.accountId===person.userId&&i.isLive),[allIssues,person.userId]);
     const myAssigned = useMemo(()=>allIssues.filter(i=>i.assignee?.accountId===person.userId),[allIssues,person.userId]);
+    const openBugs   = useMemo(()=>myBugs.filter(b=>classifyStatus(b.status)==='open'),[myBugs]);
+    const closedBugs = useMemo(()=>myBugs.filter(b=>classifyStatus(b.status)==='closed'),[myBugs]);
+    const inProgBugs = useMemo(()=>myBugs.filter(b=>classifyStatus(b.status)==='in_progress'),[myBugs]);
+    const priBreak   = useMemo(()=>{const c:Record<string,number>={Highest:0,High:0,Medium:0,Low:0,Lowest:0};myBugs.forEach(b=>{if(b.priority in c)c[b.priority]++;});return c;},[myBugs]);
 
-    // Build dynamic tabs — only show tabs where user has data
+    // 6-month trend
+    const monthlyTrend = useMemo(()=>{
+        const m=new Map<string,number>();
+        myReported.forEach(b=>{const mk=b.created.slice(0,7);m.set(mk,(m.get(mk)||0)+1);});
+        const now=new Date();
+        return Array.from({length:6},(_,i)=>{
+            const d=new Date(now.getFullYear(),now.getMonth()-5+i,1);
+            const mk=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+            return {month:mk.slice(5),key:mk,count:m.get(mk)||0};
+        });
+    },[myReported]);
+    const maxMC = Math.max(...monthlyTrend.map(m=>m.count),1);
+    const peakMonth = monthlyTrend.reduce((a,b)=>b.count>a.count?b:a,{month:'',key:'',count:0});
+
+    // SP values
+    const spAssigned   = person.storyPointsAssigned||0;
+    const spDone       = person.storyPointsCompleted||0;
+    const spInProgress = (person as any).storyPointsInProgress||0;
+    const spTodo       = (person as any).storyPointsTodo||0;
+    const spPct        = spAssigned>0?Math.round((spDone/spAssigned)*100):0;
+
+    // Handlers
+    const handleFilterBugs = (statusFilter?:string, priorityFilter?:string) => {
+        if(onFilterBugs){onFilterBugs({reporterId:person.userId,statusFilter,priorityFilter});onClose();}
+    };
+    const handleWorkFilter = (filterType:'assigned'|'reporter', issueType?:string) => {
+        if(onFilterBugs){onFilterBugs({assigneeId:filterType==='assigned'?person.userId:undefined,reporterId:filterType==='reporter'?person.userId:undefined,issueType});onClose();}
+    };
+
+    useEffect(()=>{ document.body.style.overflow='hidden'; return ()=>{ document.body.style.overflow=''; }; },[]);
+
+    const fmtSP=(v:number)=>v%1===0?String(v):v.toFixed(1);
+
     const dynamicTabs = useMemo(()=>{
-        const tabs: Array<{id:string;label:string;icon:string;count:number}> = [
-            {id:'overview',label:'Overview',icon:'📊',count:0},
-        ];
-        if(myBugs.length>0)    tabs.push({id:'bugs',    label:'Bugs',    icon:'🐛', count:myBugs.length});
-        if(myStories.length>0) tabs.push({id:'stories', label:'Stories', icon:'📖', count:myStories.length});
-        if(myEpics.length>0)   tabs.push({id:'epics',   label:'Epics',   icon:'⚡', count:myEpics.length});
-        if(myTasks.length>0)   tabs.push({id:'tasks',   label:'Tasks',   icon:'✅', count:myTasks.length});
-        if(myLive.length>0)    tabs.push({id:'live',    label:'Live',    icon:'🟢', count:myLive.length});
-        if(myAssigned.length>0)tabs.push({id:'assigned',label:'Assigned',icon:'📋', count:myAssigned.length});
-        tabs.push({id:'monthly',label:'Monthly',icon:'📅',count:0});
+        const tabs: Array<{id:string;label:string;icon:string;count:number}> = [{id:'overview',label:'Overview',icon:'chart',count:0}];
+        if(myBugs.length>0)    tabs.push({id:'bugs',    label:'Bugs',    icon:'bug',  count:myBugs.length});
+        if(myStories.length>0) tabs.push({id:'stories', label:'Stories', icon:'book', count:myStories.length});
+        if(myEpics.length>0)   tabs.push({id:'epics',   label:'Epics',   icon:'zap',  count:myEpics.length});
+        if(myTasks.length>0)   tabs.push({id:'tasks',   label:'Tasks',   icon:'check',count:myTasks.length});
+        if(myLive.length>0)    tabs.push({id:'live',    label:'Live',    icon:'live', count:myLive.length});
+        if(myAssigned.length>0)tabs.push({id:'assigned',label:'Assigned',icon:'clip', count:myAssigned.length});
+        tabs.push({id:'monthly',label:'Monthly',icon:'cal',count:0});
         return tabs;
     },[myBugs,myStories,myEpics,myTasks,myLive,myAssigned]);
 
-    // Lock body scroll when modal is open
-    useEffect(()=>{
-        document.body.style.overflow='hidden';
-        return ()=>{ document.body.style.overflow=''; };
-    },[]);
-
-    const openBugs=useMemo(()=>myBugs.filter(b=>classifyStatus(b.status)==='open'),[myBugs]);
-    const closedBugs=useMemo(()=>myBugs.filter(b=>classifyStatus(b.status)==='closed'),[myBugs]);
-    const inProgBugs=useMemo(()=>myBugs.filter(b=>classifyStatus(b.status)==='in_progress'),[myBugs]);
-    const featurePeak=useMemo(()=>{const m=new Map<string,number>();myBugs.forEach(b=>b.labels.forEach(l=>m.set(l,(m.get(l)||0)+1)));return Array.from(m.entries()).sort((a,b)=>b[1]-a[1]).slice(0,6);},[myBugs]);
-    const monthlyTrend=useMemo(()=>{const m=new Map<string,number>();myReported.forEach(b=>{const mk=b.created.slice(0,7);m.set(mk,(m.get(mk)||0)+1);});return Array.from(m.entries()).sort((a,b)=>a[0].localeCompare(b[0])).slice(-6);},[myReported]);
-    const peakMonth=monthlyTrend.reduce<[string,number]>((a,b)=>(b[1]>a[1]?b:a) as [string,number],['',0]);
-    const maxMC=Math.max(...monthlyTrend.map(m=>m[1] as number),1);
-    const priBreak=useMemo(()=>{const c:Record<string,number>={Highest:0,High:0,Medium:0,Low:0,Lowest:0};myBugs.forEach(b=>{if(b.priority in c)c[b.priority]++;});return c;},[myBugs]);
-
-    // Issue list renderer — reused for all type tabs
-    const IssueList = ({ issues, emptyIcon, emptyMsg }: { issues:JiraIssueRaw[]; emptyIcon:React.ReactNode; emptyMsg:string }) => (
+    const IssueList = ({ issues, emptyMsg }: { issues:JiraIssueRaw[]; emptyMsg:string }) => (
         <div className="p-4 space-y-1.5">
-            {issues.length===0&&<div className="flex flex-col items-center justify-center py-16 text-muted-foreground">{emptyIcon}<div className="font-medium mt-3">{emptyMsg}</div></div>}
+            {issues.length===0&&<div className="flex flex-col items-center justify-center py-16 text-muted-foreground"><div className="font-medium mt-3">{emptyMsg}</div></div>}
             {issues.map(issue=>(
                 <a key={issue.id} href={issue.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-3 rounded-xl border hover:bg-muted/40 hover:border-primary/30 transition-all group">
                     <span className="text-xs font-mono font-bold text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20 shrink-0 min-w-[76px] text-center group-hover:bg-blue-500/20">{issue.key}</span>
                     <span className="text-[10px] bg-muted/60 px-1.5 py-0.5 rounded-md shrink-0 font-medium">{issue.issueType}</span>
                     <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full border shrink-0',PRIORITY_STYLE[issue.priority]||PRIORITY_STYLE.Medium)}>{issue.priority}</span>
                     <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded-md shrink-0">{issue.status}</span>
-                    {issue.isLive&&<span className="text-[10px] bg-emerald-500/15 text-emerald-700 px-1.5 py-0.5 rounded-md shrink-0 font-medium">🟢 Live</span>}
+                    {issue.isLive&&<span className="text-[10px] bg-emerald-500/15 text-emerald-700 px-1.5 py-0.5 rounded-md shrink-0 font-medium">Live</span>}
                     {issue.storyPoints&&<span className="text-[10px] bg-violet-500/15 text-violet-700 px-1.5 py-0.5 rounded-md shrink-0">{issue.storyPoints}sp</span>}
                     <span className="text-xs flex-1 truncate text-foreground/80">{issue.summary}</span>
                     <span className="text-[10px] text-muted-foreground shrink-0">{issue.created.slice(0,10)}</span>
@@ -176,8 +223,9 @@ function MemberProfileModal({ person, allIssues, onClose, onFilterBugs }: { pers
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/70 backdrop-blur-md" onClick={onClose}>
             <motion.div initial={{opacity:0,scale:0.95,y:12}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.95,y:12}} transition={{duration:0.18,ease:[0.16,1,0.3,1]}}
-                className="bg-background border border-border/60 rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-hidden flex flex-col" onClick={e=>e.stopPropagation()}>
-                {/* Hero Header */}
+                className="bg-background border border-border/60 rounded-3xl shadow-2xl w-full max-w-3xl max-h-[95vh] overflow-hidden flex flex-col" onClick={e=>e.stopPropagation()}>
+
+                {/* HERO HEADER */}
                 <div className="relative overflow-hidden shrink-0">
                     <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900"/>
                     <div className="absolute inset-0 opacity-30" style={{backgroundImage:'radial-gradient(ellipse at 70% 0%, #6366f1 0%, transparent 60%), radial-gradient(ellipse at 10% 100%, #0ea5e9 0%, transparent 50%)'}}/>
@@ -187,175 +235,149 @@ function MemberProfileModal({ person, allIssues, onClose, onFilterBugs }: { pers
                             <div className="flex-1 min-w-0 pt-0.5">
                                 <h2 className="text-xl font-bold text-white leading-tight truncate">{person.name}</h2>
                                 <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                                    {person.teams.map(t=><span key={t} className="inline-flex items-center gap-1 text-[11px] bg-white/10 text-white/80 px-2 py-0.5 rounded-full border border-white/15 font-medium">🏢 {t}</span>)}
+                                    {person.teams.map(t=><span key={t} className="inline-flex items-center gap-1 text-[11px] bg-white/10 text-white/80 px-2 py-0.5 rounded-full border border-white/15 font-medium">{t}</span>)}
                                     {person.teams.length===0&&<span className="text-xs text-white/40 italic">No team</span>}
                                 </div>
-                                <div className="flex items-center gap-3 mt-2 text-[11px] text-white/50">
-                                    <span>📝 {myReported.length} reported</span><span>·</span>
-                                    <span>📋 {person.ticketsAssigned} assigned</span><span>·</span>
-                                    <span>⭐ {person.storyPointsAssigned} SP</span>
+                                <div className="flex items-center gap-3 mt-1.5 text-[11px] text-white/50">
+                                    <span>{myReported.length} reported</span>
+                                    <span className="opacity-40">|</span>
+                                    <span>{person.ticketsAssigned} assigned</span>
+                                    <span className="opacity-40">|</span>
+                                    <span>{myLive.length} live</span>
+                                    {spAssigned>0&&<><span className="opacity-40">|</span><span>{fmtSP(spAssigned)} SP total</span></>}
                                 </div>
                             </div>
                             <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-white/10 text-white/50 hover:text-white transition-all shrink-0"><X className="w-5 h-5"/></button>
                         </div>
-                        <div className="grid grid-cols-4 gap-2 mt-4">
+                        {/* 6 KPI cards */}
+                        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mt-4">
                             {[
                                 {label:'Close Rate',value:`${person.closeRate}%`,color:person.closeRate>=70?'text-emerald-400':person.closeRate>=40?'text-amber-400':'text-red-400',bar:person.closeRate},
                                 {label:'Quality',value:String(person.qualityScore),color:'text-violet-400',bar:person.qualityScore},
                                 {label:'Critical',value:String(person.bugsCritical),color:'text-red-400',bar:person.bugsReported>0?(person.bugsCritical/person.bugsReported)*100:0},
-                                {label:'SP Done',value:String(person.storyPointsCompleted),color:'text-sky-400',bar:person.storyPointsAssigned>0?(person.storyPointsCompleted/person.storyPointsAssigned)*100:0},
+                                {label:'SP Done',value:fmtSP(spDone),color:'text-emerald-400',bar:spAssigned>0?(spDone/spAssigned)*100:0},
+                                {label:'SP In Prog',value:fmtSP(spInProgress),color:'text-amber-400',bar:spAssigned>0?(spInProgress/spAssigned)*100:0},
+                                {label:'SP To-Do',value:fmtSP(spTodo),color:'text-red-400',bar:spAssigned>0?(spTodo/spAssigned)*100:0},
                             ].map(s=>(
-                                <div key={s.label} className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
-                                    <div className={cn('text-xl font-black',s.color)}>{s.value}</div>
-                                    <div className="text-[10px] text-white/40 mt-0.5 font-medium">{s.label}</div>
+                                <div key={s.label} className="bg-white/5 border border-white/10 rounded-xl p-2.5 text-center">
+                                    <div className={cn('text-lg font-black',s.color)}>{s.value}</div>
+                                    <div className="text-[9px] text-white/40 mt-0.5 font-medium leading-tight">{s.label}</div>
                                     <div className="mt-1.5 h-1 bg-white/10 rounded-full overflow-hidden"><div className="h-full rounded-full bg-white/40" style={{width:`${Math.min(s.bar,100)}%`}}/></div>
                                 </div>
                             ))}
                         </div>
                     </div>
                 </div>
-                {/* Tab Bar — scrollable, shows only tabs with data */}
+
+                {/* TAB BAR */}
                 <div className="flex border-b border-border bg-muted/20 shrink-0 overflow-x-auto">
                     {dynamicTabs.map(t=>(
                         <button key={t.id} onClick={()=>setTab(t.id)} className={cn('shrink-0 py-3 px-3 text-xs font-semibold transition-all flex items-center justify-center gap-1.5 min-w-[80px]',tab===t.id?'border-b-2 border-primary text-primary bg-background':'text-muted-foreground hover:text-foreground hover:bg-muted/30')}>
-                            <span>{t.icon}</span><span>{t.label}</span>
+                            <span>{t.label}</span>
                             {t.count>0&&<span className={cn('text-[10px] px-1.5 py-0.5 rounded-full font-bold',tab===t.id?'bg-primary/15 text-primary':'bg-muted text-muted-foreground')}>{t.count}</span>}
                         </button>
                     ))}
                 </div>
-                {/* Body */}
+
+                {/* BODY */}
                 <div className="flex-1 overflow-y-auto overscroll-contain">
+
+                    {/* OVERVIEW TAB */}
                     {tab==='overview'&&(
-                        <div className="p-4 space-y-4">
-                            {/* Activity Summary — all issue types */}
+                        <div className="p-4 space-y-5">
+
+                            {/* Work Summary */}
                             <div>
-                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Activity Summary</p>
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Work Summary</p>
                                 <div className="grid grid-cols-3 gap-2">
-                                    {[
-                                        {label:'Total Reported',value:myReported.length,c:'text-slate-700',bg:'bg-slate-500/8 border-slate-200'},
-                                        {label:'Assigned',value:myAssigned.length,c:'text-blue-600',bg:'bg-blue-500/8 border-blue-200'},
-                                        {label:'Live Tickets',value:myLive.length,c:'text-emerald-600',bg:'bg-emerald-500/8 border-emerald-200'},
-                                    ].map(s=>(
-                                        <div key={s.label} className={cn('rounded-xl p-3 text-center border',s.bg)}>
-                                            <div className={cn('text-2xl font-black',s.c)}>{s.value}</div>
-                                            <div className="text-[10px] text-muted-foreground font-medium mt-0.5">{s.label}</div>
-                                        </div>
-                                    ))}
+                                    <StatCard label="Total Reported" value={myReported.length} color="text-slate-700" bg="bg-slate-500/8 border-slate-200"/>
+                                    <StatCard label="Assigned" value={person.ticketsAssigned} color="text-blue-600" bg="bg-blue-500/8 border-blue-200" sub={`${person.assignedOpen} to-do, ${person.assignedInProgress} in prog`}/>
+                                    <StatCard label="Live Tickets" value={myLive.length} color="text-emerald-600" bg="bg-emerald-500/8 border-emerald-200"/>
                                 </div>
                             </div>
-                            {/* Issue type breakdown */}
+
+                            {/* Story Points Breakdown */}
+                            <SPBreakdown assigned={spAssigned} todo={spTodo} inProg={spInProgress} done={spDone}/>
+
+                            {/* Issue Types */}
                             {myReported.length>0&&(
                                 <div>
-                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">By Issue Type — Click to View</p>
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Issue Types — Click to View</p>
                                     <div className="grid grid-cols-4 gap-2">
                                         {[
-                                            {label:'Bugs',value:myBugs.length,c:'text-red-600',bg:'bg-red-500/8 border-red-200',show:myBugs.length>0,tab:'bugs'},
-                                            {label:'Stories',value:myStories.length,c:'text-blue-600',bg:'bg-blue-500/8 border-blue-200',show:myStories.length>0,tab:'stories'},
-                                            {label:'Epics',value:myEpics.length,c:'text-violet-600',bg:'bg-violet-500/8 border-violet-200',show:myEpics.length>0,tab:'epics'},
-                                            {label:'Tasks',value:myTasks.length,c:'text-green-600',bg:'bg-green-500/8 border-green-200',show:myTasks.length>0,tab:'tasks'},
+                                            {label:'Bugs',value:myBugs.length,c:'text-red-600',bg:'bg-red-500/8 border-red-200',show:myBugs.length>0,t:'bugs'},
+                                            {label:'Stories',value:myStories.length,c:'text-blue-600',bg:'bg-blue-500/8 border-blue-200',show:myStories.length>0,t:'stories'},
+                                            {label:'Epics',value:myEpics.length,c:'text-violet-600',bg:'bg-violet-500/8 border-violet-200',show:myEpics.length>0,t:'epics'},
+                                            {label:'Tasks',value:myTasks.length,c:'text-green-600',bg:'bg-green-500/8 border-green-200',show:myTasks.length>0,t:'tasks'},
                                         ].filter(s=>s.show).map(s=>(
-                                            <button 
-                                                key={s.label} 
-                                                onClick={()=>setTab(s.tab)}
-                                                className={cn('rounded-xl p-3 text-center border cursor-pointer hover:scale-105 hover:shadow-md transition-all hover:ring-2 hover:ring-primary/30 active:scale-95',s.bg)}
-                                                title={`Click to view ${s.label.toLowerCase()} tab`}
-                                            >
-                                                <div className={cn('text-2xl font-black',s.c)}>{s.value}</div>
-                                                <div className="text-[10px] text-muted-foreground font-medium mt-0.5">{s.label}</div>
-                                                <div className="text-[9px] text-primary/50 mt-0.5">↗ view</div>
-                                            </button>
+                                            <StatCard key={s.label} label={s.label} value={s.value} color={s.c} bg={s.bg} onClick={()=>setTab(s.t)}/>
                                         ))}
                                     </div>
                                 </div>
                             )}
-                            {/* Bug status — only if user has bugs */}
+
+                            {/* Bug Status */}
                             {myBugs.length>0&&(
-                            <div>
-                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Bug Status — Click to Filter</p>
-                                <div className="grid grid-cols-4 gap-2">
-                                    {[
-                                        {label:'Total',value:myBugs.length,c:'text-slate-700',bg:'bg-slate-500/8 border-slate-200',statusFilter:undefined,priorityFilter:undefined},
-                                        {label:'Open',value:openBugs.length,c:'text-red-600',bg:'bg-red-500/8 border-red-200',statusFilter:'open_group',priorityFilter:undefined},
-                                        {label:'In Progress',value:inProgBugs.length,c:'text-amber-600',bg:'bg-amber-500/8 border-amber-200',statusFilter:'in_progress_group',priorityFilter:undefined},
-                                        {label:'Closed',value:closedBugs.length,c:'text-green-600',bg:'bg-green-500/8 border-green-200',statusFilter:'closed_group',priorityFilter:undefined},
-                                    ].map(s=>(
-                                        <button 
-                                            key={s.label} 
-                                            onClick={()=>handleFilterBugs(s.statusFilter, s.priorityFilter)}
-                                            className={cn('rounded-xl p-3 text-center border cursor-pointer hover:scale-105 hover:shadow-md transition-all hover:ring-2 hover:ring-primary/30 active:scale-95',s.bg)}
-                                            title={`Click to view ${s.label.toLowerCase()} bugs in main dashboard`}
-                                        >
-                                            <div className={cn('text-2xl font-black',s.c)}>{s.value}</div>
-                                            <div className="text-[10px] text-muted-foreground font-medium mt-0.5">{s.label}</div>
-                                            <div className="text-[9px] text-primary/50 mt-0.5">↗ view</div>
-                                        </button>
-                                    ))}
+                                <div>
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Bug Status — Click to Filter</p>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        <StatCard label="Total Bugs" value={myBugs.length} color="text-slate-700" bg="bg-slate-500/8 border-slate-200" onClick={()=>handleFilterBugs(undefined,undefined)}/>
+                                        <StatCard label="To-Do" value={openBugs.length} color="text-red-600" bg="bg-red-500/8 border-red-200" onClick={()=>handleFilterBugs('open_group',undefined)} bar={myBugs.length>0?(openBugs.length/myBugs.length)*100:0} barColor="bg-red-500"/>
+                                        <StatCard label="In Progress" value={inProgBugs.length} color="text-amber-600" bg="bg-amber-500/8 border-amber-200" onClick={()=>handleFilterBugs('in_progress_group',undefined)} bar={myBugs.length>0?(inProgBugs.length/myBugs.length)*100:0} barColor="bg-amber-500"/>
+                                        <StatCard label="Done" value={closedBugs.length} color="text-green-600" bg="bg-green-500/8 border-green-200" onClick={()=>handleFilterBugs('closed_group',undefined)} bar={myBugs.length>0?(closedBugs.length/myBugs.length)*100:0} barColor="bg-green-500"/>
+                                    </div>
                                 </div>
-                            </div>
                             )}
-                            {/* Work & SP — Click to Filter */}
-                            <div>
-                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Work & Story Points — Click to Filter</p>
-                                <div className="grid grid-cols-3 gap-2">
-                                    {[
-                                        {label:'Tickets Assigned',value:person.ticketsAssigned,sub:`${person.assignedOpen} open`,c:'text-blue-600',bg:'bg-blue-500/8 border-blue-200',filterType:'assigned' as const,issueType:undefined},
-                                        {label:'SP Assigned',value:person.storyPointsAssigned,sub:`${person.storyPointsCompleted} done`,c:'text-violet-600',bg:'bg-violet-500/8 border-violet-200',filterType:'assigned' as const,issueType:undefined},
-                                        {label:'Stories',value:person.storiesReported,sub:'reported',c:'text-cyan-600',bg:'bg-cyan-500/8 border-cyan-200',filterType:'reporter' as const,issueType:'Story'},
-                                    ].map(s=>(
-                                        <button 
-                                            key={s.label} 
-                                            onClick={()=>handleWorkFilter(s.filterType, s.issueType)}
-                                            className={cn('rounded-xl p-3 border cursor-pointer hover:scale-105 hover:shadow-md transition-all hover:ring-2 hover:ring-primary/30 active:scale-95 text-left',s.bg)}
-                                            title={`Click to view ${s.label.toLowerCase()} in main dashboard`}
-                                        >
-                                            <div className={cn('text-2xl font-black',s.c)}>{s.value}</div>
-                                            <div className="text-[10px] text-muted-foreground font-medium">{s.label}</div>
-                                            <div className="text-[10px] text-muted-foreground/60">{s.sub}</div>
-                                            <div className="text-[9px] text-primary/50 mt-0.5">↗ view</div>
-                                        </button>
-                                    ))}
+
+                            {/* Assigned Work Status */}
+                            {person.ticketsAssigned>0&&(
+                                <div>
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Assigned Work Status</p>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        <StatCard label="Total Assigned" value={person.ticketsAssigned} color="text-slate-700" bg="bg-slate-500/8 border-slate-200" onClick={()=>handleWorkFilter('assigned')}/>
+                                        <StatCard label="To-Do" value={person.assignedOpen} color="text-red-600" bg="bg-red-500/8 border-red-200" bar={person.ticketsAssigned>0?(person.assignedOpen/person.ticketsAssigned)*100:0} barColor="bg-red-500"/>
+                                        <StatCard label="In Progress" value={person.assignedInProgress} color="text-amber-600" bg="bg-amber-500/8 border-amber-200" bar={person.ticketsAssigned>0?(person.assignedInProgress/person.ticketsAssigned)*100:0} barColor="bg-amber-500"/>
+                                        <StatCard label="Done" value={person.assignedClosed} color="text-green-600" bg="bg-green-500/8 border-green-200" bar={person.ticketsAssigned>0?(person.assignedClosed/person.ticketsAssigned)*100:0} barColor="bg-green-500"/>
+                                    </div>
                                 </div>
-                            </div>
-                            {/* Priority breakdown */}
+                            )}
+
+                            {/* Priority Breakdown */}
                             {myBugs.length>0&&(
                                 <div>
                                     <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Priority Breakdown — Click to Filter</p>
                                     <div className="rounded-xl border bg-card p-3 space-y-2">
                                         {Object.entries(priBreak).filter(([,v])=>v>0).map(([p,v])=>(
-                                            <button 
-                                                key={p} 
-                                                onClick={()=>handleFilterBugs(undefined, p)}
-                                                className="flex items-center gap-2 w-full cursor-pointer hover:bg-muted/40 p-2 rounded-lg transition-all hover:ring-1 hover:ring-primary/30 active:scale-98"
-                                                title={`Click to view ${p} priority bugs in main dashboard`}
-                                            >
+                                            <button key={p} onClick={()=>handleFilterBugs(undefined,p)} className="flex items-center gap-2 w-full cursor-pointer hover:bg-muted/40 p-2 rounded-lg transition-all hover:ring-1 hover:ring-primary/30">
                                                 <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 w-20 text-center',PRIORITY_STYLE[p]||PRIORITY_STYLE.Medium)}>{p}</span>
                                                 <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
                                                     <div className={cn('h-full rounded-full',PRIORITY_COLORS[p]||'bg-slate-400')} style={{width:`${(v/myBugs.length)*100}%`,opacity:0.8}}/>
                                                 </div>
                                                 <span className="text-xs font-bold w-6 text-right">{v}</span>
-                                                <span className="text-[9px] text-primary/50 shrink-0">↗</span>
+                                                <span className="text-[9px] text-primary/50 shrink-0">view</span>
                                             </button>
                                         ))}
                                     </div>
                                 </div>
                             )}
-                            {/* Monthly trend */}
-                            {monthlyTrend.length>0&&(
+
+                            {/* 6-Month Activity Trend */}
+                            {monthlyTrend.some(m=>m.count>0)&&(
                                 <div>
                                     <div className="flex items-center justify-between mb-2">
-                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Monthly Bug Trend</p>
-                                        {peakMonth[0]&&<span className="text-[10px] text-muted-foreground">Peak: <strong>{peakMonth[0]}</strong> ({peakMonth[1]})</span>}
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">6-Month Activity Trend</p>
+                                        {peakMonth.key&&<span className="text-[10px] text-muted-foreground">Peak: <strong>{peakMonth.month}</strong> ({peakMonth.count})</span>}
                                     </div>
                                     <div className="rounded-xl border bg-card p-4">
                                         <div className="flex items-end gap-2" style={{height:'96px'}}>
-                                            {monthlyTrend.map(([month,count])=>{
-                                                const barH=Math.max(Math.round(((count as number)/maxMC)*80),4);
-                                                const isPeak=month===peakMonth[0];
+                                            {monthlyTrend.map(m=>{
+                                                const barH=Math.max(Math.round((m.count/maxMC)*80),4);
+                                                const isPeak=m.key===peakMonth.key;
                                                 return (
-                                                    <div key={month} className="flex-1 flex flex-col items-center gap-1 group">
-                                                        <span className="text-[9px] text-muted-foreground font-medium leading-none">{count}</span>
+                                                    <div key={m.key} className="flex-1 flex flex-col items-center gap-1 group">
+                                                        <span className="text-[9px] text-muted-foreground font-medium leading-none">{m.count||''}</span>
                                                         <div className={cn('w-full rounded-t-md transition-colors',isPeak?'bg-amber-500':'bg-primary/40 group-hover:bg-primary/70')} style={{height:`${barH}px`}}/>
-                                                        <span className="text-[8px] text-muted-foreground leading-none">{String(month).slice(5)}</span>
+                                                        <span className="text-[8px] text-muted-foreground leading-none">{m.month}</span>
                                                     </div>
                                                 );
                                             })}
@@ -363,54 +385,44 @@ function MemberProfileModal({ person, allIssues, onClose, onFilterBugs }: { pers
                                     </div>
                                 </div>
                             )}
-                            {/* Top labels */}
-                            {/* Insights & Highlights */}
+
+                            {/* Performance Insights */}
                             <div>
-                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Insights</p>
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Performance Insights</p>
                                 <div className="rounded-xl border bg-card p-3 space-y-2">
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-xs text-muted-foreground w-28 shrink-0">Performance Score</span>
-                                        <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
-                                            <div className={cn('h-full rounded-full',person.qualityScore>=70?'bg-green-500':person.qualityScore>=40?'bg-amber-500':'bg-red-500')} style={{width:`${person.qualityScore}%`}}/>
-                                        </div>
-                                        <span className="text-xs font-bold w-8 text-right">{person.qualityScore}</span>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-xs text-muted-foreground w-28 shrink-0">Bug Close Rate</span>
-                                        <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
-                                            <div className={cn('h-full rounded-full',person.closeRate>=70?'bg-green-500':person.closeRate>=40?'bg-amber-500':'bg-red-500')} style={{width:`${person.closeRate}%`}}/>
-                                        </div>
-                                        <span className="text-xs font-bold w-8 text-right">{person.closeRate}%</span>
-                                    </div>
-                                    {person.storyPointsAssigned>0&&(
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-xs text-muted-foreground w-28 shrink-0">SP Completion</span>
+                                    {[
+                                        {label:'Bug Close Rate',val:person.closeRate,color:person.closeRate>=70?'bg-green-500':person.closeRate>=40?'bg-amber-500':'bg-red-500',display:`${person.closeRate}%`},
+                                        ...(spAssigned>0?[{label:'SP Completion',val:spPct,color:spPct>=70?'bg-emerald-500':spPct>=40?'bg-amber-500':'bg-violet-500',display:`${spPct}%`}]:[]),
+                                        {label:'Quality Score',val:person.qualityScore,color:person.qualityScore>=70?'bg-green-500':person.qualityScore>=40?'bg-amber-500':'bg-red-500',display:String(person.qualityScore)},
+                                    ].map(s=>(
+                                        <div key={s.label} className="flex items-center gap-3">
+                                            <span className="text-xs text-muted-foreground w-28 shrink-0">{s.label}</span>
                                             <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
-                                                <div className="h-full rounded-full bg-violet-500" style={{width:`${Math.round((person.storyPointsCompleted/person.storyPointsAssigned)*100)}%`}}/>
+                                                <div className={cn('h-full rounded-full',s.color)} style={{width:`${Math.min(s.val,100)}%`}}/>
                                             </div>
-                                            <span className="text-xs font-bold w-8 text-right">{Math.round((person.storyPointsCompleted/person.storyPointsAssigned)*100)}%</span>
+                                            <span className="text-xs font-bold w-10 text-right">{s.display}</span>
                                         </div>
-                                    )}
+                                    ))}
                                     <div className="pt-2 border-t border-border/50 space-y-1">
-                                        {person.bugsCritical>0&&<div className="flex items-center gap-2 text-xs"><span className="text-red-500 font-bold">🔴</span><span>Reported <strong>{person.bugsCritical}</strong> critical bugs</span></div>}
-                                        {person.closeRate>=70&&<div className="flex items-center gap-2 text-xs"><span className="text-green-500 font-bold">✅</span><span>Excellent close rate of <strong>{person.closeRate}%</strong></span></div>}
-                                        {person.closeRate>0&&person.closeRate<40&&<div className="flex items-center gap-2 text-xs"><span className="text-amber-500 font-bold">⚠️</span><span><strong>{openBugs.length}</strong> bugs still open — needs attention</span></div>}
-                                        {person.storyPointsCompleted>20&&<div className="flex items-center gap-2 text-xs"><span className="text-violet-500 font-bold">🎯</span><span>Completed <strong>{person.storyPointsCompleted}</strong> story points</span></div>}
-                                        {person.bugsReported>=10&&<div className="flex items-center gap-2 text-xs"><span className="text-blue-500 font-bold">🐛</span><span>Reported <strong>{person.bugsReported}</strong> bugs — active QA contributor</span></div>}
-                                        {peakMonth[0]&&<div className="flex items-center gap-2 text-xs"><span className="text-amber-500 font-bold">📅</span><span>Most active in <strong>{peakMonth[0]}</strong> ({peakMonth[1]} bugs)</span></div>}
+                                        {person.bugsCritical>0&&<div className="flex items-center gap-2 text-xs"><span className="w-3 h-3 rounded-full bg-red-500 inline-block shrink-0"/><span>Reported <strong>{person.bugsCritical}</strong> critical bugs</span></div>}
+                                        {person.closeRate>=70&&<div className="flex items-center gap-2 text-xs"><span className="w-3 h-3 rounded-full bg-green-500 inline-block shrink-0"/><span>Excellent close rate of <strong>{person.closeRate}%</strong></span></div>}
+                                        {person.closeRate>0&&person.closeRate<40&&<div className="flex items-center gap-2 text-xs"><span className="w-3 h-3 rounded-full bg-amber-500 inline-block shrink-0"/><span><strong>{openBugs.length}</strong> bugs still open — needs attention</span></div>}
+                                        {spDone>0&&<div className="flex items-center gap-2 text-xs"><span className="w-3 h-3 rounded-full bg-violet-500 inline-block shrink-0"/><span>Completed <strong>{fmtSP(spDone)}</strong> story points ({spPct}%)</span></div>}
+                                        {spInProgress>0&&<div className="flex items-center gap-2 text-xs"><span className="w-3 h-3 rounded-full bg-amber-400 inline-block shrink-0"/><span><strong>{fmtSP(spInProgress)}</strong> SP currently in progress</span></div>}
+                                        {peakMonth.key&&<div className="flex items-center gap-2 text-xs"><span className="w-3 h-3 rounded-full bg-blue-500 inline-block shrink-0"/><span>Most active in <strong>{peakMonth.month}</strong> ({peakMonth.count} issues)</span></div>}
                                         {person.bugsReported===0&&person.ticketsAssigned===0&&<div className="text-xs text-muted-foreground italic">No activity recorded yet</div>}
                                     </div>
                                 </div>
                             </div>
-                            {/* Recent Activity — shows most recent issues regardless of type */}
+
+                            {/* Recent Activity */}
                             {myReported.length>0&&(
                                 <div>
                                     <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Recent Activity</p>
                                     <div className="space-y-1">
                                         {myReported.slice().sort((a,b)=>b.created.localeCompare(a.created)).slice(0,5).map(issue=>(
-                                            <a key={issue.id} href={issue.url} target="_blank" rel="noopener noreferrer"
-                                                className="flex items-center gap-2 p-2.5 rounded-xl border hover:bg-muted/40 hover:border-primary/30 transition-all group">
-                                                <span className="text-xs font-mono font-bold text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20 shrink-0 min-w-[72px] text-center group-hover:bg-blue-500/20">{issue.key}</span>
+                                            <a key={issue.id} href={issue.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2.5 rounded-xl border hover:bg-muted/40 hover:border-primary/30 transition-all group">
+                                                <span className="text-xs font-mono font-bold text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20 shrink-0 min-w-[72px] text-center">{issue.key}</span>
                                                 <span className="text-[10px] bg-muted/60 px-1.5 py-0.5 rounded-md shrink-0 font-medium">{issue.issueType}</span>
                                                 <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full border shrink-0',PRIORITY_STYLE[issue.priority]||PRIORITY_STYLE.Medium)}>{issue.priority}</span>
                                                 <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded-md shrink-0">{issue.status}</span>
@@ -424,30 +436,43 @@ function MemberProfileModal({ person, allIssues, onClose, onFilterBugs }: { pers
                             )}
                         </div>
                     )}
-                    {tab==='bugs'&&<IssueList issues={myBugs} emptyIcon={<Bug className="w-12 h-12 opacity-20"/>} emptyMsg="No bugs reported"/>}
-                    {tab==='stories'&&<IssueList issues={myStories} emptyIcon={<FileText className="w-12 h-12 opacity-20"/>} emptyMsg="No stories reported"/>}
-                    {tab==='epics'&&<IssueList issues={myEpics} emptyIcon={<Zap className="w-12 h-12 opacity-20"/>} emptyMsg="No epics reported"/>}
-                    {tab==='tasks'&&<IssueList issues={myTasks} emptyIcon={<CheckCircle2 className="w-12 h-12 opacity-20"/>} emptyMsg="No tasks reported"/>}
-                    {tab==='live'&&<IssueList issues={myLive} emptyIcon={<Globe className="w-12 h-12 opacity-20"/>} emptyMsg="No live build tickets"/>}
-                    {tab==='assigned'&&<IssueList issues={myAssigned} emptyIcon={<Layers className="w-12 h-12 opacity-20"/>} emptyMsg="No tickets assigned"/>}
+
+                    {/* ISSUE LIST TABS */}
+                    {tab==='bugs'&&<IssueList issues={myBugs} emptyMsg="No bugs reported"/>}
+                    {tab==='stories'&&<IssueList issues={myStories} emptyMsg="No stories reported"/>}
+                    {tab==='epics'&&<IssueList issues={myEpics} emptyMsg="No epics reported"/>}
+                    {tab==='tasks'&&<IssueList issues={myTasks} emptyMsg="No tasks reported"/>}
+                    {tab==='live'&&<IssueList issues={myLive} emptyMsg="No live build tickets"/>}
+                    {tab==='assigned'&&<IssueList issues={myAssigned} emptyMsg="No tickets assigned"/>}
+
+                    {/* MONTHLY TAB */}
                     {tab==='monthly'&&(
                         <div className="p-4 space-y-3">
                             {Object.keys(person.monthly).length===0&&<div className="flex flex-col items-center justify-center py-16 text-muted-foreground"><Calendar className="w-12 h-12 mb-3 opacity-20"/><div className="font-medium">No monthly data</div></div>}
                             {Object.entries(person.monthly).sort((a,b)=>b[0].localeCompare(a[0])).map(([month,stats])=>{
-                                const total=stats.reported||0;const cr=total>0?Math.round((stats.closed/total)*100):0;
+                                const total=stats.reported||0;
+                                const cr=total>0?Math.round((stats.closed/total)*100):0;
+                                const fmt=(v:number)=>v%1===0?String(v):v.toFixed(1);
                                 return (
                                     <div key={month} className="rounded-xl border bg-card overflow-hidden">
                                         <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-b">
                                             <span className="text-sm font-bold">{month}</span>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-xs text-muted-foreground">{total} bugs</span>
-                                                <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full',cr>=70?'bg-green-500/15 text-green-700':cr>=40?'bg-amber-500/15 text-amber-700':'bg-red-500/15 text-red-700')}>{cr}% closed</span>
+                                                <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full',cr>=70?'bg-green-500/15 text-green-700':cr>=40?'bg-amber-500/15 text-amber-700':'bg-red-500/15 text-red-700')}>{cr}% done</span>
                                             </div>
                                         </div>
-                                        <div className="grid grid-cols-4 divide-x divide-border">
-                                            {[{l:'Reported',v:stats.reported,c:'text-slate-700',bg:''},{l:'Open',v:stats.open,c:'text-red-600',bg:'bg-red-500/5'},{l:'Closed',v:stats.closed,c:'text-green-600',bg:'bg-green-500/5'},{l:'Assigned',v:stats.assigned,c:'text-blue-600',bg:'bg-blue-500/5'}].map(({l,v,c,bg})=>(
+                                        <div className="grid grid-cols-6 divide-x divide-border">
+                                            {[
+                                                {l:'Reported',v:stats.reported,c:'text-slate-700',bg:''},
+                                                {l:'To-Do',v:stats.open,c:'text-red-600',bg:'bg-red-500/5'},
+                                                {l:'Inprogress',v:(stats as any).inProgress||0,c:'text-amber-600',bg:'bg-amber-500/5'},
+                                                {l:'Done',v:stats.closed,c:'text-green-600',bg:'bg-green-500/5'},
+                                                {l:'Assigned',v:stats.assigned,c:'text-blue-600',bg:'bg-blue-500/5'},
+                                                {l:'Story Pts',v:stats.storyPoints||0,c:'text-violet-600',bg:'bg-violet-500/5'},
+                                            ].map(({l,v,c,bg})=>(
                                                 <div key={l} className={cn('py-3 text-center',bg)}>
-                                                    <div className={cn('text-xl font-black',c)}>{v}</div>
+                                                    <div className={cn('text-xl font-black',c)}>{typeof v==='number'&&v%1!==0?v.toFixed(1):v}</div>
                                                     <div className="text-[10px] text-muted-foreground font-medium">{l}</div>
                                                 </div>
                                             ))}
@@ -463,7 +488,8 @@ function MemberProfileModal({ person, allIssues, onClose, onFilterBugs }: { pers
     );
 }
 
-// ─── Teams Tab ────────────────────────────────────────────────────────────────
+
+// --- Teams Tab ----------------------------------------------------------------
 function TeamsTab({ allPeople, allIssues, jiraTeams, allTeams, onSelectPerson }: {
     allPeople: PersonKPI[];
     allIssues: JiraIssueRaw[];
@@ -474,14 +500,14 @@ function TeamsTab({ allPeople, allIssues, jiraTeams, allTeams, onSelectPerson }:
     const [selectedTeam, setSelectedTeam] = useState<string|null>(null);
     const [memberSearch, setMemberSearch] = useState('');
 
-    // Build a lookup: accountId → PersonKPI (for stats)
+    // Build a lookup: accountId -> PersonKPI (for stats)
     const personById = useMemo(()=>{
         const m=new Map<string,PersonKPI>();
         allPeople.forEach(p=>m.set(p.userId,p));
         return m;
     },[allPeople]);
 
-    // Build a lookup: displayName (lowercase) → PersonKPI (fallback match)
+    // Build a lookup: displayName (lowercase) -> PersonKPI (fallback match)
     const personByName = useMemo(()=>{
         const m=new Map<string,PersonKPI>();
         allPeople.forEach(p=>m.set(p.name.toLowerCase().trim(),p));
@@ -495,7 +521,7 @@ function TeamsTab({ allPeople, allIssues, jiraTeams, allTeams, onSelectPerson }:
                    userId:accountId, name:displayName, avatarUrl:undefined,
                    bugsReported:0, bugsOpen:0, bugsClosed:0, bugsInProgress:0, bugsCritical:0, bugsHigh:0,
                    ticketsAssigned:0, assignedOpen:0, assignedClosed:0, assignedInProgress:0,
-                   storyPointsAssigned:0, storyPointsCompleted:0,
+                   storyPointsAssigned:0, storyPointsCompleted:0, storyPointsInProgress:0, storyPointsTodo:0,
                    storiesReported:0, epicsReported:0, tasksReported:0, totalIssues:0,
                    qualityScore:0, closeRate:0, teams:[], monthly:{},
                };
@@ -540,13 +566,13 @@ function TeamsTab({ allPeople, allIssues, jiraTeams, allTeams, onSelectPerson }:
             const open = teamBugs.filter(b=>classifyStatus(b.status)==='open').length;
             const closed = teamBugs.filter(b=>classifyStatus(b.status)==='closed').length;
             const critical = teamBugs.filter(b=>b.priority==='Highest').length;
-            const closeRate = teamBugs.length>0?Math.round((closed/teamBugs.length)*100):0;
+            const closeRate = teamBugs.length>0?Math.min(100,Math.round((closed/teamBugs.length)*100)):0;
             const totalSP = memberKPIs.reduce((s,p)=>s+p.storyPointsAssigned,0);
             const doneSP = memberKPIs.reduce((s,p)=>s+p.storyPointsCompleted,0);
             const liveBuilds = teamIssues.filter(i=>i.isLive).length;
             const stories = teamIssues.filter(i=>i.issueType==='Story').length;
 
-            // Monthly trend — last 6 months of bugs
+            // Monthly trend - last 6 months of bugs
             const monthlyBugs = new Map<string,number>();
             teamBugs.forEach(b=>{
                 const mk = b.created.slice(0,7);
@@ -717,6 +743,82 @@ function TeamsTab({ allPeople, allIssues, jiraTeams, allTeams, onSelectPerson }:
                         </div>
                     </div>
 
+                    {/* Team Monthly Report */}
+                    <Card>
+                        <CardHeader className="pb-3">
+                            <CardTitle className="text-base flex items-center gap-2">
+                                <Calendar className="w-4 h-4 text-primary"/> Team Monthly Report
+                            </CardTitle>
+                            <CardDescription className="text-xs">Month-by-month breakdown of team performance</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {(() => {
+                                // Calculate team monthly stats by aggregating all member monthly data
+                                const teamMonthlyMap = new Map<string, {reported:number; open:number; inProgress:number; closed:number; assigned:number; storyPoints:number}>();
+                                
+                                selectedTeamData.memberKPIs.forEach(member => {
+                                    Object.entries(member.monthly).forEach(([month, stats]) => {
+                                        const existing = teamMonthlyMap.get(month) || {reported:0, open:0, inProgress:0, closed:0, assigned:0, storyPoints:0};
+                                        teamMonthlyMap.set(month, {
+                                            reported: existing.reported + (stats.reported || 0),
+                                            open: existing.open + (stats.open || 0),
+                                            inProgress: existing.inProgress + ((stats as any).inProgress || 0),
+                                            closed: existing.closed + (stats.closed || 0),
+                                            assigned: existing.assigned + (stats.assigned || 0),
+                                            storyPoints: existing.storyPoints + (stats.storyPoints || 0),
+                                        });
+                                    });
+                                });
+
+                                const teamMonthlyEntries = Array.from(teamMonthlyMap.entries()).sort((a,b)=>b[0].localeCompare(a[0]));
+                                const formatDecimal=(v:number)=>v%1===0?v.toString():v.toFixed(1);
+
+                                if (teamMonthlyEntries.length === 0) {
+                                    return (
+                                        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                                            <Calendar className="w-10 h-10 mb-3 opacity-20"/>
+                                            <div className="font-medium">No monthly data available</div>
+                                        </div>
+                                    );
+                                }
+
+                                return teamMonthlyEntries.map(([month, stats]) => {
+                                    const total = stats.reported || 0;
+                                    const cr = total > 0 ? Math.round((stats.closed / total) * 100) : 0;
+                                    // Use real inProgress field tracked per-bug status
+                                    const inprogress = (stats as any).inProgress || 0;
+
+                                    return (
+                                        <div key={month} className="rounded-xl border bg-card overflow-hidden">
+                                            <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-b">
+                                                <span className="text-sm font-bold">{month}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-muted-foreground">{total} bugs</span>
+                                                    <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full',cr>=70?'bg-green-500/15 text-green-700':cr>=40?'bg-amber-500/15 text-amber-700':'bg-red-500/15 text-red-700')}>{cr}% done</span>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-6 divide-x divide-border">
+                                                {[
+                                                    {l:'Reported',v:stats.reported,c:'text-slate-700',bg:'',isDecimal:false},
+                                                    {l:'To-Do',v:stats.open,c:'text-red-600',bg:'bg-red-500/5',isDecimal:false},
+                                                    {l:'Inprogress',v:inprogress,c:'text-amber-600',bg:'bg-amber-500/5',isDecimal:false},
+                                                    {l:'Done',v:stats.closed,c:'text-green-600',bg:'bg-green-500/5',isDecimal:false},
+                                                    {l:'Assigned',v:stats.assigned,c:'text-blue-600',bg:'bg-blue-500/5',isDecimal:false},
+                                                    {l:'Story Points',v:stats.storyPoints||0,c:'text-violet-600',bg:'bg-violet-500/5',isDecimal:true}
+                                                ].map(({l,v,c,bg,isDecimal})=>(
+                                                    <div key={l} className={cn('py-3 text-center',bg)}>
+                                                        <div className={cn('text-xl font-black',c)}>{isDecimal?formatDecimal(v):v}</div>
+                                                        <div className="text-[10px] text-muted-foreground font-medium">{l}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                });
+                            })()}
+                        </CardContent>
+                    </Card>
+
                     {/* Members grid */}
                     <div>
                         <div className="flex items-center justify-between mb-3">
@@ -819,7 +921,7 @@ function TeamsTab({ allPeople, allIssues, jiraTeams, allTeams, onSelectPerson }:
                                                         ))}
                                                     </div>
                                                 ) : (
-                                                    /* No reported issues — show assigned work */
+                                                    /* No reported issues - show assigned work */
                                                     <div className="grid grid-cols-3 gap-1.5 text-center mb-3">
                                                         {[
                                                             {label:'Assigned',value:member.ticketsAssigned,c:'text-blue-600',bg:'bg-blue-500/8'},
@@ -834,7 +936,7 @@ function TeamsTab({ allPeople, allIssues, jiraTeams, allTeams, onSelectPerson }:
                                                     </div>
                                                 )}
 
-                                                {/* Progress bars — role-aware */}
+                                                {/* Progress bars - role-aware */}
                                                 <div className="space-y-1.5">
                                                     {hasBugs&&(
                                                         <div className="flex items-center gap-2">
@@ -854,7 +956,7 @@ function TeamsTab({ allPeople, allIssues, jiraTeams, allTeams, onSelectPerson }:
                                                             <span className={cn('text-[10px] font-bold w-8 text-right',spPct>=70?'text-emerald-600':spPct>=40?'text-amber-600':'text-violet-600')}>{spPct}%</span>
                                                         </div>
                                                     )}
-                                                    {/* Delivery rate — single headline metric */}
+                                                    {/* Delivery rate - single headline metric */}
                                                     {deliveryRate>0&&(
                                                         <div className="flex items-center justify-between pt-1 border-t border-border/40">
                                                             <span className="text-[10px] text-muted-foreground">Delivery Rate</span>
@@ -866,8 +968,8 @@ function TeamsTab({ allPeople, allIssues, jiraTeams, allTeams, onSelectPerson }:
                                                 {/* Footer */}
                                                 <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-border/50">
                                                     <div className="flex items-center gap-3 text-[10px] text-muted-foreground flex-wrap">
-                                                        {member.ticketsAssigned>0&&<span>📋 {member.ticketsAssigned} assigned</span>}
-                                                        {hasSP&&<span>⭐ {member.storyPointsAssigned} SP</span>}
+                                                        {member.ticketsAssigned>0&&<span>{member.ticketsAssigned} assigned</span>}
+                                                        {hasSP&&<span>{member.storyPointsAssigned} SP</span>}
                                                         {!hasBugs&&!hasSP&&!hasStories&&member.ticketsAssigned===0&&<span className="italic">No activity yet</span>}
                                                     </div>
                                                     <span className="text-[10px] text-primary font-medium group-hover:underline shrink-0">View profile →</span>
@@ -891,18 +993,18 @@ function TeamsTab({ allPeople, allIssues, jiraTeams, allTeams, onSelectPerson }:
     );
 }
 
-// ─── Work Logs Tab ────────────────────────────────────────────────────────────
+// --- Work Logs Tab ------------------------------------------------------------
 interface WorkLogData {
     worklogs: Array<{issueKey:string;issueUrl?:string;author:string;authorId:string;timeSpentSeconds:number;timeSpent:string;started:string;comment:string}>;
     byUser: Array<{authorId:string;author:string;totalSeconds:number;totalHours:number;logCount:number;issueCount:number}>;
     totalIssuesWithLogs:number; fromCache:boolean;
 }
 const WORK_BADGES=[
-    {min:40,emoji:'🔥',label:'On Fire',color:'text-red-600',bg:'bg-red-500/10 border-red-500/30'},
-    {min:30,emoji:'⚡',label:'Power User',color:'text-amber-600',bg:'bg-amber-500/10 border-amber-500/30'},
-    {min:20,emoji:'💪',label:'Hard Worker',color:'text-blue-600',bg:'bg-blue-500/10 border-blue-500/30'},
-    {min:10,emoji:'🌟',label:'Active',color:'text-purple-600',bg:'bg-purple-500/10 border-purple-500/30'},
-    {min:0,emoji:'🌱',label:'Getting Started',color:'text-green-600',bg:'bg-green-500/10 border-green-500/30'},
+    {min:40,label:'On Fire',color:'text-red-600',bg:'bg-red-500/10 border-red-500/30'},
+    {min:30,label:'Power User',color:'text-amber-600',bg:'bg-amber-500/10 border-amber-500/30'},
+    {min:20,label:'Hard Worker',color:'text-blue-600',bg:'bg-blue-500/10 border-blue-500/30'},
+    {min:10,label:'Active',color:'text-purple-600',bg:'bg-purple-500/10 border-purple-500/30'},
+    {min:0,label:'Getting Started',color:'text-green-600',bg:'bg-green-500/10 border-green-500/30'},
 ];
 function getWorkBadge(h:number){return WORK_BADGES.find(b=>h>=b.min)||WORK_BADGES[WORK_BADGES.length-1];}
 
@@ -933,7 +1035,7 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
         catch(e){console.error('Worklogs error:',e);}finally{setLoading(false);}
     };
 
-    // Build a name→accountId map from kpiPeople for matching work log authors
+    // Build a name?accountId map from kpiPeople for matching work log authors
     const nameToPersonMap = useMemo(()=>{
         const m=new Map<string,PersonKPI>();
         kpiPeople.forEach(p=>m.set(p.name.toLowerCase().trim(),p));
@@ -979,7 +1081,7 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
             const person=idToPersonMap.get(localMember);
             users=users.filter(u=>u.authorId===localMember||(person&&u.author.toLowerCase().trim()===person.name.toLowerCase().trim()));
         } else if(localTeam!=='all'&&teamMemberIds){
-            // Filter to only team members — match by accountId OR name
+            // Filter to only team members - match by accountId OR name
             users=users.filter(u=>teamMemberIds.ids.has(u.authorId)||teamMemberIds.names.has(u.author.toLowerCase().trim()));
         }
         return users;
@@ -1005,12 +1107,12 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
                 <div className="relative z-10">
                     <div className="flex items-center justify-between flex-wrap gap-4">
                         <div>
-                            <h2 className="text-xl font-bold flex items-center gap-2">⏱️ Work Log Analytics</h2>
+                            <h2 className="text-xl font-bold flex items-center gap-2">Work Log Analytics</h2>
                             <p className="text-sm text-muted-foreground mt-1">
                                 {loaded
                                     ? localTeam!=='all'
-                                        ? `${filteredUsers.length} of ${kpiPeople.filter(p=>p.teams.includes(localTeam)).length} ${localTeam} members logged · ${totalHours}h in last ${days} days`
-                                        : `${filteredUsers.length} members · ${totalHours}h total in last ${days} days`
+                                        ? `${filteredUsers.length} of ${kpiPeople.filter(p=>p.teams.includes(localTeam)).length} ${localTeam} members logged \u00b7 ${totalHours}h in last ${days} days`
+                                        : `${filteredUsers.length} members \u00b7 ${totalHours}h total in last ${days} days`
                                     : 'Track time logged by your team in Jira'}
                             </p>
                         </div>
@@ -1028,13 +1130,13 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
                     <div className="flex items-center gap-2 flex-wrap mt-3 pt-3 border-t border-white/20">
                         <Select value={localTeam} onValueChange={v=>{setLocalTeam(v);setLocalMember('all');}}>
                             <SelectTrigger className={cn('w-36 h-7 text-xs bg-background/80',localTeam!=='all'&&'border-primary font-medium')}><SelectValue placeholder="All Teams"/></SelectTrigger>
-                            <SelectContent><SelectItem value="all">🏢 All Teams</SelectItem>{allTeams.map(t=><SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                            <SelectContent><SelectItem value="all">All Teams</SelectItem>{allTeams.map(t=><SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                         </Select>
                         <Select value={localMember} onValueChange={setLocalMember}>
                             <SelectTrigger className={cn('w-44 h-7 text-xs bg-background/80',localMember!=='all'&&'border-primary font-medium')}><SelectValue placeholder="All Members"/></SelectTrigger>
-                            <SelectContent><SelectItem value="all">👥 All Members</SelectItem>{allMembers.map(p=><SelectItem key={p.userId} value={p.userId}>{p.name}</SelectItem>)}</SelectContent>
+                            <SelectContent><SelectItem value="all">All Members</SelectItem>{allMembers.map(p=><SelectItem key={p.userId} value={p.userId}>{p.name}</SelectItem>)}</SelectContent>
                         </Select>
-                        {(localTeam!=='all'||localMember!=='all')&&<Button variant="ghost" size="sm" className="h-7 text-xs text-destructive" onClick={()=>{setLocalTeam('all');setLocalMember('all');}}>✕ Clear</Button>}
+                        {(localTeam!=='all'||localMember!=='all')&&<Button variant="ghost" size="sm" className="h-7 text-xs text-destructive" onClick={()=>{setLocalTeam('all');setLocalMember('all');}}>Clear</Button>}
                     </div>
                 </div>
                 <div className="absolute top-0 right-0 w-40 h-40 bg-primary/15 rounded-full blur-3xl"/>
@@ -1042,7 +1144,7 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
 
             {!loaded&&!loading&&(
                 <Card><CardContent className="py-16 text-center">
-                    <div className="text-5xl mb-4">⏱️</div>
+                    <div className="text-5xl mb-4 opacity-30 text-muted-foreground">WL</div>
                     <div className="text-lg font-bold mb-2">Ready to track your team&apos;s effort?</div>
                     <div className="text-sm text-muted-foreground mb-4">Click &quot;Load Work Logs&quot; to see who&apos;s putting in the hours</div>
                     <Button onClick={load} className="gap-2"><RefreshCw className="w-4 h-4"/> Load Work Logs</Button>
@@ -1057,13 +1159,13 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
 
             {loaded&&!loading&&(
                 <>
-                    {/* Missed loggers — only shown when a team is selected */}
+                    {/* Missed loggers - only shown when a team is selected */}
                     {missedLoggers.length>0&&(
                         <Card className="border-amber-500/40 bg-amber-500/5">
                             <CardContent className="p-4">
                                 <div className="flex items-center gap-2 mb-3">
                                     <AlertCircle className="w-4 h-4 text-amber-600"/>
-                                    <span className="text-sm font-semibold text-amber-700">No Logs Recorded — {localTeam} ({missedLoggers.length})</span>
+                                    <span className="text-sm font-semibold text-amber-700">No Logs Recorded &mdash; {localTeam} ({missedLoggers.length})</span>
                                     <span className="text-xs text-muted-foreground">no work logs in the last {days} days</span>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -1097,12 +1199,12 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
                     {topUser&&filteredUsers.length>0&&(
                         <div className="grid grid-cols-3 gap-3">
                             {[
-                                {label:'Total Hours Logged',value:`${totalHours}h`,icon:'⏱️',color:'text-blue-600'},
-                                {label:'Top Contributor',value:topUser.author,icon:'🏆',color:'text-amber-600'},
-                                {label:'Active Members',value:String(filteredUsers.length),icon:'👥',color:'text-green-600'},
+                                {label:'Total Hours Logged',value:`${totalHours}h`,color:'text-blue-600'},
+                                {label:'Top Contributor',value:topUser.author,color:'text-amber-600'},
+                                {label:'Active Members',value:String(filteredUsers.length),color:'text-green-600'},
                             ].map(s=>(
                                 <Card key={s.label}><CardContent className="p-4 text-center">
-                                    <div className="text-2xl mb-1">{s.icon}</div>
+                                    
                                     <div className={cn('text-lg font-bold truncate',s.color)}>{s.value}</div>
                                     <div className="text-xs text-muted-foreground">{s.label}</div>
                                 </CardContent></Card>
@@ -1110,7 +1212,7 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
                         </div>
                     )}
 
-                    {/* Work log leaderboard — clickable rows */}
+                    {/* Work log leaderboard - clickable rows */}
                     {filteredUsers.length>0&&(
                         <div className="space-y-2">
                             {filteredUsers.map((user,idx)=>{
@@ -1119,21 +1221,21 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
                                 const peak=isExpanded?userFeaturePeak(user.authorId):[];
                                 const person=getPersonForUser(user);
                                 const av=getAvatarStyle(user.author);
-                                const medals=['🥇','🥈','🥉'];
+                                const medals=['#1','#2','#3'];
                                 return (
                                     <Card key={user.authorId} className={cn('transition-all hover:shadow-md',isExpanded&&'ring-1 ring-primary/30')}>
                                         <CardContent className="p-0">
-                                            {/* Main row — click to expand */}
+                                            {/* Main row - click to expand */}
                                             <div className="flex items-center gap-3 p-4 cursor-pointer" onClick={()=>setExpandedUser(isExpanded?null:user.authorId)}>
                                                 <span className="text-base font-bold text-muted-foreground w-7 text-center shrink-0">{idx<3?medals[idx]:`#${idx+1}`}</span>
                                                 <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0',av.bg)}>{user.author.charAt(0).toUpperCase()}</div>
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex items-center gap-2 flex-wrap">
                                                         <span className="font-semibold text-sm">{user.author}</span>
-                                                        <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full border font-medium',badge.bg,badge.color)}>{badge.emoji} {badge.label}</span>
+                                                        <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full border font-medium',badge.bg,badge.color)}>{badge.label}</span>
                                                         {person&&person.teams.length>0&&<span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">{person.teams[0]}</span>}
                                                     </div>
-                                                    <div className="text-xs text-muted-foreground mt-0.5">{user.logCount} logs · {user.issueCount} issues</div>
+                                                    <div className="text-xs text-muted-foreground mt-0.5">{user.logCount} logs &middot; {user.issueCount} issues</div>
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     {/* View profile button */}
@@ -1184,7 +1286,7 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
 }
 
 
-// ─── Main Dashboard ───────────────────────────────────────────────────────────
+// --- Main Dashboard -----------------------------------------------------------
 export default function KPIDashboard() {
     const { kpi, loading, error, lastSync, forceRefresh } = useJiraKPI();
     const { exportData, exporting } = useExport();
@@ -1199,22 +1301,26 @@ export default function KPIDashboard() {
     const [sortBy, setSortBy] = useState<'bugsReported'|'ticketsAssigned'|'storyPointsAssigned'|'closeRate'|'storiesReported'>('bugsReported');
     const [issueSearch, setIssueSearch] = useState('');
     
-    // Temporary filter state (not applied yet)
-    const [tempIssueStatusFilter, setTempIssueStatusFilter] = useState('all');
-    const [tempIssuePriorityFilter, setTempIssuePriorityFilter] = useState('all');
-    const [tempIssueAssigneeFilter, setTempIssueAssigneeFilter] = useState('all');
-    const [tempIssueReporterFilter, setTempIssueReporterFilter] = useState('all');
-    const [tempIssueDateFrom, setTempIssueDateFrom] = useState('');
-    const [tempIssueDateTo, setTempIssueDateTo] = useState('');
-    
-    // Applied filters (used for actual filtering)
+    // Instant filters - single state, no pending/apply pattern
     const [issueStatusFilter, setIssueStatusFilter] = useState('all');
     const [issuePriorityFilter, setIssuePriorityFilter] = useState('all');
     const [issueAssigneeFilter, setIssueAssigneeFilter] = useState('all');
     const [issueReporterFilter, setIssueReporterFilter] = useState('all');
     const [issueDateFrom, setIssueDateFrom] = useState('');
     const [issueDateTo, setIssueDateTo] = useState('');
-    
+    // Aliases so existing code using temp* still works without changes
+    const setTempIssueStatusFilter = setIssueStatusFilter;
+    const setTempIssuePriorityFilter = setIssuePriorityFilter;
+    const setTempIssueAssigneeFilter = setIssueAssigneeFilter;
+    const setTempIssueReporterFilter = setIssueReporterFilter;
+    const setTempIssueDateFrom = setIssueDateFrom;
+    const setTempIssueDateTo = setIssueDateTo;
+    const tempIssueStatusFilter = issueStatusFilter;
+    const tempIssuePriorityFilter = issuePriorityFilter;
+    const tempIssueAssigneeFilter = issueAssigneeFilter;
+    const tempIssueReporterFilter = issueReporterFilter;
+    const tempIssueDateFrom = issueDateFrom;
+    const tempIssueDateTo = issueDateTo;
     const [activeTab, setActiveTab] = useState('team');
     const [drilldownLabel, setDrilldownLabel] = useState<string|null>(null);
     const [selectedPerson, setSelectedPerson] = useState<PersonKPI|null>(null);
@@ -1224,40 +1330,13 @@ export default function KPIDashboard() {
     const [isPolling, setIsPolling] = useState(true);
     const [pollingInterval] = useState(30000); // 30 seconds
     
-    // Check if filters changed
-    const filtersChanged = 
-        tempIssueStatusFilter !== issueStatusFilter ||
-        tempIssuePriorityFilter !== issuePriorityFilter ||
-        tempIssueAssigneeFilter !== issueAssigneeFilter ||
-        tempIssueReporterFilter !== issueReporterFilter ||
-        tempIssueDateFrom !== issueDateFrom ||
-        tempIssueDateTo !== issueDateTo;
-    
-    // Apply button handler — copies temp → applied, NO forceRefresh (data is already loaded)
-    const handleApplyFilters = useCallback(() => {
-        setIssueStatusFilter(tempIssueStatusFilter);
-        setIssuePriorityFilter(tempIssuePriorityFilter);
-        setIssueAssigneeFilter(tempIssueAssigneeFilter);
-        setIssueReporterFilter(tempIssueReporterFilter);
-        setIssueDateFrom(tempIssueDateFrom);
-        setIssueDateTo(tempIssueDateTo);
-        setDrilldownLabel(null); // clear any drilldown label when manually applying
-    }, [tempIssueStatusFilter, tempIssuePriorityFilter, tempIssueAssigneeFilter, tempIssueReporterFilter, tempIssueDateFrom, tempIssueDateTo]);
-    
-    // Reset button handler - atomically clears both temp and applied
+    // filtersChanged is always false (instant filters)
+    const filtersChanged = false;
+    const handleApplyFilters = useCallback(() => {}, []);
     const handleResetFilters = useCallback(() => {
-        setTempIssueStatusFilter('all');
-        setTempIssuePriorityFilter('all');
-        setTempIssueAssigneeFilter('all');
-        setTempIssueReporterFilter('all');
-        setTempIssueDateFrom('');
-        setTempIssueDateTo('');
-        setIssueStatusFilter('all');
-        setIssuePriorityFilter('all');
-        setIssueAssigneeFilter('all');
-        setIssueReporterFilter('all');
-        setIssueDateFrom('');
-        setIssueDateTo('');
+        setIssueStatusFilter('all'); setIssuePriorityFilter('all');
+        setIssueAssigneeFilter('all'); setIssueReporterFilter('all');
+        setIssueDateFrom(''); setIssueDateTo('');
         setDrilldownLabel(null);
     }, []);
     
@@ -1324,11 +1403,14 @@ export default function KPIDashboard() {
         }
         if (filters.issueType) {
             setFilterType(filters.issueType as any);
+        } else if (filters.statusFilter || filters.priorityFilter) {
+            // When drilling from bug status/priority cards, force Bug type
+            setFilterType('Bug');
         }
         setDrilldownLabel(null);
         // Switch to issues tab
         setActiveTab('issues');
-        // Scroll to issues tab (no forceRefresh — data is already loaded)
+        // Scroll to issues tab (no forceRefresh - data is already loaded)
         setTimeout(() => tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
     };
 
@@ -1367,7 +1449,7 @@ export default function KPIDashboard() {
         if(memberFilter!=='all'){
             people=people.filter(p=>p.userId===memberFilter);
         } else if(teamFilter!=='all'){
-            // Filter by team — works whether teams came from API or issue field
+            // Filter by team - works whether teams came from API or issue field
             people=people.filter(p=>p.teams.includes(teamFilter));
         }
         if(memberSearch){const q=memberSearch.toLowerCase();people=people.filter(p=>p.name.toLowerCase().includes(q));}
@@ -1413,9 +1495,9 @@ export default function KPIDashboard() {
             issues=Array.from(new Map(issues.map(i=>[i.id,i])).values());
         }
         if(filterMonth!=='all') issues=issues.filter(i=>i.created.startsWith(filterMonth));
-        if(issueStatusFilter==='open_group') issues=issues.filter(i=>OPEN_STATUSES.has(i.status)||(!CLOSED_STATUSES.has(i.status)&&!IP_STATUSES.has(i.status)));
-        else if(issueStatusFilter==='closed_group') issues=issues.filter(i=>CLOSED_STATUSES.has(i.status));
-        else if(issueStatusFilter==='in_progress_group') issues=issues.filter(i=>IP_STATUSES.has(i.status));
+        if(issueStatusFilter==='open_group') issues=issues.filter(i=>classifyStatus(i.status)==='open');
+        else if(issueStatusFilter==='closed_group') issues=issues.filter(i=>classifyStatus(i.status)==='closed');
+        else if(issueStatusFilter==='in_progress_group') issues=issues.filter(i=>classifyStatus(i.status)==='in_progress');
         else if(issueStatusFilter!=='all') issues=issues.filter(i=>i.status===issueStatusFilter);
         if(issuePriorityFilter!=='all') issues=issues.filter(i=>i.priority===issuePriorityFilter);
         if(issueAssigneeFilter!=='all') issues=issues.filter(i=>i.assignee?.accountId===issueAssigneeFilter);
@@ -1463,7 +1545,7 @@ export default function KPIDashboard() {
 
     const hasActiveFilters = teamFilter!=='all'||memberFilter!=='all'||filterMonth!=='all'||issueStatusFilter!=='all'||issuePriorityFilter!=='all'||issueSearch!==''||issueAssigneeFilter!=='all'||issueReporterFilter!=='all'||issueDateFrom!==''||issueDateTo!=='';
 
-    // Period card data helper — must be before early returns (React hooks rule)
+    // Period card data helper - must be before early returns (React hooks rule)
     const periodCards = useMemo(() => [
         {title:'Overall (All Time)',icon:Award,color:'text-purple-500',border:'border-purple-500/40',bg:'bg-purple-500/5',
          data:teamScopedStats?teamScopedStats.overall:{total:kpi?.counts.bugs||0,open:Object.entries(kpi?.byStatus||{}).filter(([s])=>['New','Open','Reopen'].includes(s)).reduce((a,[,v])=>a+v,0),closed:Object.entries(kpi?.byStatus||{}).filter(([s])=>['Fixed','Closed','QA Verified','By Design','Deferred'].includes(s)).reduce((a,[,v])=>a+v,0),inProgress:Object.entries(kpi?.byStatus||{}).filter(([s])=>['Inprogress','In Progress','Retest'].includes(s)).reduce((a,[,v])=>a+v,0),critical:kpi?.bugs.filter(b=>b.priority==='Highest').length||0,high:kpi?.bugs.filter(b=>b.priority==='High').length||0},
@@ -1515,10 +1597,10 @@ export default function KPIDashboard() {
                         <div>
                             <h1 className="text-2xl font-bold">Jira KPI Dashboard</h1>
                             <p className="text-sm text-muted-foreground mt-0.5">
-                                {n(kpi?.counts.total)} total issues · Auto-syncs every {isPolling ? '30 sec' : '10 min'}
-                                {lastSync&&<span suppressHydrationWarning className="ml-2 opacity-60">· Synced {lastSync.toLocaleTimeString()}</span>}
-                                {kpi?.fromCache&&<span className="ml-2 text-amber-600 text-xs">· Cached ({kpi.cacheAge}s old)</span>}
-                                {kpi?.refreshing&&<span className="ml-2 text-blue-600 text-xs">· Refreshing...</span>}
+                                {n(kpi?.counts.total)} total issues — Auto-syncs every {isPolling ? '30 sec' : '10 min'}
+                                {lastSync&&<span suppressHydrationWarning className="ml-2 opacity-60">— Synced {lastSync.toLocaleTimeString()}</span>}
+                                {kpi?.fromCache&&<span className="ml-2 text-amber-600 text-xs">— Cached ({kpi.cacheAge}s old)</span>}
+                                {kpi?.refreshing&&<span className="ml-2 text-blue-600 text-xs">— Refreshing...</span>}
                             </p>
                         </div>
                     </div>
@@ -1554,17 +1636,17 @@ export default function KPIDashboard() {
             {/* GLOBAL ACTIVE FILTER BAR */}
             <ActiveFilterBar
                 filters={[
-                    {key:'team',label:'🏢 Team',value:teamFilter,onClear:()=>setTeamFilter('all'),color:'bg-primary/10 text-primary border-primary/30'},
-                    {key:'member',label:'👤 Member',value:kpi?.people.find(p=>p.userId===memberFilter)?.name||'',onClear:()=>setMemberFilter('all'),color:'bg-blue-500/10 text-blue-700 border-blue-500/30'},
-                    {key:'month',label:'📅 Month',value:filterMonth==='all'?'':kpi?.monthly.find(m=>m.month===filterMonth)?.label||filterMonth,onClear:()=>setFilterMonth('all')},
-                    {key:'status',label:'🔵 Status',value:issueStatusFilter==='all'?'':issueStatusFilter==='open_group'?'Open':issueStatusFilter==='closed_group'?'Closed':issueStatusFilter==='in_progress_group'?'In Progress':issueStatusFilter,onClear:()=>{setIssueStatusFilter('all');setTempIssueStatusFilter('all');}},
-                    {key:'priority',label:'⚡ Priority',value:issuePriorityFilter==='all'?'':issuePriorityFilter,onClear:()=>{setIssuePriorityFilter('all');setTempIssuePriorityFilter('all');}},
-                    {key:'type',label:'📋 Type',value:filterType==='all'?'':filterType,onClear:()=>setFilterType('all')},
-                    {key:'assignee',label:'👤 Assignee',value:issueAssigneeFilter==='all'?'':kpi?.people.find(p=>p.userId===issueAssigneeFilter)?.name||issueAssigneeFilter,onClear:()=>{setIssueAssigneeFilter('all');setTempIssueAssigneeFilter('all');},color:'bg-cyan-500/10 text-cyan-700 border-cyan-500/30'},
-                    {key:'reporter',label:'📝 Reporter',value:issueReporterFilter==='all'?'':kpi?.people.find(p=>p.userId===issueReporterFilter)?.name||issueReporterFilter,onClear:()=>{setIssueReporterFilter('all');setTempIssueReporterFilter('all');},color:'bg-violet-500/10 text-violet-700 border-violet-500/30'},
-                    {key:'dateFrom',label:'📆 From',value:issueDateFrom,onClear:()=>{setIssueDateFrom('');setTempIssueDateFrom('');}},
-                    {key:'dateTo',label:'📆 To',value:issueDateTo,onClear:()=>{setIssueDateTo('');setTempIssueDateTo('');}},
-                    {key:'search',label:'🔍 Search',value:issueSearch,onClear:()=>setIssueSearch('')},
+                    {key:'team',label:'Team',value:teamFilter,onClear:()=>setTeamFilter('all'),color:'bg-primary/10 text-primary border-primary/30'},
+                    {key:'member',label:'Member',value:kpi?.people.find(p=>p.userId===memberFilter)?.name||'',onClear:()=>setMemberFilter('all'),color:'bg-blue-500/10 text-blue-700 border-blue-500/30'},
+                    {key:'month',label:'Month',value:filterMonth==='all'?'':kpi?.monthly.find(m=>m.month===filterMonth)?.label||filterMonth,onClear:()=>setFilterMonth('all')},
+                    {key:'status',label:'Status',value:issueStatusFilter==='all'?'':issueStatusFilter==='open_group'?'Open':issueStatusFilter==='closed_group'?'Closed':issueStatusFilter==='in_progress_group'?'In Progress':issueStatusFilter,onClear:()=>{setIssueStatusFilter('all');setTempIssueStatusFilter('all');}},
+                    {key:'priority',label:'Priority',value:issuePriorityFilter==='all'?'':issuePriorityFilter,onClear:()=>{setIssuePriorityFilter('all');setTempIssuePriorityFilter('all');}},
+                    {key:'type',label:'Type',value:filterType==='all'?'':filterType,onClear:()=>setFilterType('all')},
+                    {key:'assignee',label:'Assignee',value:issueAssigneeFilter==='all'?'':kpi?.people.find(p=>p.userId===issueAssigneeFilter)?.name||issueAssigneeFilter,onClear:()=>{setIssueAssigneeFilter('all');setTempIssueAssigneeFilter('all');},color:'bg-cyan-500/10 text-cyan-700 border-cyan-500/30'},
+                    {key:'reporter',label:'Reporter',value:issueReporterFilter==='all'?'':kpi?.people.find(p=>p.userId===issueReporterFilter)?.name||issueReporterFilter,onClear:()=>{setIssueReporterFilter('all');setTempIssueReporterFilter('all');},color:'bg-violet-500/10 text-violet-700 border-violet-500/30'},
+                    {key:'dateFrom',label:'From',value:issueDateFrom,onClear:()=>{setIssueDateFrom('');setTempIssueDateFrom('');}},
+                    {key:'dateTo',label:'To',value:issueDateTo,onClear:()=>{setIssueDateTo('');setTempIssueDateTo('');}},
+                    {key:'search',label:'Search',value:issueSearch,onClear:()=>setIssueSearch('')},
                 ]}
                 onClearAll={clearAllFilters}
             />
@@ -1574,11 +1656,11 @@ export default function KPIDashboard() {
                 <h2 className="text-base font-semibold mb-3 flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-primary"/>
                     {teamFilter!=='all'?`${teamFilter} — Period Overview`:'Period Overview'}
-                    {teamFilter!=='all'&&<span className="text-xs font-normal bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 ml-1">🏢 {teamFilter}</span>}
+                    {teamFilter!=='all'&&<span className="text-xs font-normal bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 ml-1">{teamFilter}</span>}
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {periodCards.map(({title,icon:Icon,color,border,bg,data,prevData})=>{
-                        const closeRate=data.total>0?Math.round((data.closed/data.total)*100):0;
+                        const closeRate=data.total>0?Math.min(100,Math.round((data.closed/data.total)*100)):0;
                         return(
                             <Card key={title} className={`border-2 ${border}`}>
                                 <CardHeader className={`pb-2 ${bg}`}>
@@ -1600,7 +1682,7 @@ export default function KPIDashboard() {
                                                 <div className={cn('text-2xl font-bold',c)}>{value}</div>
                                                 <div className="text-[10px] text-muted-foreground mt-0.5">{label}</div>
                                                 {delta!==0&&<Delta v={delta} hib={hib} size="xs"/>}
-                                                {dk&&<div className="text-[9px] text-primary/50 mt-0.5">↗ view</div>}
+                                                {dk&&<div className="text-[9px] text-primary/50 mt-0.5">view</div>}
                                             </button>
                                         ))}
                                     </div>
@@ -1645,8 +1727,8 @@ export default function KPIDashboard() {
                                     <s.icon className={cn('w-4 h-4 mb-2',s.active?s.color:'text-muted-foreground')}/>
                                     <div className={cn('text-2xl font-bold',s.color)}>{n(s.value)}</div>
                                     <div className="text-xs text-muted-foreground mt-1">{s.label}</div>
-                                    {s.active&&<div className="text-[10px] text-primary font-medium mt-0.5">● Active filter</div>}
-                                    <div className="text-[9px] text-primary/50 mt-0.5">↗ click to view</div>
+                                    {s.active&&<div className="text-[10px] text-primary font-medium mt-0.5">Active filter</div>}
+                                    <div className="text-[9px] text-primary/50 mt-0.5">click to view</div>
                                 </CardContent>
                             </Card>
                         </motion.div>
@@ -1675,17 +1757,17 @@ export default function KPIDashboard() {
                                 <Users className="w-5 h-5 text-primary"/>Team Performance — All Members
                                 <span className="ml-auto text-xs font-normal text-muted-foreground bg-muted px-2 py-1 rounded-full">{filteredPeople.length} members</span>
                             </CardTitle>
-                            <CardDescription>Professional KPIs · QA: bug open/close rate · Dev: SP delivery · All: assigned tickets</CardDescription>
+                            <CardDescription>Professional KPIs — QA: bug open/close rate — Dev: SP delivery — All: assigned tickets</CardDescription>
                         </CardHeader>
                         <CardContent className="p-4 space-y-3">
                             <div className="flex flex-wrap gap-2">
                                 <Select value={teamFilter} onValueChange={setTeamFilter}>
                                     <SelectTrigger className={cn('w-40 h-8 text-xs',teamFilter!=='all'&&'border-primary bg-primary/5 font-medium')}><SelectValue placeholder="All Teams"/></SelectTrigger>
-                                    <SelectContent><SelectItem value="all">🏢 All Teams</SelectItem>{(kpi?.allTeams||[]).map(t=><SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                                    <SelectContent><SelectItem value="all">All Teams</SelectItem>{(kpi?.allTeams||[]).map(t=><SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                                 </Select>
                                 <Select value={memberFilter} onValueChange={setMemberFilter}>
                                     <SelectTrigger className={cn('w-44 h-8 text-xs',memberFilter!=='all'&&'border-primary bg-primary/5 font-medium')}><SelectValue placeholder="All Members"/></SelectTrigger>
-                                    <SelectContent><SelectItem value="all">👥 All Members</SelectItem>{memberDropdownPeople.map(p=><SelectItem key={p.userId} value={p.userId}>{p.name}</SelectItem>)}</SelectContent>
+                                    <SelectContent><SelectItem value="all">All Members</SelectItem>{memberDropdownPeople.map(p=><SelectItem key={p.userId} value={p.userId}>{p.name}</SelectItem>)}</SelectContent>
                                 </Select>
                                 <div className="relative min-w-36">
                                     <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-muted-foreground"/>
@@ -1705,7 +1787,7 @@ export default function KPIDashboard() {
                                         <SelectItem value="closeRate">Sort: Bug Close Rate</SelectItem>
                                     </SelectContent>
                                 </Select>
-                                {(teamFilter!=='all'||memberFilter!=='all'||memberSearch)&&<Button variant="ghost" size="sm" className="h-8 text-xs text-destructive" onClick={()=>{setTeamFilter('all');setMemberFilter('all');setMemberSearch('');}}>✕ Clear</Button>}
+                                {(teamFilter!=='all'||memberFilter!=='all'||memberSearch)&&<Button variant="ghost" size="sm" className="h-8 text-xs text-destructive" onClick={()=>{setTeamFilter('all');setMemberFilter('all');setMemberSearch('');}}>Clear</Button>}
                                 <Button variant="outline" size="sm" className="h-8 text-xs ml-auto" onClick={async()=>{if(!kpi)return;await exportData({format:'excel',data:filteredPeople as any,fileName:`team-kpi-${Date.now()}.xlsx`,metadata:{exportDate:new Date(),exportedBy:'system',filters:{}}});}} disabled={exporting}>
                                     <Download className="w-3 h-3 mr-1"/>{exporting?'...':'Export'}
                                 </Button>
@@ -1713,8 +1795,8 @@ export default function KPIDashboard() {
                             {(teamFilter!=='all'||memberFilter!=='all')&&(
                                 <div className="flex items-center gap-2 flex-wrap p-2 bg-muted/30 rounded-lg border border-border/50">
                                     <span className="text-xs text-muted-foreground font-medium">Active:</span>
-                                    {teamFilter!=='all'&&<span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full border border-primary/20 flex items-center gap-1">🏢 {teamFilter}<button onClick={()=>setTeamFilter('all')} className="ml-1 hover:text-destructive font-bold">✕</button></span>}
-                                    {memberFilter!=='all'&&<span className="text-xs bg-blue-500/10 text-blue-700 px-2 py-1 rounded-full border border-blue-500/20 flex items-center gap-1">👤 {kpi?.people.find(p=>p.userId===memberFilter)?.name}<button onClick={()=>setMemberFilter('all')} className="ml-1 hover:text-destructive font-bold">✕</button></span>}
+                                    {teamFilter!=='all'&&<span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full border border-primary/20 flex items-center gap-1">{teamFilter}<button onClick={()=>setTeamFilter('all')} className="ml-1 hover:text-destructive font-bold"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></span>}
+                                    {memberFilter!=='all'&&<span className="text-xs bg-blue-500/10 text-blue-700 px-2 py-1 rounded-full border border-blue-500/20 flex items-center gap-1">{kpi?.people.find(p=>p.userId===memberFilter)?.name}<button onClick={()=>setMemberFilter('all')} className="ml-1 hover:text-destructive font-bold"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></span>}
                                     <span className="text-xs text-muted-foreground ml-auto">{filteredPeople.length} member{filteredPeople.length!==1?'s':''} shown{teamFilter!=='all'&&memberFilter==='all'?' (team view)':''}{memberFilter!=='all'?' (individual view)':''}</span>
                                 </div>
                             )}
@@ -1740,7 +1822,7 @@ export default function KPIDashboard() {
                                     </thead>
                                     <tbody>
                                         {filteredPeople.map((p,idx)=>{
-                                            const medals=['🥇','🥈','🥉'];
+                                            const medals=['#1','#2','#3'];
                                             
                                             // Delivery rate: for QA = bug close rate, for Dev = SP completion %, for mixed = weighted
                                             const spPct = p.storyPointsAssigned>0?Math.round((p.storyPointsCompleted/p.storyPointsAssigned)*100):0;
@@ -1764,25 +1846,25 @@ export default function KPIDashboard() {
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    {/* Bug columns — show value or dash */}
+                                                    {/* Bug columns - show value or dash */}
                                                     <td className="px-2 py-2.5 text-center">
-                                                        {p.bugsReported>0?<span className="font-bold text-red-600">{p.bugsReported}</span>:<span className="text-muted-foreground text-xs">—</span>}
+                                                        {p.bugsReported>0?<span className="font-bold text-red-600">{p.bugsReported}</span>:<span className="text-muted-foreground text-xs">&#8212;</span>}
                                                     </td>
                                                     <td className="px-2 py-2.5 text-center">
-                                                        {p.bugsReported>0?<span className={cn('font-semibold text-xs px-1.5 py-0.5 rounded',p.bugsOpen>0?'bg-red-500/10 text-red-600':'text-muted-foreground')}>{p.bugsOpen}</span>:<span className="text-muted-foreground text-xs">—</span>}
+                                                        {p.bugsReported>0?<span className={cn('font-semibold text-xs px-1.5 py-0.5 rounded',p.bugsOpen>0?'bg-red-500/10 text-red-600':'text-muted-foreground')}>{p.bugsOpen}</span>:<span className="text-muted-foreground text-xs">&#8212;</span>}
                                                     </td>
                                                     <td className="px-2 py-2.5 text-center">
-                                                        {p.bugsReported>0?<span className={cn('font-semibold text-xs px-1.5 py-0.5 rounded',p.bugsClosed>0?'bg-green-500/10 text-green-600':'text-muted-foreground')}>{p.bugsClosed}</span>:<span className="text-muted-foreground text-xs">—</span>}
+                                                        {p.bugsReported>0?<span className={cn('font-semibold text-xs px-1.5 py-0.5 rounded',p.bugsClosed>0?'bg-green-500/10 text-green-600':'text-muted-foreground')}>{p.bugsClosed}</span>:<span className="text-muted-foreground text-xs">&#8212;</span>}
                                                     </td>
                                                     <td className="px-2 py-2.5 text-center">
-                                                        {p.bugsCritical>0?<span className="bg-red-500/20 text-red-700 px-1.5 py-0.5 rounded text-xs font-bold">{p.bugsCritical}</span>:<span className="text-muted-foreground text-xs">—</span>}
+                                                        {p.bugsCritical>0?<span className="bg-red-500/20 text-red-700 px-1.5 py-0.5 rounded text-xs font-bold">{p.bugsCritical}</span>:<span className="text-muted-foreground text-xs">&#8212;</span>}
                                                     </td>
                                                     {/* Dev columns */}
                                                     <td className="px-2 py-2.5 text-center">
-                                                        {p.storiesReported>0?<span className="font-semibold text-blue-600">{p.storiesReported}</span>:<span className="text-muted-foreground text-xs">—</span>}
+                                                        {p.storiesReported>0?<span className="font-semibold text-blue-600">{p.storiesReported}</span>:<span className="text-muted-foreground text-xs">&#8212;</span>}
                                                     </td>
                                                     <td className="px-2 py-2.5 text-center">
-                                                        {p.storyPointsAssigned>0?<span className="font-semibold text-violet-600">{p.storyPointsAssigned}</span>:<span className="text-muted-foreground text-xs">—</span>}
+                                                        {p.storyPointsAssigned>0?<span className="font-semibold text-violet-600">{p.storyPointsAssigned}</span>:<span className="text-muted-foreground text-xs">&#8212;</span>}
                                                     </td>
                                                     <td className="px-2 py-2.5 text-center">
                                                         {p.storyPointsAssigned>0?(
@@ -1790,7 +1872,7 @@ export default function KPIDashboard() {
                                                                 <div className="w-8 h-1.5 bg-muted rounded-full overflow-hidden"><div className={cn('h-full rounded-full',spPct>=70?'bg-emerald-500':spPct>=40?'bg-amber-500':'bg-red-500')} style={{width:`${spPct}%`}}/></div>
                                                                 <span className="text-xs font-bold text-emerald-700">{p.storyPointsCompleted}</span>
                                                             </div>
-                                                        ):<span className="text-muted-foreground text-xs">—</span>}
+                                                        ):<span className="text-muted-foreground text-xs">&#8212;</span>}
                                                     </td>
                                                     {/* Assigned */}
                                                     <td className="px-2 py-2.5 text-center">
@@ -1799,7 +1881,7 @@ export default function KPIDashboard() {
                                                             {p.assignedOpen>0&&<span className="text-[9px] text-amber-600">{p.assignedOpen} open</span>}
                                                         </div>
                                                     </td>
-                                                    {/* Delivery rate — the key metric */}
+                                                    {/* Delivery rate - the key metric */}
                                                     <td className="px-2 py-2.5 text-center">
                                                         {deliveryRate>0?(
                                                             <div className="flex flex-col items-center gap-0.5">
@@ -1808,7 +1890,7 @@ export default function KPIDashboard() {
                                                                     {p.bugsReported>0&&p.storyPointsAssigned>0?'avg':p.storyPointsAssigned>0?'SP done':p.bugsReported>0?'bugs closed':''}
                                                                 </span>
                                                             </div>
-                                                        ):<span className="text-muted-foreground text-xs">—</span>}
+                                                        ):<span className="text-muted-foreground text-xs">&#8212;</span>}
                                                     </td>
                                                 </motion.tr>
                                             );
@@ -1843,7 +1925,7 @@ export default function KPIDashboard() {
                             <CardTitle className="flex items-center gap-2">
                                 <Calendar className="w-5 h-5 text-primary"/>
                                 {teamFilter!=='all'?`${teamFilter} — Monthly Ticket Counts`:'Monthly Ticket Counts — Last 12 Months'}
-                                {teamFilter!=='all'&&<span className="text-xs font-normal bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 ml-1">🏢 {teamFilter}</span>}
+                                {teamFilter!=='all'&&<span className="text-xs font-normal bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 ml-1">{teamFilter}</span>}
                             </CardTitle>
                             <CardDescription>Exact counts per month for all issue types, story points, and live tickets</CardDescription>
                         </CardHeader>
@@ -1909,19 +1991,19 @@ export default function KPIDashboard() {
                         <CardContent className="p-4 space-y-3">
                             {drilldownLabel&&(
                                 <div className="flex items-center gap-2 p-2.5 rounded-lg bg-primary/5 border border-primary/20">
-                                    <span className="text-xs font-medium text-primary">📌 Showing: <span className="font-bold capitalize">{drilldownLabel==='total'?'All':drilldownLabel.replace('_',' ')}</span> {filterType!=='all'?filterType+'s':'issues'}{teamFilter!=='all'&&` · Team: ${teamFilter}`}</span>
-                                    <button onClick={()=>{setDrilldownLabel(null);setIssueStatusFilter('all');setIssuePriorityFilter('all');}} className="ml-auto text-xs text-destructive hover:underline">✕ Clear filter</button>
+                                    <span className="text-xs font-medium text-primary">Showing: <span className="font-bold capitalize">{drilldownLabel==='total'?'All':drilldownLabel.replace('_',' ')}</span> {filterType!=='all'?filterType+'s':'issues'}{teamFilter!=='all'&&` — Team: ${teamFilter}`}</span>
+                                    <button onClick={()=>{setDrilldownLabel(null);setIssueStatusFilter('all');setIssuePriorityFilter('all');}} className="ml-auto text-xs text-destructive hover:underline">Clear filter</button>
                                 </div>
                             )}
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/>
                                 <Input placeholder="Search by bug ID (SUN-123), summary keyword, or reporter name..." value={issueSearch} onChange={e=>setIssueSearch(e.target.value)} className="pl-10 h-10"/>
-                                {issueSearch&&<button onClick={()=>setIssueSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs">✕</button>}
+                                {issueSearch&&<button onClick={()=>setIssueSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs">×</button>}
                             </div>
                             <div className="flex flex-wrap gap-2 items-center">
                                 {(['Bug','Story','Epic','Task','all'] as const).map(t=>(
                                     <Button key={t} variant={filterType===t?'default':'outline'} size="sm" onClick={()=>setFilterType(t)} className={cn('text-xs h-7',filterType===t&&'ring-2 ring-primary/30')}>
-                                        {t==='all'?'📋 All':t==='Bug'?'🐛 Bug':t==='Story'?'📖 Story':t==='Epic'?'⚡ Epic':'✅ Task'}
+                                        {t==='all'?'All':t==='Bug'?'Bug':t==='Story'?'Story':t==='Epic'?'Epic':'Task'}
                                         <span className="ml-1 opacity-60 text-[10px]">({t==='all'?kpi?.counts.total:t==='Bug'?kpi?.counts.bugs:t==='Story'?kpi?.counts.stories:t==='Epic'?kpi?.counts.epics:kpi?.counts.tasks})</span>
                                     </Button>
                                 ))}
@@ -1929,7 +2011,7 @@ export default function KPIDashboard() {
                                 <Select value={teamFilter} onValueChange={setTeamFilter}>
                                     <SelectTrigger className={cn('w-36 h-7 text-xs',teamFilter!=='all'&&'border-primary bg-primary/5 font-medium')}><SelectValue placeholder="All Teams"/></SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="all">🏢 All Teams</SelectItem>
+                                        <SelectItem value="all">All Teams</SelectItem>
                                         {(kpi?.allTeams||[]).map(t=><SelectItem key={t} value={t}>{t}</SelectItem>)}
                                     </SelectContent>
                                 </Select>
@@ -1937,9 +2019,9 @@ export default function KPIDashboard() {
                                     <SelectTrigger className={cn('w-36 h-7 text-xs',tempIssueStatusFilter!=='all'&&'border-primary bg-primary/5')}><SelectValue placeholder="All Status"/></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="all">All Status</SelectItem>
-                                        <SelectItem value="open_group">🔴 Open (Group)</SelectItem>
-                                        <SelectItem value="in_progress_group">🟡 In Progress (Group)</SelectItem>
-                                        <SelectItem value="closed_group">🟢 Closed (Group)</SelectItem>
+                                        <SelectItem value="open_group">Open (Group)</SelectItem>
+                                        <SelectItem value="in_progress_group">In Progress (Group)</SelectItem>
+                                        <SelectItem value="closed_group">Closed (Group)</SelectItem>
                                         {Object.keys(kpi?.byStatus||{}).sort().map(s=><SelectItem key={s} value={s}>{s} ({kpi?.byStatus[s]})</SelectItem>)}
                                     </SelectContent>
                                 </Select>
@@ -1955,7 +2037,7 @@ export default function KPIDashboard() {
                                 <Select value={tempIssueAssigneeFilter} onValueChange={setTempIssueAssigneeFilter}>
                                     <SelectTrigger className={cn('w-40 h-7 text-xs',tempIssueAssigneeFilter!=='all'&&'border-cyan-500 bg-cyan-500/5 font-medium')}><SelectValue placeholder="Assignee"/></SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="all">👤 All Assignees</SelectItem>
+                                        <SelectItem value="all">All Assignees</SelectItem>
                                         {(kpi?.people||[]).map(p=><SelectItem key={p.userId} value={p.userId}>{p.name}</SelectItem>)}
                                     </SelectContent>
                                 </Select>
@@ -1963,7 +2045,7 @@ export default function KPIDashboard() {
                                 <Select value={tempIssueReporterFilter} onValueChange={setTempIssueReporterFilter}>
                                     <SelectTrigger className={cn('w-40 h-7 text-xs',tempIssueReporterFilter!=='all'&&'border-violet-500 bg-violet-500/5 font-medium')}><SelectValue placeholder="Reporter"/></SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="all">📝 All Reporters</SelectItem>
+                                        <SelectItem value="all">All Reporters</SelectItem>
                                         {(kpi?.people||[]).map(p=><SelectItem key={p.userId} value={p.userId}>{p.name}</SelectItem>)}
                                     </SelectContent>
                                 </Select>
@@ -1972,7 +2054,7 @@ export default function KPIDashboard() {
                                     <input type="date" value={tempIssueDateFrom} onChange={e=>setTempIssueDateFrom(e.target.value)}
                                         className={cn('h-7 text-xs px-2 rounded-md border bg-background',tempIssueDateFrom&&'border-primary bg-primary/5')}
                                         title="Created from"/>
-                                    <span className="text-xs text-muted-foreground">–</span>
+                                    <span className="text-xs text-muted-foreground">&mdash;</span>
                                     <input type="date" value={tempIssueDateTo} onChange={e=>setTempIssueDateTo(e.target.value)}
                                         className={cn('h-7 text-xs px-2 rounded-md border bg-background',tempIssueDateTo&&'border-primary bg-primary/5')}
                                         title="Created to"/>
@@ -1993,7 +2075,7 @@ export default function KPIDashboard() {
                                                 tempIssueReporterFilter!==issueReporterFilter && `Reporter changed`,
                                                 tempIssueDateFrom!==issueDateFrom && `From: ${tempIssueDateFrom||'any'}`,
                                                 tempIssueDateTo!==issueDateTo && `To: ${tempIssueDateTo||'any'}`,
-                                            ].filter(Boolean).join(' · ')}
+                                            ].filter(Boolean).join(' ? ')}
                                         </span>
                                     </div>
                                     <div className="flex gap-2 shrink-0">
@@ -2019,7 +2101,7 @@ export default function KPIDashboard() {
                             )}
                             
                             {!filtersChanged && (issueSearch||teamFilter!=='all'||issueStatusFilter!=='all'||issuePriorityFilter!=='all'||filterMonth!=='all'||issueAssigneeFilter!=='all'||issueReporterFilter!=='all'||issueDateFrom||issueDateTo)&&(
-                                <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive" onClick={clearAllFilters}>✕ Clear All Filters</Button>
+                                <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive" onClick={clearAllFilters}>Clear All Filters</Button>
                             )}
                             {issueSearch&&/^[A-Z]+-\d+$/i.test(issueSearch.trim())&&(
                                 <div className="flex items-center gap-2 text-xs bg-blue-500/10 text-blue-700 px-3 py-2 rounded-lg border border-blue-500/20">
@@ -2032,16 +2114,16 @@ export default function KPIDashboard() {
                                         <a href={issue.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono font-bold text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20 hover:bg-blue-500/20 shrink-0 min-w-[80px] text-center">{issue.key}</a>
                                         <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full border shrink-0',PRIORITY_STYLE[issue.priority]||PRIORITY_STYLE.Medium)}>{issue.priority}</span>
                                         <span className="text-xs bg-muted px-1.5 py-0.5 rounded shrink-0">{issue.status}</span>
-                                        {issue.isLive&&<span className="text-[10px] bg-emerald-500/20 text-emerald-700 px-1.5 py-0.5 rounded-full border border-emerald-500/30 shrink-0">🟢 Live</span>}
+                                        {issue.isLive&&<span className="text-[10px] bg-emerald-500/20 text-emerald-700 px-1.5 py-0.5 rounded-full border border-emerald-500/30 shrink-0">Live</span>}
                                         {issue.storyPoints&&<span className="text-[10px] bg-purple-500/20 text-purple-700 px-1.5 py-0.5 rounded shrink-0">{issue.storyPoints}sp</span>}
                                         <span className="text-sm flex-1 truncate">{issue.summary}</span>
                                         <span className="text-xs text-muted-foreground shrink-0">{issue.reporter?.displayName||'—'}</span>
-                                        {issue.assignee&&<span className="text-xs text-blue-600 shrink-0">→ {issue.assignee.displayName}</span>}
+                                        {issue.assignee&&<span className="text-xs text-blue-600 shrink-0">{issue.assignee.displayName}</span>}
                                         <span suppressHydrationWarning className="text-xs text-muted-foreground shrink-0">{new Date(issue.created).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'})}</span>
                                     </div>
                                 ))}
                                 {filteredIssues.length===0&&<div className="text-center py-12 text-muted-foreground"><Search className="w-10 h-10 mx-auto mb-3 opacity-20"/><div className="font-medium">No issues found</div><div className="text-xs mt-1">Try a different search term or clear filters</div></div>}
-                                {filteredIssues.length>500&&<div className="text-center py-3 text-xs text-muted-foreground border-t">Showing 500 of {filteredIssues.length.toLocaleString()} — use filters to narrow down</div>}
+                                {filteredIssues.length>500&&<div className="text-center py-3 text-xs text-muted-foreground border-t">Showing 500 of {filteredIssues.length.toLocaleString()} ? use filters to narrow down</div>}
                             </div>
                         </CardContent>
                     </Card>
@@ -2061,19 +2143,19 @@ export default function KPIDashboard() {
                             <div className="flex items-center gap-3 flex-wrap">
                                 <Select value={teamFilter} onValueChange={v=>{setTeamFilter(v);setLiveTeamFilter('all');}}>
                                     <SelectTrigger className={cn('w-40 h-8 text-xs',teamFilter!=='all'&&'border-emerald-500 bg-emerald-500/5 font-medium')}><SelectValue placeholder="All Teams"/></SelectTrigger>
-                                    <SelectContent><SelectItem value="all">🏢 All Teams</SelectItem>{(kpi?.allTeams||[]).map(t=><SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                                    <SelectContent><SelectItem value="all">All Teams</SelectItem>{(kpi?.allTeams||[]).map(t=><SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                                 </Select>
                                 <Select value={liveTeamFilter} onValueChange={setLiveTeamFilter}>
                                     <SelectTrigger className={cn('w-48 h-8 text-xs',liveTeamFilter!=='all'&&'border-emerald-500 bg-emerald-500/5 font-medium')}><SelectValue placeholder="All Members"/></SelectTrigger>
-                                    <SelectContent><SelectItem value="all">👥 All Members</SelectItem>{memberDropdownPeople.map(p=><SelectItem key={p.userId} value={p.name}>{p.name}</SelectItem>)}</SelectContent>
+                                    <SelectContent><SelectItem value="all">All Members</SelectItem>{memberDropdownPeople.map(p=><SelectItem key={p.userId} value={p.name}>{p.name}</SelectItem>)}</SelectContent>
                                 </Select>
-                                {(teamFilter!=='all'||liveTeamFilter!=='all')&&<Button variant="ghost" size="sm" onClick={()=>{setTeamFilter('all');setLiveTeamFilter('all');}} className="h-8 text-xs text-destructive">✕ Clear</Button>}
+                                {(teamFilter!=='all'||liveTeamFilter!=='all')&&<Button variant="ghost" size="sm" onClick={()=>{setTeamFilter('all');setLiveTeamFilter('all');}} className="h-8 text-xs text-destructive">Clear</Button>}
                             </div>
                             {(teamFilter!=='all'||liveTeamFilter!=='all')&&(
                                 <div className="flex items-center gap-2 flex-wrap p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/30">
                                     <span className="text-xs text-muted-foreground font-medium">Active:</span>
-                                    {teamFilter!=='all'&&<span className="text-xs bg-emerald-500/20 text-emerald-700 px-2 py-1 rounded-full border border-emerald-500/30 flex items-center gap-1">🏢 {teamFilter}<button onClick={()=>setTeamFilter('all')} className="ml-1 hover:text-destructive font-bold">✕</button></span>}
-                                    {liveTeamFilter!=='all'&&<span className="text-xs bg-emerald-500/20 text-emerald-700 px-2 py-1 rounded-full border border-emerald-500/30 flex items-center gap-1">👤 {liveTeamFilter}<button onClick={()=>setLiveTeamFilter('all')} className="ml-1 hover:text-destructive font-bold">✕</button></span>}
+                                    {teamFilter!=='all'&&<span className="text-xs bg-emerald-500/20 text-emerald-700 px-2 py-1 rounded-full border border-emerald-500/30 flex items-center gap-1">{teamFilter}<button onClick={()=>setTeamFilter('all')} className="ml-1 hover:text-destructive font-bold"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></span>}
+                                    {liveTeamFilter!=='all'&&<span className="text-xs bg-emerald-500/20 text-emerald-700 px-2 py-1 rounded-full border border-emerald-500/30 flex items-center gap-1">{liveTeamFilter}<button onClick={()=>setLiveTeamFilter('all')} className="ml-1 hover:text-destructive font-bold"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></span>}
                                     <span className="text-xs text-muted-foreground ml-auto">{filteredLiveTickets.length} ticket{filteredLiveTickets.length!==1?'s':''} shown</span>
                                 </div>
                             )}
@@ -2141,7 +2223,7 @@ export default function KPIDashboard() {
                                             return(
                                                 <tr key={p.userId} className="border-b hover:bg-muted/20 transition-colors cursor-pointer" onClick={()=>setSelectedPerson(p)}>
                                                     <td className="px-4 py-2.5 text-xs text-muted-foreground">#{idx+1}</td>
-                                                    <td className="px-4 py-2.5 font-semibold">{p.name}<span className="text-[9px] text-primary/50 ml-1">↗</span></td>
+                                                    <td className="px-4 py-2.5 font-semibold">{p.name}<span className="text-[9px] text-primary/50 ml-1">→</span></td>
                                                     <td className="px-3 py-2.5 text-center font-bold text-purple-600 text-base">{p.storyPointsAssigned}</td>
                                                     <td className="px-3 py-2.5 text-center font-bold text-green-600">{p.storyPointsCompleted}</td>
                                                     <td className="px-3 py-2.5 text-center"><span className={cn('font-semibold',rem>0?'text-amber-600':'text-muted-foreground')}>{rem}</span></td>

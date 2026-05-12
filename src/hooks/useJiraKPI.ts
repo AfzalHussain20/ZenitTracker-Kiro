@@ -32,7 +32,7 @@ export interface PersonKPI {
     // All tickets assigned to this person
     ticketsAssigned: number; assignedOpen: number; assignedClosed: number; assignedInProgress: number;
     // Story points (from assigned tickets)
-    storyPointsAssigned: number; storyPointsCompleted: number;
+    storyPointsAssigned: number; storyPointsCompleted: number; storyPointsInProgress: number; storyPointsTodo: number;
     // Other types reported
     storiesReported: number; epicsReported: number; tasksReported: number; totalIssues: number;
     // Quality
@@ -40,8 +40,7 @@ export interface PersonKPI {
     // Team labels found on their bugs
     teams: string[];
     // Monthly breakdown
-    monthly: Record<string, { reported: number; closed: number; open: number; assigned: number; storyPoints: number }>;
-}
+    monthly: Record<string, { reported: number; closed: number; open: number; inProgress: number; assigned: number; storyPoints: number }>;}
 
 export interface MonthlyStats {
     month: string; label: string;
@@ -139,7 +138,7 @@ function processKPI(raw: any): KPIData {
         bugsReported: JiraIssueRaw[];
         allAssigned: JiraIssueRaw[];
         storiesReported: number; epicsReported: number; tasksReported: number;
-        monthly: Map<string, { reported: number; closed: number; open: number; assigned: number; storyPoints: number }>;
+        monthly: Map<string, { reported: number; closed: number; open: number; inProgress: number; assigned: number; storyPoints: number }>;
     };
 
     const pm = new Map<string, PersonEntry>();
@@ -150,7 +149,7 @@ function processKPI(raw: any): KPIData {
     }
 
     function ensureMonth(p: PersonEntry, mk: string) {
-        if (!p.monthly.has(mk)) p.monthly.set(mk, { reported: 0, closed: 0, open: 0, assigned: 0, storyPoints: 0 });
+        if (!p.monthly.has(mk)) p.monthly.set(mk, { reported: 0, closed: 0, open: 0, inProgress: 0, assigned: 0, storyPoints: 0 });
         return p.monthly.get(mk)!;
     }
 
@@ -160,7 +159,10 @@ function processKPI(raw: any): KPIData {
             p.bugsReported.push(b);
             const m = ensureMonth(p, monthKey(b.created));
             m.reported++;
-            if (classify(b.status) === 'closed') m.closed++; else m.open++;
+            const cls = classify(b.status);
+            if (cls === 'closed') m.closed++;
+            else if (cls === 'in_progress') m.inProgress++;
+            else m.open++; // truly To-Do only
         }
     });
 
@@ -184,6 +186,8 @@ function processKPI(raw: any): KPIData {
         const closed = br.filter(b => classify(b.status) === 'closed').length;
         const spAssigned = aa.reduce((s, i) => s + (i.storyPoints || 0), 0);
         const spCompleted = aa.filter(i => classify(i.status) === 'closed').reduce((s, i) => s + (i.storyPoints || 0), 0);
+        const spInProgress = aa.filter(i => classify(i.status) === 'in_progress').reduce((s, i) => s + (i.storyPoints || 0), 0);
+        const spTodo = aa.filter(i => classify(i.status) === 'open').reduce((s, i) => s + (i.storyPoints || 0), 0);
         const monthly: PersonKPI['monthly'] = {};
         p.monthly.forEach((v, k) => { monthly[k] = v; });
 
@@ -212,12 +216,14 @@ function processKPI(raw: any): KPIData {
             assignedInProgress: aa.filter(i => classify(i.status) === 'in_progress').length,
             storyPointsAssigned: spAssigned,
             storyPointsCompleted: spCompleted,
+            storyPointsInProgress: spInProgress,
+            storyPointsTodo: spTodo,
             storiesReported: p.storiesReported,
             epicsReported: p.epicsReported,
             tasksReported: p.tasksReported,
             totalIssues: br.length + p.storiesReported + p.epicsReported + p.tasksReported,
             qualityScore: calcQuality(br),
-            closeRate: br.length > 0 ? Math.round((closed / br.length) * 1000) / 10 : 0,
+            closeRate: br.length > 0 ? Math.min(100, Math.round((closed / br.length) * 1000) / 10) : 0,
             teams: teamSet,
             monthly,
         };
@@ -310,7 +316,7 @@ function processKPI(raw: any): KPIData {
                         avatarUrl: member.avatarUrl,
                         bugsReported: 0, bugsOpen: 0, bugsClosed: 0, bugsInProgress: 0, bugsCritical: 0, bugsHigh: 0,
                         ticketsAssigned: 0, assignedOpen: 0, assignedClosed: 0, assignedInProgress: 0,
-                        storyPointsAssigned: 0, storyPointsCompleted: 0,
+                        storyPointsAssigned: 0, storyPointsCompleted: 0, storyPointsInProgress: 0, storyPointsTodo: 0,
                         storiesReported: 0, epicsReported: 0, tasksReported: 0, totalIssues: 0,
                         qualityScore: 0, closeRate: 0,
                         teams: [team.name],
