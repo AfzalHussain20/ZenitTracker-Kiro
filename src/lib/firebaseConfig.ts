@@ -18,23 +18,23 @@ let auth: Auth;
 let db: Firestore;
 let storage: FirebaseStorage;
 
-if (typeof window !== "undefined") {
+// Only initialize Firebase when the API key is present.
+// Missing keys mean the .env.local file is not set up yet.
+if (firebaseConfig.apiKey) {
     try {
-        if (!firebaseConfig.apiKey) {
-            console.warn("Firebase API Key is missing. Check your environment variables.");
-        }
-
-        if (getApps().length === 0) {
-            app = initializeApp(firebaseConfig);
-        } else {
-            app = getApp();
-        }
+        app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
         auth = getAuth(app);
         db = getFirestore(app);
         storage = getStorage(app);
     } catch (error) {
         console.error("Firebase initialization failed:", error);
     }
+} else {
+    console.warn(
+        "Firebase API Key is missing.\n" +
+        "Create a .env.local file in the project root with your Firebase credentials.\n" +
+        "See README or .env.example for the required variables."
+    );
 }
 
 // @ts-ignore

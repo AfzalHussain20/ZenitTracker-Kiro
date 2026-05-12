@@ -50,9 +50,23 @@ export default function LoginPage() {
       toast({ title: "Welcome back!", description: "Login successful" });
       router.replace('/dashboard');
     } catch (err: any) {
-      let errorMessage = "Invalid credentials. Please try again.";
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        errorMessage = "Invalid email or password";
+      const code = err?.code || '';
+      let errorMessage = "Login failed. Please try again.";
+      if (
+        code === 'auth/invalid-credential' ||
+        code === 'auth/user-not-found' ||
+        code === 'auth/wrong-password' ||
+        code === 'auth/invalid-email'
+      ) {
+        errorMessage = "Invalid email or password. Please check your credentials.";
+      } else if (code === 'auth/too-many-requests') {
+        errorMessage = "Too many failed attempts. Please wait a moment and try again.";
+      } else if (code === 'auth/user-disabled') {
+        errorMessage = "This account has been disabled. Contact your administrator.";
+      } else if (code === 'auth/network-request-failed') {
+        errorMessage = "Network error. Check your connection and try again.";
+      } else if (!auth) {
+        errorMessage = "Authentication service unavailable. Check Firebase configuration.";
       }
       setError(errorMessage);
     }

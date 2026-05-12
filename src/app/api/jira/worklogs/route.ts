@@ -44,28 +44,43 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-        // First get issues with worklogs updated recently
+        // Paginate through ALL issues with worklogs in the period
         const jql = encodeURIComponent(`project = ${PROJECT_KEY} AND worklogDate >= -${days}d ORDER BY updated DESC`);
-        const url = `${JIRA_BASE}/rest/api/3/search/jql?jql=${jql}&maxResults=100&fields=summary,issuetype,status,worklog`;
+        let startAt = 0;
+        const pageSize = 100;
+        const allIssues: any[] = [];
 
-        const res = await fetch(url, {
-            headers: { Authorization: `Basic ${JIRA_AUTH()}`, Accept: 'application/json' },
-        });
-
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            return NextResponse.json({ error: err.errorMessages?.[0] || 'Failed' }, { status: res.status });
+        while (true) {
+            const url = `${JIRA_BASE}/rest/api/3/search/jql?jql=${jql}&maxResults=${pageSize}&startAt=${startAt}&fields=summary,issuetype,status`;
+            const res = await fetch(url, {
+                headers: { Authorization: `Basic ${JIRA_AUTH()}`, Accept: 'application/json' },
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                return NextResponse.json({ error: err.errorMessages?.[0] || 'Failed' }, { status: res.status });
+            }
+            const data = await res.json();
+            const batch = data.issues || [];
+            allIssues.push(...batch);
+            if (allIssues.length >= data.total || batch.length < pageSize) break;
+            startAt += pageSize;
+            // Safety cap at 500 issues to avoid timeout
+            if (allIssues.length >= 500) break;
         }
 
-        const data = await res.json();
-        const issues = data.issues || [];
+        const issues = allIssues;
 
-        // Fetch detailed worklogs for each issue (limit to 200 to get comprehensive data)
-        const worklogPromises = issues.slice(0, 200).map((issue: any) =>
-            fetchWorklogsForIssue(issue.key)
-        );
+        // Fetch detailed worklogs for each issue in parallel batches
+        const BATCH = 20;
+        const allWorklogArrays: any[][] = [];
+        for (let i = 0; i < issues.length; i += BATCH) {
+            const batch = issues.slice(i, i + BATCH);
+            const results = await Promise.all(batch.map((issue: any) => fetchWorklogsForIssue(issue.key)));
+            allWorklogArrays.push(...results);
+        }
+        const worklogPromises = allWorklogArrays;
 
-        const worklogArrays = await Promise.all(worklogPromises);
+        const worklogArrays = worklogPromises;
         const allWorklogs = worklogArrays.flat();
 
         // Aggregate by user
