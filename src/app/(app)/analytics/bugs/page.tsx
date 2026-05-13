@@ -1325,6 +1325,7 @@ export default function KPIDashboard() {
     const [spMonth, setSpMonth] = useState('all');
     const [spDateFrom, setSpDateFrom] = useState('');
     const [spDateTo, setSpDateTo] = useState('');
+    const [monthlyTeamFilter, setMonthlyTeamFilter] = useState('all');
     const [drilldownLabel, setDrilldownLabel] = useState<string|null>(null);
     const [selectedPerson, setSelectedPerson] = useState<PersonKPI|null>(null);
     const [viewMode, setViewMode] = useState<'grid'|'list'>('grid');
@@ -1517,13 +1518,13 @@ export default function KPIDashboard() {
 
     const filteredMonthly = useMemo(()=>{
         if(!kpi)return[];
-        if(teamFilter==='all')return kpi.monthly;
+        if(monthlyTeamFilter==='all')return kpi.monthly;
         // Get team member IDs for accurate filtering
-        const teamMemberIds = new Set(kpi.people.filter(p=>p.teams.includes(teamFilter)).map(p=>p.userId));
+        const teamMemberIds = new Set(kpi.people.filter(p=>p.teams.includes(monthlyTeamFilter)).map(p=>p.userId));
         return kpi.monthly.map(month=>{
             const mi=kpi.all.filter(i=>
                 i.created.startsWith(month.month)&&(
-                    i.team===teamFilter||
+                    i.team===monthlyTeamFilter||
                     (i.reporter&&teamMemberIds.has(i.reporter.accountId))||
                     (i.assignee&&teamMemberIds.has(i.assignee.accountId))
                 )
@@ -1532,7 +1533,7 @@ export default function KPIDashboard() {
             const unique=Array.from(new Map(mi.map(i=>[i.id,i])).values());
             return{...month,bugs:unique.filter(i=>i.issueType==='Bug').length,stories:unique.filter(i=>i.issueType==='Story').length,epics:unique.filter(i=>i.issueType==='Epic').length,tasks:unique.filter(i=>i.issueType==='Task').length,total:unique.length,open:unique.filter(i=>OPEN_STATUSES.has(i.status)||(!CLOSED_STATUSES.has(i.status)&&!IP_STATUSES.has(i.status))).length,closed:unique.filter(i=>CLOSED_STATUSES.has(i.status)).length,inProgress:unique.filter(i=>IP_STATUSES.has(i.status)).length,critical:unique.filter(i=>i.priority==='Highest').length,storyPoints:unique.reduce((s,i)=>s+(i.storyPoints||0),0),liveTickets:unique.filter(i=>i.isLive).length};
         });
-    },[kpi,teamFilter]);
+    },[kpi,monthlyTeamFilter]);
 
     const filteredLiveTickets = useMemo(()=>{
         if(!kpi)return[];
@@ -1949,12 +1950,33 @@ export default function KPIDashboard() {
                 <TabsContent value="monthly" className="mt-4">
                     <Card>
                         <CardHeader className="pb-3">
-                            <CardTitle className="flex items-center gap-2">
-                                <Calendar className="w-5 h-5 text-primary"/>
-                                {teamFilter!=='all'?`${teamFilter} — Monthly Ticket Counts`:'Monthly Ticket Counts — Last 12 Months'}
-                                {teamFilter!=='all'&&<span className="text-xs font-normal bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 ml-1">{teamFilter}</span>}
-                            </CardTitle>
-                            <CardDescription>Exact counts per month for all issue types, story points, and live tickets</CardDescription>
+                            <div className="flex items-center justify-between flex-wrap gap-3">
+                                <div>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Calendar className="w-5 h-5 text-primary"/>
+                                        {monthlyTeamFilter!=='all'?`${monthlyTeamFilter} — Monthly Ticket Counts`:'Monthly Ticket Counts — Last 12 Months'}
+                                        {monthlyTeamFilter!=='all'&&<span className="text-xs font-normal bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 ml-1">{monthlyTeamFilter}</span>}
+                                    </CardTitle>
+                                    <CardDescription className="mt-1">Exact counts per month for all issue types, story points, and live tickets</CardDescription>
+                                </div>
+                                {/* Team dropdown — independent of global team filter */}
+                                <div className="flex items-center gap-2">
+                                    <Select value={monthlyTeamFilter} onValueChange={setMonthlyTeamFilter}>
+                                        <SelectTrigger className={cn('w-44 h-8 text-xs',monthlyTeamFilter!=='all'&&'border-primary bg-primary/5 font-medium')}>
+                                            <SelectValue placeholder="All Teams"/>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">All Teams</SelectItem>
+                                            {(kpi?.allTeams||[]).map(t=>(
+                                                <SelectItem key={t} value={t}>{t}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    {monthlyTeamFilter!=='all'&&(
+                                        <button onClick={()=>setMonthlyTeamFilter('all')} className="text-xs text-destructive hover:underline">Clear</button>
+                                    )}
+                                </div>
+                            </div>
                         </CardHeader>
                         <CardContent className="p-0">
                             <div className="overflow-x-auto">
