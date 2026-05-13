@@ -64,9 +64,14 @@ export default function AppHeader() {
               Apps
             </Button>
           </Link>
+          <Link href="/bugs">
+            <Button variant={pathname === '/bugs' ? 'secondary' : 'ghost'} size="sm">
+              Jira Dashboard
+            </Button>
+          </Link>
           <Link href="/analytics/bugs">
             <Button variant={pathname?.startsWith('/analytics/bugs') ? 'secondary' : 'ghost'} size="sm">
-              Jira Dashboard
+              Jira Overview
             </Button>
           </Link>
           <Link href="/about">
