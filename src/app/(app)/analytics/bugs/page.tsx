@@ -249,15 +249,14 @@ function MemberProfileModal({ person, allIssues, onClose, onFilterBugs }: { pers
                             </div>
                             <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-white/10 text-white/50 hover:text-white transition-all shrink-0"><X className="w-5 h-5"/></button>
                         </div>
-                        {/* 6 KPI cards */}
-                        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mt-4">
+                        {/* 5 KPI cards — Total SP replaces redundant SP To-Do */}
+                        <div className="grid grid-cols-3 md:grid-cols-5 gap-2 mt-4">
                             {[
                                 {label:'Close Rate',value:`${person.closeRate}%`,color:person.closeRate>=70?'text-emerald-400':person.closeRate>=40?'text-amber-400':'text-red-400',bar:person.closeRate},
                                 {label:'Quality',value:String(person.qualityScore),color:'text-violet-400',bar:person.qualityScore},
-                                {label:'Critical',value:String(person.bugsCritical),color:'text-red-400',bar:person.bugsReported>0?(person.bugsCritical/person.bugsReported)*100:0},
+                                {label:'Total SP',value:fmtSP(spAssigned),color:'text-sky-400',bar:100},
+                                {label:'SP In Progress',value:fmtSP(spInProgress),color:'text-amber-400',bar:spAssigned>0?(spInProgress/spAssigned)*100:0},
                                 {label:'SP Done',value:fmtSP(spDone),color:'text-emerald-400',bar:spAssigned>0?(spDone/spAssigned)*100:0},
-                                {label:'SP In Prog',value:fmtSP(spInProgress),color:'text-amber-400',bar:spAssigned>0?(spInProgress/spAssigned)*100:0},
-                                {label:'SP To-Do',value:fmtSP(spTodo),color:'text-red-400',bar:spAssigned>0?(spTodo/spAssigned)*100:0},
                             ].map(s=>(
                                 <div key={s.label} className="bg-white/5 border border-white/10 rounded-xl p-2.5 text-center">
                                     <div className={cn('text-lg font-black',s.color)}>{s.value}</div>
@@ -1322,6 +1321,9 @@ export default function KPIDashboard() {
     const tempIssueDateFrom = issueDateFrom;
     const tempIssueDateTo = issueDateTo;
     const [activeTab, setActiveTab] = useState('team');
+    const [spPeriod, setSpPeriod] = useState<'overall'|'6months'|'monthly'|'custom'>('overall');
+    const [spDateFrom, setSpDateFrom] = useState('');
+    const [spDateTo, setSpDateTo] = useState('');
     const [drilldownLabel, setDrilldownLabel] = useState<string|null>(null);
     const [selectedPerson, setSelectedPerson] = useState<PersonKPI|null>(null);
     const [viewMode, setViewMode] = useState<'grid'|'list'>('grid');
@@ -1788,7 +1790,31 @@ export default function KPIDashboard() {
                                     </SelectContent>
                                 </Select>
                                 {(teamFilter!=='all'||memberFilter!=='all'||memberSearch)&&<Button variant="ghost" size="sm" className="h-8 text-xs text-destructive" onClick={()=>{setTeamFilter('all');setMemberFilter('all');setMemberSearch('');}}>Clear</Button>}
-                                <Button variant="outline" size="sm" className="h-8 text-xs ml-auto" onClick={async()=>{if(!kpi)return;await exportData({format:'excel',data:filteredPeople as any,fileName:`team-kpi-${Date.now()}.xlsx`,metadata:{exportDate:new Date(),exportedBy:'system',filters:{}}});}} disabled={exporting}>
+                                <Button variant="outline" size="sm" className="h-8 text-xs ml-auto" onClick={async()=>{
+                                    if(!kpi)return;
+                                    const exportRows = filteredPeople.map((p,idx)=>({
+                                        Rank: idx+1,
+                                        Name: p.name,
+                                        Team: p.teams[0]||'',
+                                        'Bugs Reported': p.bugsReported,
+                                        'Bugs Open': p.bugsOpen,
+                                        'Bugs Closed': p.bugsClosed,
+                                        'Bugs In Progress': p.bugsInProgress,
+                                        'Critical Bugs': p.bugsCritical,
+                                        'High Bugs': p.bugsHigh,
+                                        'Close Rate %': p.closeRate,
+                                        'Stories Reported': p.storiesReported,
+                                        'Total SP': p.storyPointsAssigned,
+                                        'SP Done': p.storyPointsCompleted,
+                                        'SP In Progress': (p as any).storyPointsInProgress||0,
+                                        'SP To-Do': (p as any).storyPointsTodo||0,
+                                        'Tickets Assigned': p.ticketsAssigned,
+                                        'Assigned Open': p.assignedOpen,
+                                        'Assigned Closed': p.assignedClosed,
+                                        'Quality Score': p.qualityScore,
+                                    }));
+                                    await exportData({format:'excel',data:exportRows as any,fileName:`team-kpi-${Date.now()}.xlsx`,metadata:{exportDate:new Date(),exportedBy:'system',filters:{}}});
+                                }} disabled={exporting}>
                                     <Download className="w-3 h-3 mr-1"/>{exporting?'...':'Export'}
                                 </Button>
                             </div>
@@ -1813,7 +1839,7 @@ export default function KPIDashboard() {
                                             <th className="text-center px-2 py-2.5 text-xs font-semibold text-red-700">Critical</th>
                                             {/* Dev columns */}
                                             <th className="text-center px-2 py-2.5 text-xs font-semibold text-blue-600">Stories</th>
-                                            <th className="text-center px-2 py-2.5 text-xs font-semibold text-violet-600">SP</th>
+                                            <th className="text-center px-2 py-2.5 text-xs font-semibold text-violet-600">Total SP</th>
                                             <th className="text-center px-2 py-2.5 text-xs font-semibold text-emerald-600">SP Done</th>
                                             {/* Common */}
                                             <th className="text-center px-2 py-2.5 text-xs font-semibold text-amber-600">Assigned</th>
@@ -2199,8 +2225,38 @@ export default function KPIDashboard() {
                 <TabsContent value="storypoints" className="mt-4">
                     <Card>
                         <CardHeader className="pb-3">
-                            <CardTitle className="flex items-center gap-2"><Star className="w-5 h-5 text-purple-500"/>Story Points — Per Team Member</CardTitle>
-                            <CardDescription>Story points assigned vs completed per person</CardDescription>
+                            <div className="flex items-center justify-between flex-wrap gap-3">
+                                <div>
+                                    <CardTitle className="flex items-center gap-2"><Star className="w-5 h-5 text-purple-500"/>Story Points — Per Team Member</CardTitle>
+                                    <CardDescription className="mt-1">Total SP assigned vs In Progress vs Done per person</CardDescription>
+                                </div>
+                                {/* Period selector */}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    {(['overall','6months','monthly','custom'] as const).map(p=>(
+                                        <button key={p} onClick={()=>setSpPeriod(p)}
+                                            className={cn('px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all',
+                                                spPeriod===p?'bg-primary text-primary-foreground border-primary':'bg-muted/40 border-border hover:bg-muted')}>
+                                            {p==='overall'?'Overall':p==='6months'?'6 Months':p==='monthly'?'This Month':'Custom'}
+                                        </button>
+                                    ))}
+                                    {spPeriod==='custom'&&(
+                                        <div className="flex items-center gap-1">
+                                            <input type="date" value={spDateFrom} onChange={e=>setSpDateFrom(e.target.value)}
+                                                className="h-7 text-xs px-2 rounded-md border bg-background"/>
+                                            <span className="text-xs text-muted-foreground">&mdash;</span>
+                                            <input type="date" value={spDateTo} onChange={e=>setSpDateTo(e.target.value)}
+                                                className="h-7 text-xs px-2 rounded-md border bg-background"/>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            {/* Period label */}
+                            <div className="mt-2 text-xs text-muted-foreground">
+                                {spPeriod==='overall'&&'Showing all-time story points'}
+                                {spPeriod==='6months'&&'Showing last 6 months of story points'}
+                                {spPeriod==='monthly'&&`Showing current month (${new Date().toLocaleString('en-US',{month:'long',year:'numeric'})})`}
+                                {spPeriod==='custom'&&spDateFrom&&spDateTo&&`Showing ${spDateFrom} to ${spDateTo}`}
+                            </div>
                         </CardHeader>
                         <CardContent className="p-0">
                             <div className="overflow-x-auto">
@@ -2209,41 +2265,90 @@ export default function KPIDashboard() {
                                         <tr className="border-b bg-muted/30">
                                             <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">#</th>
                                             <th className="text-left px-4 py-2.5 text-xs font-semibold">Member</th>
-                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-purple-600">SP Assigned</th>
-                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-green-600">SP Completed</th>
-                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-amber-600">SP Remaining</th>
-                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-blue-600">Tickets Assigned</th>
-                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground">Completion%</th>
+                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-sky-600">Total SP</th>
+                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-amber-600">SP In Progress</th>
+                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-green-600">SP Done</th>
+                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-red-500">SP To-Do</th>
+                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-blue-600">Tickets</th>
+                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground">Done %</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {kpi?.people.filter(p=>p.storyPointsAssigned>0).sort((a,b)=>b.storyPointsAssigned-a.storyPointsAssigned).map((p,idx)=>{
-                                            const rem=p.storyPointsAssigned-p.storyPointsCompleted;
-                                            const pct=p.storyPointsAssigned>0?Math.round((p.storyPointsCompleted/p.storyPointsAssigned)*100):0;
-                                            return(
-                                                <tr key={p.userId} className="border-b hover:bg-muted/20 transition-colors cursor-pointer" onClick={()=>setSelectedPerson(p)}>
-                                                    <td className="px-4 py-2.5 text-xs text-muted-foreground">#{idx+1}</td>
-                                                    <td className="px-4 py-2.5 font-semibold">{p.name}<span className="text-[9px] text-primary/50 ml-1">→</span></td>
-                                                    <td className="px-3 py-2.5 text-center font-bold text-purple-600 text-base">{p.storyPointsAssigned}</td>
-                                                    <td className="px-3 py-2.5 text-center font-bold text-green-600">{p.storyPointsCompleted}</td>
-                                                    <td className="px-3 py-2.5 text-center"><span className={cn('font-semibold',rem>0?'text-amber-600':'text-muted-foreground')}>{rem}</span></td>
-                                                    <td className="px-3 py-2.5 text-center text-blue-600">{p.ticketsAssigned}</td>
-                                                    <td className="px-3 py-2.5 text-center">
-                                                        <div className="flex items-center gap-2 justify-center">
-                                                            <div className="w-16 h-2 bg-muted rounded-full overflow-hidden"><div className={cn('h-full rounded-full',pct>=70?'bg-green-500':pct>=40?'bg-amber-500':'bg-red-500')} style={{width:`${pct}%`}}/></div>
-                                                            <span className="text-xs font-bold">{pct}%</span>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
+                                        {(()=>{
+                                            // Filter people by selected period
+                                            const now = new Date();
+                                            const curKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+                                            const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth()-5, 1);
+                                            const sixKey = `${sixMonthsAgo.getFullYear()}-${String(sixMonthsAgo.getMonth()+1).padStart(2,'0')}`;
+
+                                            // For period-filtered SP, compute from assigned issues
+                                            const getFilteredSP = (p: PersonKPI) => {
+                                                if(spPeriod==='overall') return {
+                                                    assigned: p.storyPointsAssigned,
+                                                    done: p.storyPointsCompleted,
+                                                    inProg: (p as any).storyPointsInProgress||0,
+                                                    todo: (p as any).storyPointsTodo||0,
+                                                };
+                                                // For time-filtered periods, sum from monthly data
+                                                let assigned=0, done=0, inProg=0, todo=0;
+                                                Object.entries(p.monthly).forEach(([mk, ms])=>{
+                                                    let include = false;
+                                                    if(spPeriod==='monthly') include = mk===curKey;
+                                                    else if(spPeriod==='6months') include = mk>=sixKey;
+                                                    else if(spPeriod==='custom') include = (!spDateFrom||mk>=spDateFrom.slice(0,7))&&(!spDateTo||mk<=spDateTo.slice(0,7));
+                                                    if(include){ assigned+=ms.storyPoints||0; }
+                                                });
+                                                // For period views, use monthly SP as proxy for assigned
+                                                // done/inProg/todo ratios from overall
+                                                const ratio = p.storyPointsAssigned>0?assigned/p.storyPointsAssigned:0;
+                                                done = Math.round(p.storyPointsCompleted*ratio*10)/10;
+                                                inProg = Math.round(((p as any).storyPointsInProgress||0)*ratio*10)/10;
+                                                todo = Math.round(((p as any).storyPointsTodo||0)*ratio*10)/10;
+                                                return {assigned, done, inProg, todo};
+                                            };
+
+                                            const fmt=(v:number)=>v%1===0?String(v):v.toFixed(1);
+                                            return (kpi?.people||[])
+                                                .map(p=>({p, sp:getFilteredSP(p)}))
+                                                .filter(({sp})=>sp.assigned>0)
+                                                .sort((a,b)=>b.sp.assigned-a.sp.assigned)
+                                                .map(({p, sp}, idx)=>{
+                                                    const pct=sp.assigned>0?Math.min(100,Math.round((sp.done/sp.assigned)*100)):0;
+                                                    return(
+                                                        <tr key={p.userId} className="border-b hover:bg-muted/20 transition-colors cursor-pointer" onClick={()=>setSelectedPerson(p)}>
+                                                            <td className="px-4 py-2.5 text-xs text-muted-foreground">#{idx+1}</td>
+                                                            <td className="px-4 py-2.5">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className={cn('w-6 h-6 rounded-md flex items-center justify-center text-white text-[10px] font-black shrink-0',getAvatarStyle(p.name).bg)}>{p.name.charAt(0)}</div>
+                                                                    <div>
+                                                                        <div className="font-semibold text-sm">{p.name}</div>
+                                                                        {p.teams[0]&&<div className="text-[10px] text-muted-foreground">{p.teams[0]}</div>}
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-3 py-2.5 text-center font-bold text-sky-600 text-base">{fmt(sp.assigned)}</td>
+                                                            <td className="px-3 py-2.5 text-center font-semibold text-amber-600">{fmt(sp.inProg)}</td>
+                                                            <td className="px-3 py-2.5 text-center font-bold text-green-600">{fmt(sp.done)}</td>
+                                                            <td className="px-3 py-2.5 text-center text-red-500">{fmt(sp.todo)}</td>
+                                                            <td className="px-3 py-2.5 text-center text-blue-600">{p.ticketsAssigned}</td>
+                                                            <td className="px-3 py-2.5 text-center">
+                                                                <div className="flex items-center gap-2 justify-center">
+                                                                    <div className="w-16 h-2 bg-muted rounded-full overflow-hidden"><div className={cn('h-full rounded-full',pct>=70?'bg-green-500':pct>=40?'bg-amber-500':'bg-red-500')} style={{width:`${pct}%`}}/></div>
+                                                                    <span className="text-xs font-bold">{pct}%</span>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                });
+                                        })()}
                                     </tbody>
                                     <tfoot>
                                         <tr className="border-t-2 bg-muted/50 font-bold">
                                             <td colSpan={2} className="px-4 py-2.5 text-xs text-muted-foreground">TOTAL</td>
-                                            <td className="px-3 py-2.5 text-center text-purple-600">{n(kpi?.totalStoryPoints)}</td>
+                                            <td className="px-3 py-2.5 text-center text-sky-600">{n(kpi?.totalStoryPoints)}</td>
+                                            <td className="px-3 py-2.5 text-center text-amber-600">{n(kpi?.people.reduce((s,p)=>(s+(p as any).storyPointsInProgress||0),0))}</td>
                                             <td className="px-3 py-2.5 text-center text-green-600">{n(kpi?.completedStoryPoints)}</td>
-                                            <td className="px-3 py-2.5 text-center text-amber-600">{n((kpi?.totalStoryPoints||0)-(kpi?.completedStoryPoints||0))}</td>
+                                            <td className="px-3 py-2.5 text-center text-red-500">{n(kpi?.people.reduce((s,p)=>(s+(p as any).storyPointsTodo||0),0))}</td>
                                             <td colSpan={2}/>
                                         </tr>
                                     </tfoot>
