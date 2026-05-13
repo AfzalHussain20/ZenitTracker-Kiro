@@ -1322,6 +1322,7 @@ export default function KPIDashboard() {
     const tempIssueDateTo = issueDateTo;
     const [activeTab, setActiveTab] = useState('team');
     const [spPeriod, setSpPeriod] = useState<'overall'|'6months'|'monthly'|'custom'>('overall');
+    const [spMonth, setSpMonth] = useState('all');
     const [spDateFrom, setSpDateFrom] = useState('');
     const [spDateTo, setSpDateTo] = useState('');
     const [drilldownLabel, setDrilldownLabel] = useState<string|null>(null);
@@ -2233,12 +2234,24 @@ export default function KPIDashboard() {
                                 {/* Period selector */}
                                 <div className="flex items-center gap-2 flex-wrap">
                                     {(['overall','6months','monthly','custom'] as const).map(p=>(
-                                        <button key={p} onClick={()=>setSpPeriod(p)}
+                                        <button key={p} onClick={()=>{setSpPeriod(p);setSpMonth('all');}}
                                             className={cn('px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all',
-                                                spPeriod===p?'bg-primary text-primary-foreground border-primary':'bg-muted/40 border-border hover:bg-muted')}>
+                                                spPeriod===p&&spMonth==='all'?'bg-primary text-primary-foreground border-primary':'bg-muted/40 border-border hover:bg-muted')}>
                                             {p==='overall'?'Overall':p==='6months'?'6 Months':p==='monthly'?'This Month':'Custom'}
                                         </button>
                                     ))}
+                                    {/* Month dropdown — same as Team KPIs */}
+                                    <Select value={spMonth} onValueChange={v=>{setSpMonth(v);if(v!=='all')setSpPeriod('overall');}}>
+                                        <SelectTrigger className={cn('w-40 h-8 text-xs',spMonth!=='all'&&'border-primary bg-primary/5 font-medium')}>
+                                            <SelectValue placeholder="All Time"/>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">All Time</SelectItem>
+                                            {(kpi?.monthly||[]).slice().reverse().map(m=>(
+                                                <SelectItem key={m.month} value={m.month}>{m.label}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
                                     {spPeriod==='custom'&&(
                                         <div className="flex items-center gap-1">
                                             <input type="date" value={spDateFrom} onChange={e=>setSpDateFrom(e.target.value)}
@@ -2248,14 +2261,19 @@ export default function KPIDashboard() {
                                                 className="h-7 text-xs px-2 rounded-md border bg-background"/>
                                         </div>
                                     )}
+                                    {(spMonth!=='all'||spPeriod!=='overall')&&(
+                                        <button onClick={()=>{setSpPeriod('overall');setSpMonth('all');setSpDateFrom('');setSpDateTo('');}}
+                                            className="text-xs text-destructive hover:underline">Clear</button>
+                                    )}
                                 </div>
                             </div>
                             {/* Period label */}
                             <div className="mt-2 text-xs text-muted-foreground">
-                                {spPeriod==='overall'&&'Showing all-time story points'}
-                                {spPeriod==='6months'&&'Showing last 6 months of story points'}
-                                {spPeriod==='monthly'&&`Showing current month (${new Date().toLocaleString('en-US',{month:'long',year:'numeric'})})`}
-                                {spPeriod==='custom'&&spDateFrom&&spDateTo&&`Showing ${spDateFrom} to ${spDateTo}`}
+                                {spMonth!=='all'&&`Showing: ${kpi?.monthly.find(m=>m.month===spMonth)?.label||spMonth}`}
+                                {spMonth==='all'&&spPeriod==='overall'&&'Showing all-time story points'}
+                                {spMonth==='all'&&spPeriod==='6months'&&'Showing last 6 months of story points'}
+                                {spMonth==='all'&&spPeriod==='monthly'&&`Showing current month (${new Date().toLocaleString('en-US',{month:'long',year:'numeric'})})`}
+                                {spMonth==='all'&&spPeriod==='custom'&&spDateFrom&&spDateTo&&`Showing ${spDateFrom} to ${spDateTo}`}
                             </div>
                         </CardHeader>
                         <CardContent className="p-0">
@@ -2283,7 +2301,7 @@ export default function KPIDashboard() {
 
                                             // For period-filtered SP, compute from assigned issues
                                             const getFilteredSP = (p: PersonKPI) => {
-                                                if(spPeriod==='overall') return {
+                                                if(spPeriod==='overall' && spMonth==='all') return {
                                                     assigned: p.storyPointsAssigned,
                                                     done: p.storyPointsCompleted,
                                                     inProg: (p as any).storyPointsInProgress||0,
@@ -2293,7 +2311,8 @@ export default function KPIDashboard() {
                                                 let assigned=0, done=0, inProg=0, todo=0;
                                                 Object.entries(p.monthly).forEach(([mk, ms])=>{
                                                     let include = false;
-                                                    if(spPeriod==='monthly') include = mk===curKey;
+                                                    if(spMonth!=='all') include = mk===spMonth;
+                                                    else if(spPeriod==='monthly') include = mk===curKey;
                                                     else if(spPeriod==='6months') include = mk>=sixKey;
                                                     else if(spPeriod==='custom') include = (!spDateFrom||mk>=spDateFrom.slice(0,7))&&(!spDateTo||mk<=spDateTo.slice(0,7));
                                                     if(include){ assigned+=ms.storyPoints||0; }
