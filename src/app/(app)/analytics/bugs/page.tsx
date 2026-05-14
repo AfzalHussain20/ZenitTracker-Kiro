@@ -2333,11 +2333,11 @@ export default function KPIDashboard() {
                             {(()=>{
                                 const fmt=(v:number)=>v%1===0?String(v):v.toFixed(1);
                                 const baseIssues = (kpi?.all||[]).filter(i=>{
+                                    // Sprint filter: exact sprint ID match
                                     if(spSprintFilter!=='all' && String(i.sprint?.id)!==spSprintFilter) return false;
-                                    if(spTeamFilter!=='all'){
-                                        const tmIds=new Set((kpi?.people||[]).filter(p=>p.teams.includes(spTeamFilter)).map(p=>p.userId));
-                                        if(i.team!==spTeamFilter && !(i.assignee&&tmIds.has(i.assignee.accountId))) return false;
-                                    }
+                                    // Team filter: use the issue's team field (same as Jira's team filter)
+                                    // This matches exactly what Jira shows when you filter by team in a sprint
+                                    if(spTeamFilter!=='all' && i.team!==spTeamFilter) return false;
                                     // Month filter: use updated date so we see tickets active in that month
                                     if(spMonthFilter!=='all' && !i.updated.startsWith(spMonthFilter)) return false;
                                     return (i.storyPoints||0) > 0;
@@ -2424,8 +2424,8 @@ export default function KPIDashboard() {
                                                     </tr></thead>
                                                     <tbody>
                                                         {(kpi?.allTeams||[]).map(team=>{
-                                                            const tmIds=new Set((kpi?.people||[]).filter(p=>p.teams.includes(team)).map(p=>p.userId));
-                                                            const ti=issues.filter(i=>i.team===team||(i.assignee&&tmIds.has(i.assignee.accountId)));
+                                                            // Use issue's team field only — matches Jira's team filter exactly
+                                                            const ti=issues.filter(i=>i.team===team);
                                                             const unique=Array.from(new Map(ti.map(i=>[i.id,i])).values());
                                                             if(unique.length===0) return null;
                                                             const t=Math.round(unique.reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
@@ -2469,10 +2469,10 @@ export default function KPIDashboard() {
                                                             issues.forEach(i=>{
                                                                 if(!i.assignee) return;
                                                                 const id=i.assignee.accountId;
-                                                                if(!byPerson.has(id)) byPerson.set(id,{name:i.assignee.displayName,team:'',issues:[]});
+                                                                if(!byPerson.has(id)) byPerson.set(id,{name:i.assignee.displayName,team:i.team||'',issues:[]});
                                                                 byPerson.get(id)!.issues.push(i);
                                                             });
-                                                            (kpi?.people||[]).forEach(p=>{if(byPerson.has(p.userId)) byPerson.get(p.userId)!.team=p.teams[0]||'';});
+                                                            // Don't override team from people array — use issue's team field for accuracy
                                                             return Array.from(byPerson.entries())
                                                                 .map(([id,{name,team,issues:pi}])=>{
                                                                     const t=Math.round(pi.reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
