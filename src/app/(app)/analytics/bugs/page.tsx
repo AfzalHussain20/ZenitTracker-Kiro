@@ -2278,7 +2278,7 @@ export default function KPIDashboard() {
                                         </button>
                                     ))}
                                     {(spView==='sprint'||spView==='individual')&&(
-                                        <Select value={spSprintFilter} onValueChange={setSpSprintFilter}>
+                                        <Select value={spSprintFilter} onValueChange={v=>{setSpSprintFilter(v);setSpMonthFilter('all');setSpDateFrom('');setSpDateTo('');}}>
                                             <SelectTrigger className={cn('w-52 h-8 text-xs',spSprintFilter!=='all'&&'border-primary bg-primary/5 font-medium')}>
                                                 <SelectValue placeholder="All Sprints"/>
                                             </SelectTrigger>
@@ -2303,29 +2303,55 @@ export default function KPIDashboard() {
                                             ))}
                                         </SelectContent>
                                     </Select>
-                                    {/* Month dropdown — All Time / May 2026 / April 2026 etc */}
-                                    <Select value={spMonthFilter} onValueChange={setSpMonthFilter}>
-                                        <SelectTrigger className={cn('w-40 h-8 text-xs',spMonthFilter!=='all'&&'border-primary bg-primary/5 font-medium')}>
-                                            <SelectValue placeholder="All Time"/>
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="all">All Time</SelectItem>
-                                            {(kpi?.monthly||[]).slice().reverse().map(m=>(
-                                                <SelectItem key={m.month} value={m.month}>{m.label}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    {(spSprintFilter!=='all'||spTeamFilter!=='all'||spMonthFilter!=='all')&&(
-                                        <button onClick={()=>{setSpSprintFilter('all');setSpTeamFilter('all');setSpMonthFilter('all');}}
+                                    {/* Date filter — month dropdown OR custom date range */}
+                                    {spSprintFilter==='all'&&(
+                                        <>
+                                            <Select value={spMonthFilter} onValueChange={v=>{setSpMonthFilter(v);setSpDateFrom('');setSpDateTo('');}}>
+                                                <SelectTrigger className={cn('w-40 h-8 text-xs',spMonthFilter!=='all'&&'border-primary bg-primary/5 font-medium')}>
+                                                    <SelectValue placeholder="All Time"/>
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="all">All Time</SelectItem>
+                                                    {(kpi?.monthly||[]).slice().reverse().map(m=>(
+                                                        <SelectItem key={m.month} value={m.month}>{m.label}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            {/* Custom date range */}
+                                            <div className="flex items-center gap-1">
+                                                <input type="date" value={spDateFrom}
+                                                    onChange={e=>{setSpDateFrom(e.target.value);setSpMonthFilter('all');}}
+                                                    className={cn('h-8 text-xs px-2 rounded-md border bg-background',spDateFrom&&'border-primary bg-primary/5')}
+                                                    title="From date"/>
+                                                <span className="text-xs text-muted-foreground">&mdash;</span>
+                                                <input type="date" value={spDateTo}
+                                                    onChange={e=>{setSpDateTo(e.target.value);setSpMonthFilter('all');}}
+                                                    className={cn('h-8 text-xs px-2 rounded-md border bg-background',spDateTo&&'border-primary bg-primary/5')}
+                                                    title="To date"/>
+                                            </div>
+                                        </>
+                                    )}
+                                    {/* When sprint is selected, show its date range info */}
+                                    {spSprintFilter!=='all'&&(()=>{
+                                        const sp=kpi?.sprints.find(s=>String(s.id)===spSprintFilter);
+                                        if(!sp?.startDate||!sp?.endDate) return null;
+                                        return <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">{sp.startDate.slice(0,10)} &mdash; {sp.endDate.slice(0,10)}</span>;
+                                    })()}
+                                    {(spSprintFilter!=='all'||spTeamFilter!=='all'||spMonthFilter!=='all'||spDateFrom||spDateTo)&&(
+                                        <button onClick={()=>{setSpSprintFilter('all');setSpTeamFilter('all');setSpMonthFilter('all');setSpDateFrom('');setSpDateTo('');}}
                                             className="text-xs text-destructive hover:underline">Clear</button>
                                     )}
                                 </div>
                             </div>
-                            {(spSprintFilter!=='all'||spTeamFilter!=='all'||spMonthFilter!=='all')&&(
+                            {(spSprintFilter!=='all'||spTeamFilter!=='all'||spMonthFilter!=='all'||spDateFrom||spDateTo)&&(
                                 <div className="mt-2 flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
-                                    {spSprintFilter!=='all'&&<span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">Sprint: {kpi?.sprints.find(s=>String(s.id)===spSprintFilter)?.name||spSprintFilter}</span>}
+                                    {spSprintFilter!=='all'&&(()=>{
+                                        const sp=kpi?.sprints.find(s=>String(s.id)===spSprintFilter);
+                                        return <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">Sprint: {sp?.name||spSprintFilter}{sp?.startDate?` (${sp.startDate.slice(0,10)} — ${sp.endDate?.slice(0,10)||'?'})`:''}</span>;
+                                    })()}
                                     {spTeamFilter!=='all'&&<span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">Team: {spTeamFilter}</span>}
                                     {spMonthFilter!=='all'&&<span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">Month: {kpi?.monthly.find(m=>m.month===spMonthFilter)?.label||spMonthFilter}</span>}
+                                    {(spDateFrom||spDateTo)&&<span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">Date: {spDateFrom||'any'} &mdash; {spDateTo||'any'}</span>}
                                 </div>
                             )}
                         </CardHeader>
@@ -2355,8 +2381,19 @@ export default function KPIDashboard() {
                                         if(!teamIds) return false;
                                         if(!i.assignee || !teamIds.has(i.assignee.accountId)) return false;
                                     }
-                                    // Month filter: use updated date so we see tickets active in that month
-                                    if(spMonthFilter!=='all' && !i.updated.startsWith(spMonthFilter)) return false;
+                                    // Date filter — only applied when NO sprint is selected
+                                    // (sprint already scopes the date range via sprint membership)
+                                    if(spSprintFilter==='all'){
+                                        if(spMonthFilter!=='all'){
+                                            // Month filter: use updated date (reflects current work state)
+                                            if(!i.updated.startsWith(spMonthFilter)) return false;
+                                        } else if(spDateFrom||spDateTo){
+                                            // Custom date range: use updated date
+                                            const d=i.updated.slice(0,10);
+                                            if(spDateFrom && d<spDateFrom) return false;
+                                            if(spDateTo && d>spDateTo) return false;
+                                        }
+                                    }
                                     return (i.storyPoints||0) > 0;
                                 });
                                 const issues = Array.from(new Map(baseIssues.map(i=>[i.id,i])).values());
