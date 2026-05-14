@@ -1290,11 +1290,15 @@ export default function KPIDashboard() {
     const [activeSprint, setActiveSprint] = useState<string|undefined>(undefined);
     const { kpi, loading, error, lastSync, forceRefresh, allSprints } = useJiraKPI(activeSprint);
 
-    // Auto-select the active sprint on first load
+    // Auto-select the active sprint as soon as sprint list is available
+    // This ensures first load is always sprint-scoped, not all-time
     useEffect(() => {
         if (activeSprint === undefined && allSprints.length > 0) {
             const active = allSprints.find(s => s.state === 'active');
-            if (active) setActiveSprint(String(active.id));
+            if (active) {
+                console.log(`[Dashboard] Auto-selecting active sprint: ${active.name} (${active.id})`);
+                setActiveSprint(String(active.id));
+            }
         }
     }, [allSprints, activeSprint]);
     const { exportData, exporting } = useExport();

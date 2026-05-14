@@ -140,10 +140,44 @@ async function fetchAllPages(jql: string): Promise<any[]> {
 async function buildFullSync(sprintId?: string) {
     const start = Date.now();
     // Sprint clause: exact sprint ID if provided, else active sprint only
-    const sprintClause = sprintId
-        ? `AND sprint = ${sprintId}`
+    // Using openSprints() can return multiple sprints — use exact ID for accuracy
+    let resolvedSprintId = sprintId;
+    if (!resolvedSprintId) {
+        // Auto-detect the active sprint ID from the Agile API
+        try {
+            const boardsRes = await fetch(
+                `${JIRA_BASE}/rest/agile/1.0/board?projectKeyOrId=${PROJECT_KEY}&maxResults=10`,
+                { headers: { Authorization: `Basic ${JIRA_AUTH()}`, Accept: 'application/json' }, cache: 'no-store' }
+            );
+            if (boardsRes.ok) {
+                const boardsData = await boardsRes.json();
+                const boards: any[] = boardsData.values || [];
+                for (const board of boards) {
+                    const sprintRes = await fetch(
+                        `${JIRA_BASE}/rest/agile/1.0/board/${board.id}/sprint?state=active&maxResults=1`,
+                        { headers: { Authorization: `Basic ${JIRA_AUTH()}`, Accept: 'application/json' }, cache: 'no-store' }
+                    );
+                    if (sprintRes.ok) {
+                        const sprintData = await sprintRes.json();
+                        const activeSprint = sprintData.values?.[0];
+                        if (activeSprint?.id) {
+                            resolvedSprintId = String(activeSprint.id);
+                            console.log(`[Sync] Auto-detected active sprint: ${activeSprint.name} (ID: ${resolvedSprintId})`);
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[Sync] Could not auto-detect active sprint, falling back to openSprints()');
+        }
+    }
+
+    const sprintClause = resolvedSprintId
+        ? `AND sprint = ${resolvedSprintId}`
         : `AND sprint in openSprints()`;
-    console.log(`[Sync] Starting parallel Jira sync... sprint=${sprintId || 'active'}`);
+
+    console.log(`[Sync] Starting parallel Jira sync... sprint=${resolvedSprintId || 'openSprints()'}`);
 
     // Fetch all types truly in parallel — scoped to sprint
     const [bugs, stories, epics, tasks, subtasks] = await Promise.all([
@@ -169,7 +203,7 @@ async function buildFullSync(sprintId?: string) {
         liveTickets,
         syncedAt: new Date().toISOString(),
         syncDurationMs: elapsed,
-        sprintId: sprintId || null,
+        sprintId: resolvedSprintId || null,
         counts: {
             total: all.length,
             bugs: bugs.length,
@@ -185,7 +219,8 @@ async function buildFullSync(sprintId?: string) {
 // GET: return cached data immediately, refresh in background if stale
 export async function GET(req: NextRequest) {
     const sprintId = req.nextUrl.searchParams.get('sprintId') || undefined;
-    const key = `full_sync_${sprintId || 'active'}`;
+    // Cache key includes sprint ID — different sprints have separate caches
+    const key = `full_sync_${sprintId || 'auto'}`;
     const entry = cache.get(key);
     const now = Date.now();
     const isStale = !entry || (now - entry.ts) >= CACHE_TTL;
@@ -231,7 +266,7 @@ export async function GET(req: NextRequest) {
 // POST: force immediate refresh
 export async function POST(req: NextRequest) {
     const sprintId = req.nextUrl.searchParams.get('sprintId') || undefined;
-    const key = `full_sync_${sprintId || 'active'}`;
+    const key = `full_sync_${sprintId || 'auto'}`;
     try {
         cache.set(key, { data: cache.get(key)?.data || null, ts: 0, fetching: true });
         const data = await buildFullSync(sprintId);
