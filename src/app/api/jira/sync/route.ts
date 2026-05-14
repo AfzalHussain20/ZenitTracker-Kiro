@@ -82,6 +82,7 @@ function mapIssue(issue: any) {
         liveVersion,
         fixVersions: fixVersions.map((v: any) => ({ name: v.name, released: v.released })),
         team,  // Team name from customfield_10001
+        isSubTask: f.issuetype?.subtask === true || f.issuetype?.name === 'Sub-task',
         sprint: (() => {
             // customfield_10020 can be an array of sprint objects or a single object
             const sf = f['customfield_10020'];
@@ -136,20 +137,26 @@ async function fetchAllPages(jql: string): Promise<any[]> {
     return all;
 }
 
-async function buildFullSync() {
+async function buildFullSync(sprintId?: string) {
     const start = Date.now();
-    console.log('[Sync] Starting parallel Jira sync...');
+    // Sprint clause: exact sprint ID if provided, else active sprint only
+    const sprintClause = sprintId
+        ? `AND sprint = ${sprintId}`
+        : `AND sprint in openSprints()`;
+    console.log(`[Sync] Starting parallel Jira sync... sprint=${sprintId || 'active'}`);
 
-    // Fetch all types truly in parallel — no sequential waiting
+    // Fetch all types truly in parallel — scoped to sprint
     const [bugs, stories, epics, tasks, subtasks] = await Promise.all([
-        fetchAllPages(`project = ${PROJECT_KEY} AND issuetype = "Bug" ORDER BY created DESC`),
-        fetchAllPages(`project = ${PROJECT_KEY} AND issuetype = "Story" ORDER BY created DESC`),
-        fetchAllPages(`project = ${PROJECT_KEY} AND issuetype = "Epic" ORDER BY created DESC`),
-        fetchAllPages(`project = ${PROJECT_KEY} AND issuetype = "Task" ORDER BY created DESC`),
-        fetchAllPages(`project = ${PROJECT_KEY} AND issuetype = "Sub-task" ORDER BY created DESC`),
+        fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Bug" ORDER BY created DESC`),
+        fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Story" ORDER BY created DESC`),
+        fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Epic" ORDER BY created DESC`),
+        fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Task" ORDER BY created DESC`),
+        fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Sub-task" ORDER BY created DESC`),
     ]);
 
     const all = [...bugs, ...stories, ...epics, ...tasks, ...subtasks];
+    // allForSP excludes sub-tasks — sub-tasks duplicate parent story SP
+    const allForSP = [...bugs, ...stories, ...epics, ...tasks];
     const elapsed = Date.now() - start;
 
     // Live build tickets = any issue with a released fix version
@@ -158,10 +165,11 @@ async function buildFullSync() {
     console.log(`[Sync] Done in ${elapsed}ms: ${all.length} total (bugs=${bugs.length}, stories=${stories.length}, epics=${epics.length}, tasks=${tasks.length}, subtasks=${subtasks.length}, live=${liveTickets.length})`);
 
     return {
-        all, bugs, stories, epics, tasks, subtasks,
+        all, bugs, stories, epics, tasks, subtasks, allForSP,
         liveTickets,
         syncedAt: new Date().toISOString(),
         syncDurationMs: elapsed,
+        sprintId: sprintId || null,
         counts: {
             total: all.length,
             bugs: bugs.length,
@@ -175,8 +183,9 @@ async function buildFullSync() {
 }
 
 // GET: return cached data immediately, refresh in background if stale
-export async function GET(_req: NextRequest) {
-    const key = 'full_sync';
+export async function GET(req: NextRequest) {
+    const sprintId = req.nextUrl.searchParams.get('sprintId') || undefined;
+    const key = `full_sync_${sprintId || 'active'}`;
     const entry = cache.get(key);
     const now = Date.now();
     const isStale = !entry || (now - entry.ts) >= CACHE_TTL;
@@ -186,7 +195,7 @@ export async function GET(_req: NextRequest) {
         // Trigger background refresh if stale and not already fetching
         if (isStale && !entry.fetching) {
             cache.set(key, { ...entry, fetching: true });
-            buildFullSync().then(data => {
+            buildFullSync(sprintId).then(data => {
                 cache.set(key, { data, ts: Date.now(), fetching: false });
                 console.log('[Sync] Background refresh complete');
             }).catch(err => {
@@ -210,7 +219,7 @@ export async function GET(_req: NextRequest) {
     }
 
     try {
-        const data = await buildFullSync();
+        const data = await buildFullSync(sprintId);
         cache.set(key, { data, ts: now, fetching: false });
         return NextResponse.json({ ...data, cacheAge: 0, nextRefresh: CACHE_TTL / 1000, fromCache: false });
     } catch (err: any) {
@@ -220,11 +229,12 @@ export async function GET(_req: NextRequest) {
 }
 
 // POST: force immediate refresh
-export async function POST() {
-    const key = 'full_sync';
+export async function POST(req: NextRequest) {
+    const sprintId = req.nextUrl.searchParams.get('sprintId') || undefined;
+    const key = `full_sync_${sprintId || 'active'}`;
     try {
         cache.set(key, { data: cache.get(key)?.data || null, ts: 0, fetching: true });
-        const data = await buildFullSync();
+        const data = await buildFullSync(sprintId);
         cache.set(key, { data, ts: Date.now(), fetching: false });
         return NextResponse.json({ ...data, fromCache: false, forced: true });
     } catch (err: any) {

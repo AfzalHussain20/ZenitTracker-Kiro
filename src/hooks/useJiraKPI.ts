@@ -22,6 +22,7 @@ export interface JiraIssueRaw {
     isLive: boolean; liveVersion: string | null;
     fixVersions: { name: string; released: boolean }[];
     team: string | null;  // from customfield_10001
+    isSubTask: boolean;   // true for Sub-task issue type — excluded from SP totals
     sprint: { id: number; name: string; state: string; startDate: string | null; endDate: string | null } | null;
 }
 
@@ -135,6 +136,8 @@ function processKPI(raw: any): KPIData {
     const tasks: JiraIssueRaw[] = raw.tasks || [];
     const subtasks: JiraIssueRaw[] = raw.subtasks || [];
     const all = [...bugs, ...stories, ...epics, ...tasks, ...subtasks];
+    // allForSP excludes sub-tasks — sub-tasks duplicate parent story SP
+    const allForSP: JiraIssueRaw[] = raw.allForSP || all.filter(i => !i.isSubTask);
     const liveTickets: JiraIssueRaw[] = raw.liveTickets || all.filter(i => i.isLive);
 
     // ── Per-person map ──
@@ -171,7 +174,8 @@ function processKPI(raw: any): KPIData {
         }
     });
 
-    all.forEach(i => {
+    // Use allForSP (no sub-tasks) for SP tracking — sub-tasks duplicate parent story SP
+    allForSP.forEach(i => {
         if (i.assignee) {
             const p = get(i.assignee.accountId, i.assignee.displayName, i.assignee.avatarUrl);
             p.allAssigned.push(i);
@@ -374,7 +378,7 @@ function processKPI(raw: any): KPIData {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useJiraKPI() {
+export function useJiraKPI(sprintId?: string) {
     const [kpi, setKpi] = useState<KPIData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -383,9 +387,11 @@ export function useJiraKPI() {
 
     const fetchKPI = useCallback(async (force = false) => {
         try {
+            // Build URL with optional sprintId for sprint-scoped fetch
+            const sprintParam = sprintId ? `?sprintId=${sprintId}` : '';
             // Fetch sync data and teams in parallel
             const [syncRes, teamsRes] = await Promise.all([
-                fetch('/api/jira/sync', { method: force ? 'POST' : 'GET' }),
+                fetch(`/api/jira/sync${sprintParam}`, { method: force ? 'POST' : 'GET' }),
                 fetch('/api/jira/teams').catch(() => null),
             ]);
             if (!syncRes.ok) throw new Error(`HTTP ${syncRes.status}`);
@@ -408,9 +414,11 @@ export function useJiraKPI() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [sprintId]);
 
     useEffect(() => {
+        setLoading(true);
+        setKpi(null);
         fetchKPI();
         timerRef.current = setInterval(() => fetchKPI(), POLL_INTERVAL);
         return () => { if (timerRef.current) clearInterval(timerRef.current); };

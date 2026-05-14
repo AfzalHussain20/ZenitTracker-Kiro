@@ -1287,7 +1287,8 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
 
 // --- Main Dashboard -----------------------------------------------------------
 export default function KPIDashboard() {
-    const { kpi, loading, error, lastSync, forceRefresh } = useJiraKPI();
+    const [activeSprint, setActiveSprint] = useState<string|undefined>(undefined);
+    const { kpi, loading, error, lastSync, forceRefresh } = useJiraKPI(activeSprint);
     const { exportData, exporting } = useExport();
     const tabsRef = useRef<HTMLDivElement>(null);
 
@@ -1645,6 +1646,20 @@ export default function KPIDashboard() {
                             )}
                         </Button>
                         <Button onClick={forceRefresh} variant="outline" disabled={loading} size="sm"><RefreshCw className={cn('w-4 h-4 mr-2',loading&&'animate-spin')}/>{loading?'Syncing...':'Force Sync'}</Button>
+                        {/* Sprint selector — scopes ALL data to the selected sprint */}
+                        <Select value={activeSprint||'active'} onValueChange={v=>{setActiveSprint(v==='active'?undefined:v);}}>
+                            <SelectTrigger className={cn('w-52 h-9 text-xs',activeSprint&&'border-primary bg-primary/10 font-semibold text-primary')}>
+                                <SelectValue placeholder="Active Sprint"/>
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="active">Active Sprint (default)</SelectItem>
+                                {(kpi?.sprints||[]).map(s=>(
+                                    <SelectItem key={s.id} value={String(s.id)}>
+                                        {s.name}{s.state==='active'?' \u25cf':''}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                         <a href="https://sunnetwork-techteam-hanqzy91.atlassian.net/jira/software/projects/SUN/boards" target="_blank" rel="noopener noreferrer">
                             <Button variant="outline" size="sm"><ExternalLink className="w-4 h-4 mr-2"/> Jira Board</Button>
                         </a>
@@ -2373,6 +2388,8 @@ export default function KPIDashboard() {
                                 }
 
                                 const baseIssues = (kpi?.all||[]).filter(i=>{
+                                    // Exclude sub-tasks — they duplicate parent story SP
+                                    if(i.isSubTask) return false;
                                     // Sprint filter: exact sprint ID match
                                     if(spSprintFilter!=='all' && String(i.sprint?.id)!==spSprintFilter) return false;
                                     // Team filter: use issue's team field ONLY — exact match with Jira
@@ -2381,13 +2398,10 @@ export default function KPIDashboard() {
                                         if(!i.team || i.team !== spTeamFilter) return false;
                                     }
                                     // Date filter — only applied when NO sprint is selected
-                                    // (sprint already scopes the date range via sprint membership)
                                     if(spSprintFilter==='all'){
                                         if(spMonthFilter!=='all'){
-                                            // Month filter: use updated date (reflects current work state)
                                             if(!i.updated.startsWith(spMonthFilter)) return false;
                                         } else if(spDateFrom||spDateTo){
-                                            // Custom date range: use updated date
                                             const d=i.updated.slice(0,10);
                                             if(spDateFrom && d<spDateFrom) return false;
                                             if(spDateTo && d>spDateTo) return false;
