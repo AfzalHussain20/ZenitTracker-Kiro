@@ -26,6 +26,7 @@ const FIELDS = [
     'fixVersions',       // for live build tracking
     'versions',
     'customfield_10001', // Team field
+    'customfield_10020', // Sprint field
 ];
 
 interface CacheEntry { data: any; ts: number; fetching: boolean; }
@@ -81,6 +82,23 @@ function mapIssue(issue: any) {
         liveVersion,
         fixVersions: fixVersions.map((v: any) => ({ name: v.name, released: v.released })),
         team,  // Team name from customfield_10001
+        sprint: (() => {
+            // customfield_10020 can be an array of sprint objects or a single object
+            const sf = f['customfield_10020'];
+            if (!sf) return null;
+            const sprints: any[] = Array.isArray(sf) ? sf : [sf];
+            // Find the active sprint first, then the most recent
+            const active = sprints.find((s: any) => s.state === 'active');
+            const latest = active || sprints[sprints.length - 1];
+            if (!latest) return null;
+            return {
+                id: latest.id,
+                name: latest.name,
+                state: latest.state, // 'active' | 'closed' | 'future'
+                startDate: latest.startDate || null,
+                endDate: latest.endDate || null,
+            };
+        })(),
     };
 }
 

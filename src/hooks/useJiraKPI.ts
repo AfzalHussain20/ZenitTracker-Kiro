@@ -22,6 +22,7 @@ export interface JiraIssueRaw {
     isLive: boolean; liveVersion: string | null;
     fixVersions: { name: string; released: boolean }[];
     team: string | null;  // from customfield_10001
+    sprint: { id: number; name: string; state: string; startDate: string | null; endDate: string | null } | null;
 }
 
 export interface PersonKPI {
@@ -72,6 +73,8 @@ export interface KPIData {
     allTeams: string[];
     // Jira Teams with their actual members
     jiraTeams: JiraTeam[];
+    // All sprints found across issues
+    sprints: Array<{ id: number; name: string; state: string; startDate: string | null; endDate: string | null }>;
     // Summary KPIs
     totalStoryPoints: number;
     completedStoryPoints: number;
@@ -287,6 +290,20 @@ function processKPI(raw: any): KPIData {
 
     const allTeams = Array.from(allTeamSet).sort();
 
+    // Collect all unique sprints from issues
+    const sprintMap = new Map<number, { id: number; name: string; state: string; startDate: string | null; endDate: string | null }>();
+    all.forEach(i => {
+        if (i.sprint && i.sprint.id) {
+            sprintMap.set(i.sprint.id, i.sprint);
+        }
+    });
+    // Sort: active first, then by name descending (most recent sprint first)
+    const sprints = Array.from(sprintMap.values()).sort((a, b) => {
+        if (a.state === 'active' && b.state !== 'active') return -1;
+        if (b.state === 'active' && a.state !== 'active') return 1;
+        return b.name.localeCompare(a.name);
+    });
+
     // If we have Jira Teams API data, enrich people with correct team membership
     if (jiraTeams.length > 0) {
         // Build a map: accountId → team names from Jira Teams API
@@ -339,6 +356,7 @@ function processKPI(raw: any): KPIData {
         byStatus, byPriority, byIssueType,
         allTeams,
         jiraTeams: raw.jiraTeams || [],
+        sprints,
         totalStoryPoints: all.reduce((s, i) => s + (i.storyPoints || 0), 0),
         completedStoryPoints: all.filter(i => classify(i.status) === 'closed').reduce((s, i) => s + (i.storyPoints || 0), 0),
         inProgressStoryPoints: all.filter(i => classify(i.status) === 'in_progress').reduce((s, i) => s + (i.storyPoints || 0), 0),

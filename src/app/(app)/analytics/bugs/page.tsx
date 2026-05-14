@@ -1326,6 +1326,9 @@ export default function KPIDashboard() {
     const [spDateFrom, setSpDateFrom] = useState('');
     const [spDateTo, setSpDateTo] = useState('');
     const [monthlyTeamFilter, setMonthlyTeamFilter] = useState('all');
+    const [spView, setSpView] = useState<'individual'|'team'|'sprint'>('individual');
+    const [spSprintFilter, setSpSprintFilter] = useState('all');
+    const [spTeamFilter, setSpTeamFilter] = useState('all');
     const [drilldownLabel, setDrilldownLabel] = useState<string|null>(null);
     const [selectedPerson, setSelectedPerson] = useState<PersonKPI|null>(null);
     const [viewMode, setViewMode] = useState<'grid'|'list'>('grid');
@@ -2262,156 +2265,237 @@ export default function KPIDashboard() {
                         <CardHeader className="pb-3">
                             <div className="flex items-center justify-between flex-wrap gap-3">
                                 <div>
-                                    <CardTitle className="flex items-center gap-2"><Star className="w-5 h-5 text-purple-500"/>Story Points — Per Team Member</CardTitle>
-                                    <CardDescription className="mt-1">Total SP assigned vs In Progress vs Done per person</CardDescription>
+                                    <CardTitle className="flex items-center gap-2"><Star className="w-5 h-5 text-purple-500"/>Story Points</CardTitle>
+                                    <CardDescription className="mt-1">Sprint-wise, Team-wise, and Individual breakdown</CardDescription>
                                 </div>
-                                {/* Period selector */}
                                 <div className="flex items-center gap-2 flex-wrap">
-                                    {(['overall','6months','monthly','custom'] as const).map(p=>(
-                                        <button key={p} onClick={()=>{setSpPeriod(p);setSpMonth('all');}}
+                                    {(['individual','team','sprint'] as const).map(v=>(
+                                        <button key={v} onClick={()=>setSpView(v)}
                                             className={cn('px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all',
-                                                spPeriod===p&&spMonth==='all'?'bg-primary text-primary-foreground border-primary':'bg-muted/40 border-border hover:bg-muted')}>
-                                            {p==='overall'?'Overall':p==='6months'?'6 Months':p==='monthly'?'This Month':'Custom'}
+                                                spView===v?'bg-primary text-primary-foreground border-primary':'bg-muted/40 border-border hover:bg-muted')}>
+                                            {v==='individual'?'Individual':v==='team'?'By Team':'By Sprint'}
                                         </button>
                                     ))}
-                                    {/* Month dropdown — same as Team KPIs */}
-                                    <Select value={spMonth} onValueChange={v=>{setSpMonth(v);if(v!=='all')setSpPeriod('overall');}}>
-                                        <SelectTrigger className={cn('w-40 h-8 text-xs',spMonth!=='all'&&'border-primary bg-primary/5 font-medium')}>
-                                            <SelectValue placeholder="All Time"/>
+                                    {(spView==='sprint'||spView==='individual')&&(
+                                        <Select value={spSprintFilter} onValueChange={setSpSprintFilter}>
+                                            <SelectTrigger className={cn('w-52 h-8 text-xs',spSprintFilter!=='all'&&'border-primary bg-primary/5 font-medium')}>
+                                                <SelectValue placeholder="All Sprints"/>
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All Sprints</SelectItem>
+                                                {(kpi?.sprints||[]).map(s=>(
+                                                    <SelectItem key={s.id} value={String(s.id)}>
+                                                        {s.name}{s.state==='active'?' (Active)':s.state==='future'?' (Future)':''}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    )}
+                                    <Select value={spTeamFilter} onValueChange={setSpTeamFilter}>
+                                        <SelectTrigger className={cn('w-44 h-8 text-xs',spTeamFilter!=='all'&&'border-primary bg-primary/5 font-medium')}>
+                                            <SelectValue placeholder="All Teams"/>
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="all">All Time</SelectItem>
-                                            {(kpi?.monthly||[]).slice().reverse().map(m=>(
-                                                <SelectItem key={m.month} value={m.month}>{m.label}</SelectItem>
+                                            <SelectItem value="all">All Teams</SelectItem>
+                                            {(kpi?.allTeams||[]).map(t=>(
+                                                <SelectItem key={t} value={t}>{t}</SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>
-                                    {spPeriod==='custom'&&(
-                                        <div className="flex items-center gap-1">
-                                            <input type="date" value={spDateFrom} onChange={e=>setSpDateFrom(e.target.value)}
-                                                className="h-7 text-xs px-2 rounded-md border bg-background"/>
-                                            <span className="text-xs text-muted-foreground">&mdash;</span>
-                                            <input type="date" value={spDateTo} onChange={e=>setSpDateTo(e.target.value)}
-                                                className="h-7 text-xs px-2 rounded-md border bg-background"/>
-                                        </div>
-                                    )}
-                                    {(spMonth!=='all'||spPeriod!=='overall')&&(
-                                        <button onClick={()=>{setSpPeriod('overall');setSpMonth('all');setSpDateFrom('');setSpDateTo('');}}
+                                    {(spSprintFilter!=='all'||spTeamFilter!=='all')&&(
+                                        <button onClick={()=>{setSpSprintFilter('all');setSpTeamFilter('all');}}
                                             className="text-xs text-destructive hover:underline">Clear</button>
                                     )}
                                 </div>
                             </div>
-                            {/* Period label */}
-                            <div className="mt-2 text-xs text-muted-foreground">
-                                {spMonth!=='all'&&`Showing: ${kpi?.monthly.find(m=>m.month===spMonth)?.label||spMonth}`}
-                                {spMonth==='all'&&spPeriod==='overall'&&'Showing all-time story points'}
-                                {spMonth==='all'&&spPeriod==='6months'&&'Showing last 6 months of story points'}
-                                {spMonth==='all'&&spPeriod==='monthly'&&`Showing current month (${new Date().toLocaleString('en-US',{month:'long',year:'numeric'})})`}
-                                {spMonth==='all'&&spPeriod==='custom'&&spDateFrom&&spDateTo&&`Showing ${spDateFrom} to ${spDateTo}`}
-                            </div>
+                            {(spSprintFilter!=='all'||spTeamFilter!=='all')&&(
+                                <div className="mt-2 flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                                    {spSprintFilter!=='all'&&<span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">Sprint: {kpi?.sprints.find(s=>String(s.id)===spSprintFilter)?.name||spSprintFilter}</span>}
+                                    {spTeamFilter!=='all'&&<span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">Team: {spTeamFilter}</span>}
+                                </div>
+                            )}
                         </CardHeader>
                         <CardContent className="p-0">
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead>
-                                        <tr className="border-b bg-muted/30">
-                                            <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">#</th>
-                                            <th className="text-left px-4 py-2.5 text-xs font-semibold">Member</th>
-                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-sky-600">Total SP</th>
-                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-amber-600">SP In Progress</th>
-                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-green-600">SP Done</th>
-                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-red-500">SP To-Do</th>
-                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-blue-600">Tickets</th>
-                                            <th className="text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground">Done %</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {(()=>{
-                                            // Filter people by selected period
-                                            const now = new Date();
-                                            const curKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-                                            const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth()-5, 1);
-                                            const sixKey = `${sixMonthsAgo.getFullYear()}-${String(sixMonthsAgo.getMonth()+1).padStart(2,'0')}`;
-
-                                            // For period-filtered SP, compute from assigned issues
-                                            const getFilteredSP = (p: PersonKPI) => {
-                                                if(spPeriod==='overall' && spMonth==='all') return {
-                                                    assigned: p.storyPointsAssigned,
-                                                    done: p.storyPointsCompleted,
-                                                    inProg: (p as any).storyPointsInProgress||0,
-                                                    todo: (p as any).storyPointsTodo||0,
-                                                };
-                                                // For time-filtered periods, sum from monthly data
-                                                let assigned=0, done=0, inProg=0, todo=0;
-                                                Object.entries(p.monthly).forEach(([mk, ms])=>{
-                                                    let include = false;
-                                                    if(spMonth!=='all') include = mk===spMonth;
-                                                    else if(spPeriod==='monthly') include = mk===curKey;
-                                                    else if(spPeriod==='6months') include = mk>=sixKey;
-                                                    else if(spPeriod==='custom') include = (!spDateFrom||mk>=spDateFrom.slice(0,7))&&(!spDateTo||mk<=spDateTo.slice(0,7));
-                                                    if(include){ assigned+=ms.storyPoints||0; }
-                                                });
-                                                // For period views, use monthly SP as proxy for assigned
-                                                // done/inProg/todo ratios from overall
-                                                const ratio = p.storyPointsAssigned>0?assigned/p.storyPointsAssigned:0;
-                                                done = Math.round(p.storyPointsCompleted*ratio*10)/10;
-                                                inProg = Math.round(((p as any).storyPointsInProgress||0)*ratio*10)/10;
-                                                todo = Math.round(((p as any).storyPointsTodo||0)*ratio*10)/10;
-                                                return {assigned, done, inProg, todo};
-                                            };
-
-                                            const fmt=(v:number)=>v%1===0?String(v):v.toFixed(1);
-                                            return (kpi?.people||[])
-                                                .map(p=>({p, sp:getFilteredSP(p)}))
-                                                .filter(({sp})=>sp.assigned>0)
-                                                .sort((a,b)=>b.sp.assigned-a.sp.assigned)
-                                                .map(({p, sp}, idx)=>{
-                                                    const pct=sp.assigned>0?Math.min(100,Math.round((sp.done/sp.assigned)*100)):0;
-                                                    return(
-                                                        <tr key={p.userId} className="border-b hover:bg-muted/20 transition-colors cursor-pointer" onClick={()=>setSelectedPerson(p)}>
-                                                            <td className="px-4 py-2.5 text-xs text-muted-foreground">#{idx+1}</td>
-                                                            <td className="px-4 py-2.5">
-                                                                <div className="flex items-center gap-2">
-                                                                    <div className={cn('w-6 h-6 rounded-md flex items-center justify-center text-white text-[10px] font-black shrink-0',getAvatarStyle(p.name).bg)}>{p.name.charAt(0)}</div>
-                                                                    <div>
-                                                                        <div className="font-semibold text-sm">{p.name}</div>
-                                                                        {p.teams[0]&&<div className="text-[10px] text-muted-foreground">{p.teams[0]}</div>}
-                                                                    </div>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-3 py-2.5 text-center font-bold text-sky-600 text-base">{fmt(sp.assigned)}</td>
-                                                            <td className="px-3 py-2.5 text-center font-semibold text-amber-600">{fmt(sp.inProg)}</td>
-                                                            <td className="px-3 py-2.5 text-center font-bold text-green-600">{fmt(sp.done)}</td>
-                                                            <td className="px-3 py-2.5 text-center text-red-500">{fmt(sp.todo)}</td>
-                                                            <td className="px-3 py-2.5 text-center text-blue-600">{p.ticketsAssigned}</td>
-                                                            <td className="px-3 py-2.5 text-center">
-                                                                <div className="flex items-center gap-2 justify-center">
-                                                                    <div className="w-16 h-2 bg-muted rounded-full overflow-hidden"><div className={cn('h-full rounded-full',pct>=70?'bg-green-500':pct>=40?'bg-amber-500':'bg-red-500')} style={{width:`${pct}%`}}/></div>
-                                                                    <span className="text-xs font-bold">{pct}%</span>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                });
-                                        })()}
-                                    </tbody>
-                                    <tfoot>
-                                        <tr className="border-t-2 bg-muted/50 font-bold">
-                                            <td colSpan={2} className="px-4 py-2.5 text-xs text-muted-foreground">TOTAL (all issues)</td>
-                                            <td className="px-3 py-2.5 text-center text-sky-600">{(kpi?.totalStoryPoints||0)%1===0?String(kpi?.totalStoryPoints||0):(kpi?.totalStoryPoints||0).toFixed(1)}</td>
-                                            <td className="px-3 py-2.5 text-center text-amber-600">{(kpi?.inProgressStoryPoints||0)%1===0?String(kpi?.inProgressStoryPoints||0):(kpi?.inProgressStoryPoints||0).toFixed(1)}</td>
-                                            <td className="px-3 py-2.5 text-center text-green-600">{(kpi?.completedStoryPoints||0)%1===0?String(kpi?.completedStoryPoints||0):(kpi?.completedStoryPoints||0).toFixed(1)}</td>
-                                            <td className="px-3 py-2.5 text-center text-red-500">{(kpi?.todoStoryPoints||0)%1===0?String(kpi?.todoStoryPoints||0):(kpi?.todoStoryPoints||0).toFixed(1)}</td>
-                                            <td colSpan={2}/>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </div>
+                            {(()=>{
+                                const fmt=(v:number)=>v%1===0?String(v):v.toFixed(1);
+                                const baseIssues = (kpi?.all||[]).filter(i=>{
+                                    if(spSprintFilter!=='all' && String(i.sprint?.id)!==spSprintFilter) return false;
+                                    if(spTeamFilter!=='all'){
+                                        const tmIds=new Set((kpi?.people||[]).filter(p=>p.teams.includes(spTeamFilter)).map(p=>p.userId));
+                                        if(i.team!==spTeamFilter && !(i.assignee&&tmIds.has(i.assignee.accountId))) return false;
+                                    }
+                                    return (i.storyPoints||0) > 0;
+                                });
+                                const issues = Array.from(new Map(baseIssues.map(i=>[i.id,i])).values());
+                                const totalSP = Math.round(issues.reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                const doneSP = Math.round(issues.filter(i=>classifyStatus(i.status)==='closed').reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                const inProgSP = Math.round(issues.filter(i=>classifyStatus(i.status)==='in_progress').reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                const todoSP = Math.round(issues.filter(i=>classifyStatus(i.status)==='open').reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                const donePct = totalSP>0?Math.min(100,Math.round((doneSP/totalSP)*100)):0;
+                                return (
+                                    <div>
+                                        <div className="flex items-center gap-4 px-4 py-3 bg-muted/30 border-b flex-wrap">
+                                            {[
+                                                {label:'Total SP',v:totalSP,c:'text-sky-600',bg:'bg-sky-500/10'},
+                                                {label:'To-Do',v:todoSP,c:'text-red-600',bg:'bg-red-500/10'},
+                                                {label:'In Progress',v:inProgSP,c:'text-amber-600',bg:'bg-amber-500/10'},
+                                                {label:'Done',v:doneSP,c:'text-green-600',bg:'bg-green-500/10'},
+                                            ].map(s=>(
+                                                <div key={s.label} className={cn('flex items-center gap-2 px-3 py-1.5 rounded-lg',s.bg)}>
+                                                    <span className={cn('text-lg font-black',s.c)}>{fmt(s.v)}</span>
+                                                    <span className="text-xs text-muted-foreground font-medium">{s.label}</span>
+                                                </div>
+                                            ))}
+                                            <div className="ml-auto flex items-center gap-2">
+                                                <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
+                                                    <div className={cn('h-full rounded-full',donePct>=70?'bg-green-500':donePct>=40?'bg-amber-500':'bg-red-500')} style={{width:`${donePct}%`}}/>
+                                                </div>
+                                                <span className="text-xs font-bold">{donePct}% done</span>
+                                            </div>
+                                        </div>
+                        {spView==='sprint'&&(
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm">
+                                                    <thead><tr className="border-b bg-muted/30">
+                                                        <th className="text-left px-4 py-2.5 text-xs font-semibold">Sprint</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground">Status</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-sky-600">Total SP</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-red-500">To-Do</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-amber-600">In Progress</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-green-600">Done</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground">Done %</th>
+                                                    </tr></thead>
+                                                    <tbody>
+                                                        {(kpi?.sprints||[]).map(sprint=>{
+                                                            const si=issues.filter(i=>String(i.sprint?.id)===String(sprint.id));
+                                                            if(si.length===0) return null;
+                                                            const t=Math.round(si.reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                                            const d=Math.round(si.filter(i=>classifyStatus(i.status)==='closed').reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                                            const ip=Math.round(si.filter(i=>classifyStatus(i.status)==='in_progress').reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                                            const td=Math.round(si.filter(i=>classifyStatus(i.status)==='open').reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                                            const pct=t>0?Math.min(100,Math.round((d/t)*100)):0;
+                                                            return(
+                                                                <tr key={sprint.id} className="border-b hover:bg-muted/20 transition-colors">
+                                                                    <td className="px-4 py-2.5 font-semibold">{sprint.name}</td>
+                                                                    <td className="px-3 py-2.5 text-center">
+                                                                        <span className={cn('text-[10px] px-2 py-0.5 rounded-full font-bold',sprint.state==='active'?'bg-green-500/20 text-green-700':sprint.state==='future'?'bg-blue-500/20 text-blue-700':'bg-muted text-muted-foreground')}>
+                                                                            {sprint.state==='active'?'Active':sprint.state==='future'?'Future':'Closed'}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="px-3 py-2.5 text-center font-bold text-sky-600">{fmt(t)}</td>
+                                                                    <td className="px-3 py-2.5 text-center text-red-500">{fmt(td)}</td>
+                                                                    <td className="px-3 py-2.5 text-center text-amber-600">{fmt(ip)}</td>
+                                                                    <td className="px-3 py-2.5 text-center font-bold text-green-600">{fmt(d)}</td>
+                                                                    <td className="px-3 py-2.5 text-center"><div className="flex items-center gap-2 justify-center"><div className="w-16 h-2 bg-muted rounded-full overflow-hidden"><div className={cn('h-full rounded-full',pct>=70?'bg-green-500':pct>=40?'bg-amber-500':'bg-red-500')} style={{width:`${pct}%`}}/></div><span className="text-xs font-bold">{pct}%</span></div></td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                        {spView==='team'&&(
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm">
+                                                    <thead><tr className="border-b bg-muted/30">
+                                                        <th className="text-left px-4 py-2.5 text-xs font-semibold">Team</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground">Members</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-sky-600">Total SP</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-red-500">To-Do</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-amber-600">In Progress</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-green-600">Done</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground">Done %</th>
+                                                    </tr></thead>
+                                                    <tbody>
+                                                        {(kpi?.allTeams||[]).map(team=>{
+                                                            const tmIds=new Set((kpi?.people||[]).filter(p=>p.teams.includes(team)).map(p=>p.userId));
+                                                            const ti=issues.filter(i=>i.team===team||(i.assignee&&tmIds.has(i.assignee.accountId)));
+                                                            const unique=Array.from(new Map(ti.map(i=>[i.id,i])).values());
+                                                            if(unique.length===0) return null;
+                                                            const t=Math.round(unique.reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                                            const d=Math.round(unique.filter(i=>classifyStatus(i.status)==='closed').reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                                            const ip=Math.round(unique.filter(i=>classifyStatus(i.status)==='in_progress').reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                                            const td=Math.round(unique.filter(i=>classifyStatus(i.status)==='open').reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                                            const pct=t>0?Math.min(100,Math.round((d/t)*100)):0;
+                                                            const mc=(kpi?.people||[]).filter(p=>p.teams.includes(team)).length;
+                                                            return(
+                                                                <tr key={team} className="border-b hover:bg-muted/20 transition-colors cursor-pointer" onClick={()=>setSpTeamFilter(team)}>
+                                                                    <td className="px-4 py-2.5 font-semibold">{team}</td>
+                                                                    <td className="px-3 py-2.5 text-center text-muted-foreground">{mc}</td>
+                                                                    <td className="px-3 py-2.5 text-center font-bold text-sky-600">{fmt(t)}</td>
+                                                                    <td className="px-3 py-2.5 text-center text-red-500">{fmt(td)}</td>
+                                                                    <td className="px-3 py-2.5 text-center text-amber-600">{fmt(ip)}</td>
+                                                                    <td className="px-3 py-2.5 text-center font-bold text-green-600">{fmt(d)}</td>
+                                                                    <td className="px-3 py-2.5 text-center"><div className="flex items-center gap-2 justify-center"><div className="w-16 h-2 bg-muted rounded-full overflow-hidden"><div className={cn('h-full rounded-full',pct>=70?'bg-green-500':pct>=40?'bg-amber-500':'bg-red-500')} style={{width:`${pct}%`}}/></div><span className="text-xs font-bold">{pct}%</span></div></td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                        {spView==='individual'&&(
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm">
+                                                    <thead><tr className="border-b bg-muted/30">
+                                                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">#</th>
+                                                        <th className="text-left px-4 py-2.5 text-xs font-semibold">Member</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-sky-600">Total SP</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-red-500">To-Do</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-amber-600">In Progress</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-green-600">Done</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-blue-600">Tickets</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground">Done %</th>
+                                                    </tr></thead>
+                                                    <tbody>
+                                                        {(()=>{
+                                                            const byPerson=new Map<string,{name:string;team:string;issues:typeof issues}>();
+                                                            issues.forEach(i=>{
+                                                                if(!i.assignee) return;
+                                                                const id=i.assignee.accountId;
+                                                                if(!byPerson.has(id)) byPerson.set(id,{name:i.assignee.displayName,team:'',issues:[]});
+                                                                byPerson.get(id)!.issues.push(i);
+                                                            });
+                                                            (kpi?.people||[]).forEach(p=>{if(byPerson.has(p.userId)) byPerson.get(p.userId)!.team=p.teams[0]||'';});
+                                                            return Array.from(byPerson.entries())
+                                                                .map(([id,{name,team,issues:pi}])=>{
+                                                                    const t=Math.round(pi.reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                                                    const d=Math.round(pi.filter(i=>classifyStatus(i.status)==='closed').reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                                                    const ip=Math.round(pi.filter(i=>classifyStatus(i.status)==='in_progress').reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                                                    const td=Math.round(pi.filter(i=>classifyStatus(i.status)==='open').reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
+                                                                    return {id,name,team,t,d,ip,td,count:pi.length};
+                                                                })
+                                                                .filter(r=>r.t>0)
+                                                                .sort((a,b)=>b.t-a.t)
+                                                                .map((r,idx)=>{
+                                                                    const pct=r.t>0?Math.min(100,Math.round((r.d/r.t)*100)):0;
+                                                                    const person=(kpi?.people||[]).find(p=>p.userId===r.id);
+                                                                    return(
+                                                                        <tr key={r.id} className="border-b hover:bg-muted/20 transition-colors cursor-pointer" onClick={()=>person&&setSelectedPerson(person)}>
+                                                                            <td className="px-4 py-2.5 text-xs text-muted-foreground">#{idx+1}</td>
+                                                                            <td className="px-4 py-2.5"><div className="flex items-center gap-2"><div className={cn('w-6 h-6 rounded-md flex items-center justify-center text-white text-[10px] font-black shrink-0',getAvatarStyle(r.name).bg)}>{r.name.charAt(0)}</div><div><div className="font-semibold text-sm">{r.name}</div>{r.team&&<div className="text-[10px] text-muted-foreground">{r.team}</div>}</div></div></td>
+                                                                            <td className="px-3 py-2.5 text-center font-bold text-sky-600 text-base">{fmt(r.t)}</td>
+                                                                            <td className="px-3 py-2.5 text-center text-red-500">{fmt(r.td)}</td>
+                                                                            <td className="px-3 py-2.5 text-center font-semibold text-amber-600">{fmt(r.ip)}</td>
+                                                                            <td className="px-3 py-2.5 text-center font-bold text-green-600">{fmt(r.d)}</td>
+                                                                            <td className="px-3 py-2.5 text-center text-blue-600">{r.count}</td>
+                                                                            <td className="px-3 py-2.5 text-center"><div className="flex items-center gap-2 justify-center"><div className="w-16 h-2 bg-muted rounded-full overflow-hidden"><div className={cn('h-full rounded-full',pct>=70?'bg-green-500':pct>=40?'bg-amber-500':'bg-red-500')} style={{width:`${pct}%`}}/></div><span className="text-xs font-bold">{pct}%</span></div></td>
+                                                                        </tr>
+                                                                    );
+                                                                });
+                                                        })()}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                         </CardContent>
                     </Card>
                 </TabsContent>
 
-                {/* TAB 6: WORK LOGS */}
+            {/* TAB 6: WORK LOGS */}
                 <TabsContent value="worklogs" className="mt-4">
                     <WorkLogsTab teamFilter={teamFilter} memberFilter={memberFilter} kpiPeople={kpi?.people||[]} onSelectPerson={setSelectedPerson} allIssues={kpi?.all||[]}/>
                 </TabsContent>
