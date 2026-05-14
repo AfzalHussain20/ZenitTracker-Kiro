@@ -2332,12 +2332,29 @@ export default function KPIDashboard() {
                         <CardContent className="p-0">
                             {(()=>{
                                 const fmt=(v:number)=>v%1===0?String(v):v.toFixed(1);
+                                // Build team membership lookup from Jira Teams API (most accurate)
+                                const teamMemberMap = new Map<string, Set<string>>();
+                                (kpi?.jiraTeams||[]).forEach(jt=>{
+                                    const ids = new Set(jt.members.map(m=>m.accountId));
+                                    teamMemberMap.set(jt.name, ids);
+                                });
+                                // Fallback: use people array teams
+                                if(teamMemberMap.size===0){
+                                    (kpi?.allTeams||[]).forEach(team=>{
+                                        const ids=new Set((kpi?.people||[]).filter(p=>p.teams.includes(team)).map(p=>p.userId));
+                                        teamMemberMap.set(team, ids);
+                                    });
+                                }
+
                                 const baseIssues = (kpi?.all||[]).filter(i=>{
                                     // Sprint filter: exact sprint ID match
                                     if(spSprintFilter!=='all' && String(i.sprint?.id)!==spSprintFilter) return false;
-                                    // Team filter: use the issue's team field (same as Jira's team filter)
-                                    // This matches exactly what Jira shows when you filter by team in a sprint
-                                    if(spTeamFilter!=='all' && i.team!==spTeamFilter) return false;
+                                    // Team filter: filter by ASSIGNEE's team membership (matches Jira sprint board)
+                                    if(spTeamFilter!=='all'){
+                                        const teamIds = teamMemberMap.get(spTeamFilter);
+                                        if(!teamIds) return false;
+                                        if(!i.assignee || !teamIds.has(i.assignee.accountId)) return false;
+                                    }
                                     // Month filter: use updated date so we see tickets active in that month
                                     if(spMonthFilter!=='all' && !i.updated.startsWith(spMonthFilter)) return false;
                                     return (i.storyPoints||0) > 0;
@@ -2424,8 +2441,9 @@ export default function KPIDashboard() {
                                                     </tr></thead>
                                                     <tbody>
                                                         {(kpi?.allTeams||[]).map(team=>{
-                                                            // Use issue's team field only — matches Jira's team filter exactly
-                                                            const ti=issues.filter(i=>i.team===team);
+                                                            // Use assignee's team membership (matches Jira sprint board)
+                                                            const teamIds = teamMemberMap.get(team) || new Set<string>();
+                                                            const ti=issues.filter(i=>i.assignee&&teamIds.has(i.assignee.accountId));
                                                             const unique=Array.from(new Map(ti.map(i=>[i.id,i])).values());
                                                             if(unique.length===0) return null;
                                                             const t=Math.round(unique.reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10;
@@ -2469,8 +2487,19 @@ export default function KPIDashboard() {
                                                             issues.forEach(i=>{
                                                                 if(!i.assignee) return;
                                                                 const id=i.assignee.accountId;
-                                                                if(!byPerson.has(id)) byPerson.set(id,{name:i.assignee.displayName,team:i.team||'',issues:[]});
+                                                                if(!byPerson.has(id)) byPerson.set(id,{name:i.assignee.displayName,team:'',issues:[]});
                                                                 byPerson.get(id)!.issues.push(i);
+                                                            });
+                                                            // Set team from Jira Teams API membership (most accurate)
+                                                            byPerson.forEach((v, id)=>{
+                                                                for(const [teamName, ids] of teamMemberMap.entries()){
+                                                                    if(ids.has(id)){ v.team=teamName; break; }
+                                                                }
+                                                                // Fallback to people array
+                                                                if(!v.team){
+                                                                    const p=(kpi?.people||[]).find(p=>p.userId===id);
+                                                                    if(p) v.team=p.teams[0]||'';
+                                                                }
                                                             });
                                                             // Don't override team from people array — use issue's team field for accuracy
                                                             return Array.from(byPerson.entries())
