@@ -75,6 +75,8 @@ export interface KPIData {
     // Summary KPIs
     totalStoryPoints: number;
     completedStoryPoints: number;
+    inProgressStoryPoints: number;
+    todoStoryPoints: number;
     openBugsCurrentMonth: number;
     closedBugsCurrentMonth: number;
     liveBuildsCount: number;
@@ -339,6 +341,8 @@ function processKPI(raw: any): KPIData {
         jiraTeams: raw.jiraTeams || [],
         totalStoryPoints: all.reduce((s, i) => s + (i.storyPoints || 0), 0),
         completedStoryPoints: all.filter(i => classify(i.status) === 'closed').reduce((s, i) => s + (i.storyPoints || 0), 0),
+        inProgressStoryPoints: all.filter(i => classify(i.status) === 'in_progress').reduce((s, i) => s + (i.storyPoints || 0), 0),
+        todoStoryPoints: all.filter(i => classify(i.status) === 'open').reduce((s, i) => s + (i.storyPoints || 0), 0),
         openBugsCurrentMonth: cm.open,
         closedBugsCurrentMonth: cm.closed,
         liveBuildsCount: liveTickets.length,

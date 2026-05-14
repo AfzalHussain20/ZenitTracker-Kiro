@@ -1531,7 +1531,7 @@ export default function KPIDashboard() {
             );
             // Deduplicate
             const unique=Array.from(new Map(mi.map(i=>[i.id,i])).values());
-            return{...month,bugs:unique.filter(i=>i.issueType==='Bug').length,stories:unique.filter(i=>i.issueType==='Story').length,epics:unique.filter(i=>i.issueType==='Epic').length,tasks:unique.filter(i=>i.issueType==='Task').length,total:unique.length,open:unique.filter(i=>OPEN_STATUSES.has(i.status)||(!CLOSED_STATUSES.has(i.status)&&!IP_STATUSES.has(i.status))).length,closed:unique.filter(i=>CLOSED_STATUSES.has(i.status)).length,inProgress:unique.filter(i=>IP_STATUSES.has(i.status)).length,critical:unique.filter(i=>i.priority==='Highest').length,storyPoints:unique.reduce((s,i)=>s+(i.storyPoints||0),0),liveTickets:unique.filter(i=>i.isLive).length};
+            return{...month,bugs:unique.filter(i=>i.issueType==='Bug').length,stories:unique.filter(i=>i.issueType==='Story').length,epics:unique.filter(i=>i.issueType==='Epic').length,tasks:unique.filter(i=>i.issueType==='Task').length,total:unique.length,open:unique.filter(i=>classifyStatus(i.status)==='open').length,closed:unique.filter(i=>classifyStatus(i.status)==='closed').length,inProgress:unique.filter(i=>classifyStatus(i.status)==='in_progress').length,critical:unique.filter(i=>i.priority==='Highest').length,storyPoints:Math.round(unique.reduce((s,i)=>s+(i.storyPoints||0),0)*10)/10,liveTickets:unique.filter(i=>i.isLive).length};
         });
     },[kpi,monthlyTeamFilter]);
 
@@ -1550,17 +1550,29 @@ export default function KPIDashboard() {
     const hasActiveFilters = teamFilter!=='all'||memberFilter!=='all'||filterMonth!=='all'||issueStatusFilter!=='all'||issuePriorityFilter!=='all'||issueSearch!==''||issueAssigneeFilter!=='all'||issueReporterFilter!=='all'||issueDateFrom!==''||issueDateTo!=='';
 
     // Period card data helper - must be before early returns (React hooks rule)
-    const periodCards = useMemo(() => [
-        {title:'Overall (All Time)',icon:Award,color:'text-purple-500',border:'border-purple-500/40',bg:'bg-purple-500/5',
-         data:teamScopedStats?teamScopedStats.overall:{total:kpi?.counts.bugs||0,open:Object.entries(kpi?.byStatus||{}).filter(([s])=>['New','Open','Reopen'].includes(s)).reduce((a,[,v])=>a+v,0),closed:Object.entries(kpi?.byStatus||{}).filter(([s])=>['Fixed','Closed','QA Verified','By Design','Deferred'].includes(s)).reduce((a,[,v])=>a+v,0),inProgress:Object.entries(kpi?.byStatus||{}).filter(([s])=>['Inprogress','In Progress','Retest'].includes(s)).reduce((a,[,v])=>a+v,0),critical:kpi?.bugs.filter(b=>b.priority==='Highest').length||0,high:kpi?.bugs.filter(b=>b.priority==='High').length||0},
-         prevData:null as null|{total:number;open:number;closed:number;inProgress:number;critical:number;high:number}},
-        {title:`${cm?.label||''} — Current Month`,icon:TrendingUp,color:'text-amber-500',border:'border-amber-500/40',bg:'bg-amber-500/5',
-         data:teamScopedStats?teamScopedStats.currentMonth:{total:cm?.bugs||0,open:cm?.open||0,closed:cm?.closed||0,inProgress:cm?.inProgress||0,critical:cm?.critical||0,high:cm?.high||0},
-         prevData:teamScopedStats?teamScopedStats.previousMonth:{total:pm?.bugs||0,open:pm?.open||0,closed:pm?.closed||0,inProgress:pm?.inProgress||0,critical:pm?.critical||0,high:pm?.high||0}},
-        {title:`${pm?.label||''} — Previous Month`,icon:Clock,color:'text-blue-500',border:'border-blue-500/40',bg:'bg-blue-500/5',
-         data:teamScopedStats?teamScopedStats.previousMonth:{total:pm?.bugs||0,open:pm?.open||0,closed:pm?.closed||0,inProgress:pm?.inProgress||0,critical:pm?.critical||0,high:pm?.high||0},
-         prevData:null as null|{total:number;open:number;closed:number;inProgress:number;critical:number;high:number}},
-    ], [teamScopedStats, kpi, cm, pm]);
+    const periodCards = useMemo(() => {
+        // Use classifyStatus for accurate open/inProgress/closed counts — matches Jira exactly
+        const allBugs = kpi?.bugs || [];
+        const overallData = teamScopedStats ? teamScopedStats.overall : {
+            total: allBugs.length,
+            open: allBugs.filter(b => classifyStatus(b.status) === 'open').length,
+            closed: allBugs.filter(b => classifyStatus(b.status) === 'closed').length,
+            inProgress: allBugs.filter(b => classifyStatus(b.status) === 'in_progress').length,
+            critical: allBugs.filter(b => b.priority === 'Highest').length,
+            high: allBugs.filter(b => b.priority === 'High').length,
+        };
+        return [
+            {title:'Overall (All Time)',icon:Award,color:'text-purple-500',border:'border-purple-500/40',bg:'bg-purple-500/5',
+             data: overallData,
+             prevData:null as null|{total:number;open:number;closed:number;inProgress:number;critical:number;high:number}},
+            {title:`${cm?.label||''} — Current Month`,icon:TrendingUp,color:'text-amber-500',border:'border-amber-500/40',bg:'bg-amber-500/5',
+             data:teamScopedStats?teamScopedStats.currentMonth:{total:cm?.bugs||0,open:cm?.open||0,closed:cm?.closed||0,inProgress:cm?.inProgress||0,critical:cm?.critical||0,high:cm?.high||0},
+             prevData:teamScopedStats?teamScopedStats.previousMonth:{total:pm?.bugs||0,open:pm?.open||0,closed:pm?.closed||0,inProgress:pm?.inProgress||0,critical:pm?.critical||0,high:pm?.high||0}},
+            {title:`${pm?.label||''} — Previous Month`,icon:Clock,color:'text-blue-500',border:'border-blue-500/40',bg:'bg-blue-500/5',
+             data:teamScopedStats?teamScopedStats.previousMonth:{total:pm?.bugs||0,open:pm?.open||0,closed:pm?.closed||0,inProgress:pm?.inProgress||0,critical:pm?.critical||0,high:pm?.high||0},
+             prevData:null as null|{total:number;open:number;closed:number;inProgress:number;critical:number;high:number}},
+        ];
+    }, [teamScopedStats, kpi, cm, pm]);
 
     if(loading&&!kpi) {
         return (<div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
@@ -1717,7 +1729,7 @@ export default function KPIDashboard() {
                         {label:'Stories',value:kpi?.counts.stories||0,color:'text-blue-600',icon:FileText,active:filterType==='Story',drillFilter:'total' as const,typeFilter:'Story' as const},
                         {label:'Epics',value:kpi?.counts.epics||0,color:'text-purple-600',icon:Zap,active:filterType==='Epic',drillFilter:'total' as const,typeFilter:'Epic' as const},
                         {label:'Tasks',value:kpi?.counts.tasks||0,color:'text-green-600',icon:CheckCircle2,active:filterType==='Task',drillFilter:'total' as const,typeFilter:'Task' as const},
-                        {label:'Story Points',value:kpi?.totalStoryPoints||0,color:'text-purple-600',icon:Star,active:activeTab==='storypoints',drillFilter:'storypoints' as const,typeFilter:null},
+                        {label:'Story Points',value:(kpi?.totalStoryPoints||0)%1===0?String(kpi?.totalStoryPoints||0):(kpi?.totalStoryPoints||0).toFixed(1),color:'text-purple-600',icon:Star,active:activeTab==='storypoints',drillFilter:'storypoints' as const,typeFilter:null},
                         {label:'Live Tickets',value:kpi?.liveBuildsCount||0,color:'text-emerald-600',icon:Globe,active:activeTab==='live',drillFilter:'live' as const,typeFilter:null},
                     ].map((s,i)=>(
                         <motion.div key={s.label} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{delay:i*0.04}}>
@@ -1729,7 +1741,7 @@ export default function KPIDashboard() {
                                 }}>
                                 <CardContent className="p-4">
                                     <s.icon className={cn('w-4 h-4 mb-2',s.active?s.color:'text-muted-foreground')}/>
-                                    <div className={cn('text-2xl font-bold',s.color)}>{n(s.value)}</div>
+                                    <div className={cn('text-2xl font-bold',s.color)}>{typeof s.value === 'number' ? n(s.value) : s.value}</div>
                                     <div className="text-xs text-muted-foreground mt-1">{s.label}</div>
                                     {s.active&&<div className="text-[10px] text-primary font-medium mt-0.5">Active filter</div>}
                                     <div className="text-[9px] text-primary/50 mt-0.5">click to view</div>
@@ -2014,7 +2026,7 @@ export default function KPIDashboard() {
                                                     <td className="px-3 py-2.5 text-center text-green-600">{m.closed}</td>
                                                     <td className="px-3 py-2.5 text-center text-amber-600">{m.inProgress}</td>
                                                     <td className="px-3 py-2.5 text-center">{m.critical>0?<span className="bg-red-500/20 text-red-700 px-1.5 py-0.5 rounded text-xs font-bold">{m.critical}</span>:'—'}</td>
-                                                    <td className="px-3 py-2.5 text-center text-purple-600 font-medium">{m.storyPoints||'—'}</td>
+                                                    <td className="px-3 py-2.5 text-center text-purple-600 font-medium">{m.storyPoints>0?(m.storyPoints%1===0?m.storyPoints:m.storyPoints.toFixed(1)):'—'}</td>
                                                     <td className="px-3 py-2.5 text-center">{m.liveTickets>0?<span className="bg-emerald-500/20 text-emerald-700 px-1.5 py-0.5 rounded text-xs font-bold">{m.liveTickets}</span>:'—'}</td>
                                                     <td className="px-3 py-2.5 text-center"><div className="flex items-center gap-1 justify-center"><div className="w-10 h-1.5 bg-muted rounded-full overflow-hidden"><div className={cn('h-full rounded-full',cr>=50?'bg-green-500':'bg-amber-500')} style={{width:`${cr}%`}}/></div><span className="text-xs font-bold">{cr}%</span></div></td>
                                                 </tr>
@@ -2385,11 +2397,11 @@ export default function KPIDashboard() {
                                     </tbody>
                                     <tfoot>
                                         <tr className="border-t-2 bg-muted/50 font-bold">
-                                            <td colSpan={2} className="px-4 py-2.5 text-xs text-muted-foreground">TOTAL</td>
-                                            <td className="px-3 py-2.5 text-center text-sky-600">{n(kpi?.totalStoryPoints)}</td>
-                                            <td className="px-3 py-2.5 text-center text-amber-600">{n(kpi?.people.reduce((s,p)=>(s+(p as any).storyPointsInProgress||0),0))}</td>
-                                            <td className="px-3 py-2.5 text-center text-green-600">{n(kpi?.completedStoryPoints)}</td>
-                                            <td className="px-3 py-2.5 text-center text-red-500">{n(kpi?.people.reduce((s,p)=>(s+(p as any).storyPointsTodo||0),0))}</td>
+                                            <td colSpan={2} className="px-4 py-2.5 text-xs text-muted-foreground">TOTAL (all issues)</td>
+                                            <td className="px-3 py-2.5 text-center text-sky-600">{(kpi?.totalStoryPoints||0)%1===0?String(kpi?.totalStoryPoints||0):(kpi?.totalStoryPoints||0).toFixed(1)}</td>
+                                            <td className="px-3 py-2.5 text-center text-amber-600">{(kpi?.inProgressStoryPoints||0)%1===0?String(kpi?.inProgressStoryPoints||0):(kpi?.inProgressStoryPoints||0).toFixed(1)}</td>
+                                            <td className="px-3 py-2.5 text-center text-green-600">{(kpi?.completedStoryPoints||0)%1===0?String(kpi?.completedStoryPoints||0):(kpi?.completedStoryPoints||0).toFixed(1)}</td>
+                                            <td className="px-3 py-2.5 text-center text-red-500">{(kpi?.todoStoryPoints||0)%1===0?String(kpi?.todoStoryPoints||0):(kpi?.todoStoryPoints||0).toFixed(1)}</td>
                                             <td colSpan={2}/>
                                         </tr>
                                     </tfoot>
