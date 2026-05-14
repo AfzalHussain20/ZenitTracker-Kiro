@@ -2375,18 +2375,10 @@ export default function KPIDashboard() {
                                 const baseIssues = (kpi?.all||[]).filter(i=>{
                                     // Sprint filter: exact sprint ID match
                                     if(spSprintFilter!=='all' && String(i.sprint?.id)!==spSprintFilter) return false;
-                                    // Team filter: use issue's team field (primary) — this is what Jira stores per ticket
-                                    // Fallback to Jira Teams API membership if team field is missing
+                                    // Team filter: use issue's team field ONLY — exact match with Jira
+                                    // Tickets with no team field are excluded when team filter is active
                                     if(spTeamFilter!=='all'){
-                                        const issueTeam = i.team;
-                                        if(issueTeam){
-                                            // Issue has a team field — use it directly
-                                            if(issueTeam !== spTeamFilter) return false;
-                                        } else {
-                                            // No team field on issue — fall back to assignee's team membership
-                                            const teamIds = teamMemberMap.get(spTeamFilter);
-                                            if(!teamIds || !i.assignee || !teamIds.has(i.assignee.accountId)) return false;
-                                        }
+                                        if(!i.team || i.team !== spTeamFilter) return false;
                                     }
                                     // Date filter — only applied when NO sprint is selected
                                     // (sprint already scopes the date range via sprint membership)
@@ -2488,11 +2480,13 @@ export default function KPIDashboard() {
                                                             // Group issues by their team field (most accurate for By Team view)
                                                             const teamGroups = new Map<string, typeof issues>();
                                                             issues.forEach(i=>{
-                                                                const t = i.team || 'No Team';
+                                                                if(!i.team) return; // skip tickets with no team field
+                                                                const t = i.team;
                                                                 if(!teamGroups.has(t)) teamGroups.set(t, []);
                                                                 teamGroups.get(t)!.push(i);
                                                             });
                                                             return Array.from(teamGroups.entries())
+                                                                .filter(([team])=>spTeamFilter==='all'||team===spTeamFilter)
                                                                 .sort((a,b)=>b[1].reduce((s,i)=>s+(i.storyPoints||0),0)-a[1].reduce((s,i)=>s+(i.storyPoints||0),0))
                                                                 .map(([team, ti])=>{
                                                             const unique=Array.from(new Map(ti.map(i=>[i.id,i])).values());
