@@ -1329,6 +1329,7 @@ export default function KPIDashboard() {
     const [spView, setSpView] = useState<'individual'|'team'|'sprint'>('individual');
     const [spSprintFilter, setSpSprintFilter] = useState('all');
     const [spTeamFilter, setSpTeamFilter] = useState('all');
+    const [spMonthFilter, setSpMonthFilter] = useState('all');
     const [drilldownLabel, setDrilldownLabel] = useState<string|null>(null);
     const [selectedPerson, setSelectedPerson] = useState<PersonKPI|null>(null);
     const [viewMode, setViewMode] = useState<'grid'|'list'>('grid');
@@ -2302,16 +2303,29 @@ export default function KPIDashboard() {
                                             ))}
                                         </SelectContent>
                                     </Select>
-                                    {(spSprintFilter!=='all'||spTeamFilter!=='all')&&(
-                                        <button onClick={()=>{setSpSprintFilter('all');setSpTeamFilter('all');}}
+                                    {/* Month dropdown — All Time / May 2026 / April 2026 etc */}
+                                    <Select value={spMonthFilter} onValueChange={setSpMonthFilter}>
+                                        <SelectTrigger className={cn('w-40 h-8 text-xs',spMonthFilter!=='all'&&'border-primary bg-primary/5 font-medium')}>
+                                            <SelectValue placeholder="All Time"/>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">All Time</SelectItem>
+                                            {(kpi?.monthly||[]).slice().reverse().map(m=>(
+                                                <SelectItem key={m.month} value={m.month}>{m.label}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    {(spSprintFilter!=='all'||spTeamFilter!=='all'||spMonthFilter!=='all')&&(
+                                        <button onClick={()=>{setSpSprintFilter('all');setSpTeamFilter('all');setSpMonthFilter('all');}}
                                             className="text-xs text-destructive hover:underline">Clear</button>
                                     )}
                                 </div>
                             </div>
-                            {(spSprintFilter!=='all'||spTeamFilter!=='all')&&(
+                            {(spSprintFilter!=='all'||spTeamFilter!=='all'||spMonthFilter!=='all')&&(
                                 <div className="mt-2 flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
                                     {spSprintFilter!=='all'&&<span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">Sprint: {kpi?.sprints.find(s=>String(s.id)===spSprintFilter)?.name||spSprintFilter}</span>}
                                     {spTeamFilter!=='all'&&<span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">Team: {spTeamFilter}</span>}
+                                    {spMonthFilter!=='all'&&<span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">Month: {kpi?.monthly.find(m=>m.month===spMonthFilter)?.label||spMonthFilter}</span>}
                                 </div>
                             )}
                         </CardHeader>
@@ -2324,6 +2338,8 @@ export default function KPIDashboard() {
                                         const tmIds=new Set((kpi?.people||[]).filter(p=>p.teams.includes(spTeamFilter)).map(p=>p.userId));
                                         if(i.team!==spTeamFilter && !(i.assignee&&tmIds.has(i.assignee.accountId))) return false;
                                     }
+                                    // Month filter: use updated date so we see tickets active in that month
+                                    if(spMonthFilter!=='all' && !i.updated.startsWith(spMonthFilter)) return false;
                                     return (i.storyPoints||0) > 0;
                                 });
                                 const issues = Array.from(new Map(baseIssues.map(i=>[i.id,i])).values());
