@@ -1288,7 +1288,15 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
 // --- Main Dashboard -----------------------------------------------------------
 export default function KPIDashboard() {
     const [activeSprint, setActiveSprint] = useState<string|undefined>(undefined);
-    const { kpi, loading, error, lastSync, forceRefresh } = useJiraKPI(activeSprint);
+    const { kpi, loading, error, lastSync, forceRefresh, allSprints } = useJiraKPI(activeSprint);
+
+    // Auto-select the active sprint on first load
+    useEffect(() => {
+        if (activeSprint === undefined && allSprints.length > 0) {
+            const active = allSprints.find(s => s.state === 'active');
+            if (active) setActiveSprint(String(active.id));
+        }
+    }, [allSprints, activeSprint]);
     const { exportData, exporting } = useExport();
     const tabsRef = useRef<HTMLDivElement>(null);
 
@@ -1653,9 +1661,9 @@ export default function KPIDashboard() {
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="active">Active Sprint (default)</SelectItem>
-                                {(kpi?.sprints||[]).map(s=>(
+                                {allSprints.map(s=>(
                                     <SelectItem key={s.id} value={String(s.id)}>
-                                        {s.name}{s.state==='active'?' \u25cf':''}
+                                        {s.name}{s.state==='active'?' \u25cf':s.state==='future'?' (upcoming)':''}
                                     </SelectItem>
                                 ))}
                             </SelectContent>

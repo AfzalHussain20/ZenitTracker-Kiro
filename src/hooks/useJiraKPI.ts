@@ -383,7 +383,17 @@ export function useJiraKPI(sprintId?: string) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [lastSync, setLastSync] = useState<Date | null>(null);
+    // All available sprints — fetched independently so sprint selector works before data loads
+    const [allSprints, setAllSprints] = useState<Array<{id:number;name:string;state:string;startDate:string|null;endDate:string|null}>>([]);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Fetch sprint list once on mount — independent of main data fetch
+    useEffect(() => {
+        fetch('/api/jira/sprints')
+            .then(r => r.json())
+            .then(d => { if (d.sprints) setAllSprints(d.sprints); })
+            .catch(() => {});
+    }, []);
 
     const fetchKPI = useCallback(async (force = false) => {
         try {
@@ -406,7 +416,12 @@ export function useJiraKPI(sprintId?: string) {
                 data.jiraTeams = [];
             }
 
-            setKpi(processKPI(data));
+            const processed = processKPI(data);
+            // Merge allSprints into kpi.sprints so sprint selector always has full list
+            if (allSprints.length > 0) {
+                processed.sprints = allSprints;
+            }
+            setKpi(processed);
             setLastSync(new Date());
             setError(null);
         } catch (e: any) {
@@ -414,7 +429,7 @@ export function useJiraKPI(sprintId?: string) {
         } finally {
             setLoading(false);
         }
-    }, [sprintId]);
+    }, [sprintId, allSprints]);
 
     useEffect(() => {
         setLoading(true);
@@ -425,7 +440,7 @@ export function useJiraKPI(sprintId?: string) {
     }, [fetchKPI]);
 
     return {
-        kpi, loading, error, lastSync,
+        kpi, loading, error, lastSync, allSprints,
         forceRefresh: () => { setLoading(true); fetchKPI(true); },
     };
 }
