@@ -2429,6 +2429,40 @@ export default function KPIDashboard() {
                                 const donePct = totalSP>0?Math.min(100,Math.round((doneSP/totalSP)*100)):0;
                                 return (
                                     <div>
+                                        {/* SP Overview by Issue Type */}
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 border-b bg-muted/20">
+                                            {[
+                                                {label:'Tasks SP',total:(kpi?.spByType?.tasks||0),type:'Task',color:'text-blue-600',bg:'bg-blue-500/10',border:'border-blue-500/30'},
+                                                {label:'Bugs SP',total:(kpi?.spByType?.bugs||0),type:'Bug',color:'text-red-600',bg:'bg-red-500/10',border:'border-red-500/30'},
+                                                {label:'Stories SP',total:(kpi?.spByType?.stories||0),type:'Story',color:'text-violet-600',bg:'bg-violet-500/10',border:'border-violet-500/30'},
+                                                {label:'Epics SP',total:(kpi?.spByType?.epics||0),type:'Epic',color:'text-amber-600',bg:'bg-amber-500/10',border:'border-amber-500/30'},
+                                            ].map(s=>{
+                                                const typeIssues=issues.filter(i=>i.issueType===s.type);
+                                                const done=Math.round(typeIssues.filter(i=>classifyStatus(i.status)==='closed').reduce((t,i)=>t+(i.storyPoints||0),0)*10)/10;
+                                                const inProg=Math.round(typeIssues.filter(i=>classifyStatus(i.status)==='in_progress').reduce((t,i)=>t+(i.storyPoints||0),0)*10)/10;
+                                                const todo=Math.round(typeIssues.filter(i=>classifyStatus(i.status)==='open').reduce((t,i)=>t+(i.storyPoints||0),0)*10)/10;
+                                                const total=Math.round(s.total*10)/10;
+                                                const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
+                                                if(total===0) return null;
+                                                return (
+                                                    <div key={s.label} className={cn('rounded-xl p-4 border cursor-pointer hover:shadow-md transition-all',s.bg,s.border)}
+                                                        onClick={()=>setSpView('individual')}>
+                                                        <div className={cn('text-2xl font-black',s.color)}>{fmt(total)}</div>
+                                                        <div className="text-xs font-semibold text-muted-foreground mt-1">{s.label}</div>
+                                                        <div className="mt-2 space-y-1 text-[10px] text-muted-foreground">
+                                                            <div className="flex justify-between"><span>Done</span><span className="text-green-600 font-bold">{fmt(done)}</span></div>
+                                                            <div className="flex justify-between"><span>In Progress</span><span className="text-amber-600 font-bold">{fmt(inProg)}</span></div>
+                                                            <div className="flex justify-between"><span>To-Do</span><span className="text-red-600 font-bold">{fmt(todo)}</span></div>
+                                                        </div>
+                                                        <div className="mt-2 h-1.5 bg-black/10 rounded-full overflow-hidden">
+                                                            <div className={cn('h-full rounded-full',pct>=70?'bg-green-500':pct>=40?'bg-amber-500':'bg-red-500')} style={{width:`${pct}%`}}/>
+                                                        </div>
+                                                        <div className="text-[10px] text-muted-foreground mt-1">{pct}% done &middot; {typeIssues.length} tickets</div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        {/* Summary totals bar */}
                                         <div className="flex items-center gap-4 px-4 py-3 bg-muted/30 border-b flex-wrap">
                                             {[
                                                 {label:'Total SP',v:totalSP,c:'text-sky-600',bg:'bg-sky-500/10'},
@@ -2448,7 +2482,7 @@ export default function KPIDashboard() {
                                                 <span className="text-xs font-bold">{donePct}% done</span>
                                             </div>
                                         </div>
-                        {spView==='sprint'&&(
+                                        {spView==='sprint'&&(
                                             <div className="overflow-x-auto">
                                                 <table className="w-full text-sm">
                                                     <thead><tr className="border-b bg-muted/30">
@@ -2551,6 +2585,7 @@ export default function KPIDashboard() {
                                                         <th className="text-center px-3 py-2.5 text-xs font-semibold text-amber-600">In Progress</th>
                                                         <th className="text-center px-3 py-2.5 text-xs font-semibold text-green-600">Done</th>
                                                         <th className="text-center px-3 py-2.5 text-xs font-semibold text-blue-600">Tickets</th>
+                                                        <th className="text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground">By Type</th>
                                                         <th className="text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground">Done %</th>
                                                     </tr></thead>
                                                     <tbody>
@@ -2596,6 +2631,20 @@ export default function KPIDashboard() {
                                                                             <td className="px-3 py-2.5 text-center font-semibold text-amber-600">{fmt(r.ip)}</td>
                                                                             <td className="px-3 py-2.5 text-center font-bold text-green-600">{fmt(r.d)}</td>
                                                                             <td className="px-3 py-2.5 text-center text-blue-600">{r.count}</td>
+                                                                            <td className="px-3 py-2.5 text-center">
+                                                                                <div className="flex gap-1 justify-center flex-wrap">
+                                                                                    {[
+                                                                                        {t:'Task',c:'bg-blue-500/15 text-blue-700'},
+                                                                                        {t:'Bug',c:'bg-red-500/15 text-red-700'},
+                                                                                        {t:'Story',c:'bg-violet-500/15 text-violet-700'},
+                                                                                        {t:'Epic',c:'bg-amber-500/15 text-amber-700'},
+                                                                                    ].map(({t,c})=>{
+                                                                                        const sp=byPerson.get(r.id)?.issues.filter(i=>i.issueType===t).reduce((s,i)=>s+(i.storyPoints||0),0)||0;
+                                                                                        if(!sp) return null;
+                                                                                        return <span key={t} className={cn('text-[9px] px-1.5 py-0.5 rounded font-bold',c)}>{t}: {sp%1===0?sp:sp.toFixed(1)}</span>;
+                                                                                    })}
+                                                                                </div>
+                                                                            </td>
                                                                             <td className="px-3 py-2.5 text-center"><div className="flex items-center gap-2 justify-center"><div className="w-16 h-2 bg-muted rounded-full overflow-hidden"><div className={cn('h-full rounded-full',pct>=70?'bg-green-500':pct>=40?'bg-amber-500':'bg-red-500')} style={{width:`${pct}%`}}/></div><span className="text-xs font-bold">{pct}%</span></div></td>
                                                                         </tr>
                                                                     );

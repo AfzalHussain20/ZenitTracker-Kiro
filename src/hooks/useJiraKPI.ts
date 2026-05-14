@@ -81,6 +81,7 @@ export interface KPIData {
     completedStoryPoints: number;
     inProgressStoryPoints: number;
     todoStoryPoints: number;
+    spByType: { tasks: number; bugs: number; stories: number; epics: number };
     openBugsCurrentMonth: number;
     closedBugsCurrentMonth: number;
     liveBuildsCount: number;
@@ -365,6 +366,12 @@ function processKPI(raw: any): KPIData {
         completedStoryPoints: all.filter(i => classify(i.status) === 'closed').reduce((s, i) => s + (i.storyPoints || 0), 0),
         inProgressStoryPoints: all.filter(i => classify(i.status) === 'in_progress').reduce((s, i) => s + (i.storyPoints || 0), 0),
         todoStoryPoints: all.filter(i => classify(i.status) === 'open').reduce((s, i) => s + (i.storyPoints || 0), 0),
+        spByType: raw.spByType || {
+            tasks:   tasks.reduce((s, i) => s + (i.storyPoints || 0), 0),
+            bugs:    bugs.reduce((s, i) => s + (i.storyPoints || 0), 0),
+            stories: stories.reduce((s, i) => s + (i.storyPoints || 0), 0),
+            epics:   epics.reduce((s, i) => s + (i.storyPoints || 0), 0),
+        },
         openBugsCurrentMonth: cm.open,
         closedBugsCurrentMonth: cm.closed,
         liveBuildsCount: liveTickets.length,

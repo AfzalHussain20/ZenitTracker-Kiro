@@ -204,6 +204,12 @@ async function buildFullSync(sprintId?: string) {
         syncedAt: new Date().toISOString(),
         syncDurationMs: elapsed,
         sprintId: resolvedSprintId || null,
+        spByType: {
+            tasks:   tasks.reduce((s: number, i: any) => s + (i.storyPoints || 0), 0),
+            bugs:    bugs.reduce((s: number, i: any) => s + (i.storyPoints || 0), 0),
+            stories: stories.reduce((s: number, i: any) => s + (i.storyPoints || 0), 0),
+            epics:   epics.reduce((s: number, i: any) => s + (i.storyPoints || 0), 0),
+        },
         counts: {
             total: all.length,
             bugs: bugs.length,
