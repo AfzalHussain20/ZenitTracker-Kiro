@@ -179,13 +179,16 @@ async function buildFullSync(sprintId?: string) {
 
     console.log(`[Sync] Starting parallel Jira sync... sprint=${resolvedSprintId || 'openSprints()'}`);
 
-    // Fetch all types truly in parallel — scoped to sprint
-    const [bugs, stories, epics, tasks, subtasks] = await Promise.all([
+    // Fetch sprint-scoped issues + all-time bugs in parallel
+    // All-time bugs needed for Team KPI bug counts (reporter-based, not sprint-scoped)
+    const [bugs, stories, epics, tasks, subtasks, allTimeBugs] = await Promise.all([
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Bug" ORDER BY created DESC`),
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Story" ORDER BY created DESC`),
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Epic" ORDER BY created DESC`),
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Task" ORDER BY created DESC`),
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Sub-task" ORDER BY created DESC`),
+        // All-time bugs — no sprint filter — for accurate reporter-based bug counts in Team KPIs
+        fetchAllPages(`project = ${PROJECT_KEY} AND issuetype = "Bug" ORDER BY created DESC`),
     ]);
 
     const all = [...bugs, ...stories, ...epics, ...tasks, ...subtasks];
@@ -196,10 +199,11 @@ async function buildFullSync(sprintId?: string) {
     // Live build tickets = any issue with a released fix version
     const liveTickets = all.filter(i => i.isLive);
 
-    console.log(`[Sync] Done in ${elapsed}ms: ${all.length} total (bugs=${bugs.length}, stories=${stories.length}, epics=${epics.length}, tasks=${tasks.length}, subtasks=${subtasks.length}, live=${liveTickets.length})`);
+    console.log(`[Sync] Done in ${elapsed}ms: ${all.length} total (bugs=${bugs.length}, allTimeBugs=${allTimeBugs.length}, stories=${stories.length}, epics=${epics.length}, tasks=${tasks.length}, subtasks=${subtasks.length}, live=${liveTickets.length})`);
 
     return {
         all, bugs, stories, epics, tasks, subtasks, allForSP,
+        allTimeBugs, // all-time bugs for Team KPI reporter-based counts
         liveTickets,
         syncedAt: new Date().toISOString(),
         syncDurationMs: elapsed,

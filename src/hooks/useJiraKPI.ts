@@ -139,6 +139,8 @@ function processKPI(raw: any): KPIData {
     const all = [...bugs, ...stories, ...epics, ...tasks, ...subtasks];
     // allForSP excludes sub-tasks — sub-tasks duplicate parent story SP
     const allForSP: JiraIssueRaw[] = raw.allForSP || all.filter(i => !i.isSubTask);
+    // allTimeBugs — all bugs ever reported, not sprint-scoped — for Team KPI bug counts
+    const allTimeBugs: JiraIssueRaw[] = raw.allTimeBugs || bugs;
     const liveTickets: JiraIssueRaw[] = raw.liveTickets || all.filter(i => i.isLive);
 
     // ── Per-person map ──
@@ -162,7 +164,9 @@ function processKPI(raw: any): KPIData {
         return p.monthly.get(mk)!;
     }
 
-    bugs.forEach(b => {
+    // Use allTimeBugs (not sprint-scoped) for reporter-based bug counts in Team KPIs
+    // This gives exact all-time bug counts per person, matching Jira's member view
+    allTimeBugs.forEach(b => {
         if (b.reporter) {
             const p = get(b.reporter.accountId, b.reporter.displayName, b.reporter.avatarUrl);
             p.bugsReported.push(b);
@@ -353,7 +357,7 @@ function processKPI(raw: any): KPIData {
     }
 
     return {
-        all, bugs, stories, epics, tasks, subtasks, liveTickets,
+        all, bugs: allTimeBugs, stories, epics, tasks, subtasks, liveTickets,
         counts: raw.counts || { total: all.length, bugs: bugs.length, stories: stories.length, epics: epics.length, tasks: tasks.length, subtasks: subtasks.length, live: liveTickets.length },
         people, monthly,
         currentMonth: cm,
