@@ -640,7 +640,360 @@ function DeviceDetailModal({ device, onClose, onCheckout, onCheckin }: {
     );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── History Panel ────────────────────────────────────────────────────────────
+interface HistoryRecord {
+    id: string;
+    sessionId: string;
+    deviceId: string;
+    deviceName: string;
+    deviceType: string;
+    action: 'checkout' | 'checkin';
+    userName: string;
+    accountId: string;
+    team: string;
+    checkedOutAt: string | null;
+    checkedInAt: string | null;
+    durationHours: number | null;
+    timestamp: any;
+}
+
+interface HistoryStats {
+    totalSessions: number;
+    avgDurationHours: number;
+    topUser: string | null;
+    topDevice: string | null;
+}
+
+function formatDuration(hours: number | null): string {
+    if (hours == null) return '—';
+    if (hours < 1) return `${Math.round(hours * 60)}m`;
+    if (hours < 24) return `${hours.toFixed(1)}h`;
+    return `${Math.floor(hours / 24)}d ${Math.round(hours % 24)}h`;
+}
+
+function formatDate(iso: string | null): string {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+        + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function HistoryPanel({ devices }: { devices: Device[] }) {
+    const [records, setRecords]   = useState<HistoryRecord[]>([]);
+    const [stats, setStats]       = useState<HistoryStats | null>(null);
+    const [loading, setLoading]   = useState(false);
+    const [filterDevice, setFilterDevice] = useState<string>('all');
+    const [filterTeam, setFilterTeam]     = useState<string>('all');
+    const [filterFrom, setFilterFrom]     = useState<string>('');
+    const [filterTo, setFilterTo]         = useState<string>('');
+    const [viewMode, setViewMode]         = useState<'timeline' | 'table'>('timeline');
+
+    // Derive unique teams from records
+    const teams = useMemo(() => {
+        const t = new Set(records.map(r => r.team).filter(Boolean));
+        return Array.from(t).sort();
+    }, [records]);
+
+    const fetchHistory = useCallback(async () => {
+        setLoading(true);
+        const params = new URLSearchParams();
+        if (filterDevice !== 'all') params.set('deviceId', filterDevice);
+        if (filterTeam   !== 'all') params.set('team', filterTeam);
+        if (filterFrom)             params.set('from', filterFrom);
+        if (filterTo)               params.set('to', filterTo);
+        params.set('limit', '200');
+
+        try {
+            const res  = await fetch(`/api/keepr/history?${params.toString()}`);
+            const data = await res.json();
+            setRecords(data.records ?? []);
+            setStats(data.stats ?? null);
+        } catch {
+            setRecords([]);
+        } finally {
+            setLoading(false);
+        }
+    }, [filterDevice, filterTeam, filterFrom, filterTo]);
+
+    // Auto-fetch on mount and filter change
+    useEffect(() => { fetchHistory(); }, [fetchHistory]);
+
+    // ── Per-device usage summary ─────────────────────────────────────────────
+    const deviceSummary = useMemo(() => {
+        const map: Record<string, { name: string; sessions: number; totalHours: number; lastUser: string; lastDate: string }> = {};
+        for (const r of records) {
+            if (!map[r.deviceId]) map[r.deviceId] = { name: r.deviceName, sessions: 0, totalHours: 0, lastUser: '', lastDate: '' };
+            map[r.deviceId].sessions++;
+            map[r.deviceId].totalHours += r.durationHours ?? 0;
+            if (!map[r.deviceId].lastDate || (r.checkedOutAt ?? '') > map[r.deviceId].lastDate) {
+                map[r.deviceId].lastDate = r.checkedOutAt ?? '';
+                map[r.deviceId].lastUser = r.userName;
+            }
+        }
+        return Object.values(map).sort((a, b) => b.sessions - a.sessions);
+    }, [records]);
+
+    // ── Per-person usage summary ─────────────────────────────────────────────
+    const personSummary = useMemo(() => {
+        const map: Record<string, { name: string; team: string; sessions: number; totalHours: number; devices: Set<string> }> = {};
+        for (const r of records) {
+            const key = r.accountId || r.userName;
+            if (!map[key]) map[key] = { name: r.userName, team: r.team, sessions: 0, totalHours: 0, devices: new Set() };
+            map[key].sessions++;
+            map[key].totalHours += r.durationHours ?? 0;
+            map[key].devices.add(r.deviceName);
+        }
+        return Object.values(map)
+            .map(p => ({ ...p, devices: p.devices.size }))
+            .sort((a, b) => b.sessions - a.sessions);
+    }, [records]);
+
+    return (
+        <div className="space-y-6">
+            {/* ── Stats row ── */}
+            {stats && (
+                <motion.div variants={stagger} initial="hidden" animate="show" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <StatCard icon={History}      label="Total Sessions"   value={stats.totalSessions}   gradient="from-blue-500 to-indigo-600" />
+                    <StatCard icon={Clock}        label="Avg Duration"     value={parseFloat(stats.avgDurationHours.toFixed(1))} gradient="from-violet-500 to-purple-600" sub={`${stats.avgDurationHours.toFixed(1)}h avg`} />
+                    <StatCard icon={Crown}        label="Top User"         value={0} gradient="from-amber-500 to-orange-600" sub={stats.topUser ?? '—'} />
+                    <StatCard icon={TrendingUp}   label="Most Used Device" value={0} gradient="from-emerald-500 to-teal-600" sub={stats.topDevice ?? '—'} />
+                </motion.div>
+            )}
+
+            {/* ── Filters ── */}
+            <motion.div variants={fadeUp} initial="hidden" animate="show" className="flex flex-wrap gap-3 items-center">
+                {/* Device filter */}
+                <Select value={filterDevice} onValueChange={setFilterDevice}>
+                    <SelectTrigger className="h-9 text-sm w-44 bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-700">
+                        <Package className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
+                        <SelectValue placeholder="All Devices" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Devices</SelectItem>
+                        {devices.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+
+                {/* Team filter */}
+                <Select value={filterTeam} onValueChange={setFilterTeam}>
+                    <SelectTrigger className="h-9 text-sm w-40 bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-700">
+                        <Users className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
+                        <SelectValue placeholder="All Teams" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Teams</SelectItem>
+                        {teams.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+
+                {/* Date range */}
+                <div className="flex items-center gap-2">
+                    <input
+                        type="date"
+                        value={filterFrom}
+                        onChange={e => setFilterFrom(e.target.value)}
+                        className="h-9 px-3 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 text-slate-700 dark:text-slate-300"
+                    />
+                    <span className="text-slate-400 text-xs">to</span>
+                    <input
+                        type="date"
+                        value={filterTo}
+                        onChange={e => setFilterTo(e.target.value)}
+                        className="h-9 px-3 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 text-slate-700 dark:text-slate-300"
+                    />
+                </div>
+
+                {/* Clear */}
+                {(filterDevice !== 'all' || filterTeam !== 'all' || filterFrom || filterTo) && (
+                    <Button variant="ghost" size="sm" className="h-9 text-xs text-slate-500" onClick={() => { setFilterDevice('all'); setFilterTeam('all'); setFilterFrom(''); setFilterTo(''); }}>
+                        <X className="w-3.5 h-3.5 mr-1" />Clear
+                    </Button>
+                )}
+
+                <div className="flex-1" />
+
+                {/* View toggle */}
+                <div className="flex items-center gap-1 bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 rounded-lg p-1">
+                    <button onClick={() => setViewMode('timeline')} className={cn('px-3 py-1 rounded-md text-xs font-semibold transition-all', viewMode === 'timeline' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600')}>
+                        Timeline
+                    </button>
+                    <button onClick={() => setViewMode('table')} className={cn('px-3 py-1 rounded-md text-xs font-semibold transition-all', viewMode === 'table' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600')}>
+                        Table
+                    </button>
+                </div>
+
+                <Button variant="outline" size="sm" onClick={fetchHistory} disabled={loading} className="h-9 text-xs gap-1.5">
+                    <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />Refresh
+                </Button>
+            </motion.div>
+
+            {loading ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                    <RefreshCw className="w-6 h-6 text-blue-500 animate-spin" />
+                    <p className="text-sm text-slate-500">Loading history…</p>
+                </div>
+            ) : records.length === 0 ? (
+                <motion.div variants={fadeUp} initial="hidden" animate="show" className="flex flex-col items-center justify-center py-20 text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+                        <History className="w-8 h-8 text-slate-400" />
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-400 font-semibold">No history yet</p>
+                    <p className="text-slate-400 dark:text-slate-500 text-sm mt-1">
+                        History is recorded automatically when devices are checked out or returned.
+                    </p>
+                </motion.div>
+            ) : viewMode === 'timeline' ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* ── Device usage summary ── */}
+                    <motion.div variants={fadeUp} initial="hidden" animate="show" className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm rounded-2xl border border-slate-200/70 dark:border-slate-700/60 p-5 shadow-sm">
+                        <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                            <Package className="w-4 h-4 text-blue-500" />Device Usage
+                        </h3>
+                        <div className="space-y-3">
+                            {deviceSummary.slice(0, 8).map(d => (
+                                <div key={d.name} className="flex items-center gap-3">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">{d.name}</span>
+                                            <span className="text-xs text-slate-500 ml-2 flex-shrink-0">{d.sessions} sessions</span>
+                                        </div>
+                                        <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                            <motion.div
+                                                initial={{ width: 0 }}
+                                                animate={{ width: `${Math.min((d.sessions / (deviceSummary[0]?.sessions || 1)) * 100, 100)}%` }}
+                                                transition={{ duration: 0.6, ease: 'easeOut' }}
+                                                className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between mt-0.5">
+                                            <span className="text-[10px] text-slate-400">{d.totalHours.toFixed(1)}h total · last: {d.lastUser}</span>
+                                            <span className="text-[10px] text-slate-400">{d.lastDate ? new Date(d.lastDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : ''}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </motion.div>
+
+                    {/* ── Person usage summary ── */}
+                    <motion.div variants={fadeUp} initial="hidden" animate="show" className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm rounded-2xl border border-slate-200/70 dark:border-slate-700/60 p-5 shadow-sm">
+                        <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                            <Users className="w-4 h-4 text-violet-500" />Who Used What
+                        </h3>
+                        <div className="space-y-2.5">
+                            {personSummary.slice(0, 8).map(p => (
+                                <div key={p.name} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                                    <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-black flex-shrink-0', getAvatarColor(p.name))}>
+                                        {p.name.split(' ').map((w: string) => w[0] || '').join('').slice(0, 2).toUpperCase()}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">{p.name}</p>
+                                        <p className="text-[10px] text-slate-400">{p.team} · {p.devices} device{p.devices !== 1 ? 's' : ''}</p>
+                                    </div>
+                                    <div className="text-right flex-shrink-0">
+                                        <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{p.sessions}</p>
+                                        <p className="text-[10px] text-slate-400">{p.totalHours.toFixed(1)}h</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </motion.div>
+
+                    {/* ── Recent activity feed ── */}
+                    <motion.div variants={fadeUp} initial="hidden" animate="show" className="lg:col-span-2 bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm rounded-2xl border border-slate-200/70 dark:border-slate-700/60 p-5 shadow-sm">
+                        <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-emerald-500" />Recent Activity
+                        </h3>
+                        <div className="space-y-2">
+                            {records.slice(0, 20).map(r => (
+                                <div key={r.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                                    <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0', r.action === 'checkout' ? 'bg-blue-500/10' : 'bg-emerald-500/10')}>
+                                        {r.action === 'checkout'
+                                            ? <CheckCircle2 className="w-3.5 h-3.5 text-blue-500" />
+                                            : <RefreshCw className="w-3.5 h-3.5 text-emerald-500" />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">
+                                            <span className={r.action === 'checkout' ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-400'}>
+                                                {r.action === 'checkout' ? 'Checked out' : 'Returned'}
+                                            </span>
+                                            {' '}{r.deviceName}
+                                        </p>
+                                        <p className="text-[10px] text-slate-400 truncate">{r.userName} · {r.team}</p>
+                                    </div>
+                                    <div className="text-right flex-shrink-0">
+                                        <p className="text-[10px] text-slate-500">{r.checkedOutAt ? formatDate(r.checkedOutAt) : '—'}</p>
+                                        {r.durationHours != null && (
+                                            <p className={cn('text-[10px] font-semibold', r.durationHours > 8 ? 'text-red-500' : 'text-slate-400')}>
+                                                {formatDuration(r.durationHours)}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </motion.div>
+                </div>
+            ) : (
+                /* ── Table view ── */
+                <motion.div variants={fadeUp} initial="hidden" animate="show" className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm rounded-2xl border border-slate-200/70 dark:border-slate-700/60 overflow-hidden shadow-sm">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                            <thead>
+                                <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/60">
+                                    {['Device', 'Person', 'Team', 'Action', 'Checked Out', 'Checked In', 'Duration'].map(h => (
+                                        <th key={h} className="px-4 py-3 text-left font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">{h}</th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {records.map((r, i) => (
+                                    <tr key={r.id} className={cn('border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors', i % 2 === 0 ? '' : 'bg-slate-50/30 dark:bg-slate-800/20')}>
+                                        <td className="px-4 py-2.5 font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">{r.deviceName}</td>
+                                        <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400 whitespace-nowrap">{r.userName}</td>
+                                        <td className="px-4 py-2.5 text-slate-500 dark:text-slate-500 whitespace-nowrap">{r.team || '—'}</td>
+                                        <td className="px-4 py-2.5">
+                                            <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold text-[10px]',
+                                                r.action === 'checkout'
+                                                    ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                                                    : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                            )}>
+                                                {r.action === 'checkout' ? '↑ Out' : '↓ In'}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap">{formatDate(r.checkedOutAt)}</td>
+                                        <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap">{formatDate(r.checkedInAt)}</td>
+                                        <td className="px-4 py-2.5 whitespace-nowrap">
+                                            <span className={cn('font-semibold', r.durationHours != null && r.durationHours > 8 ? 'text-red-500' : 'text-slate-600 dark:text-slate-400')}>
+                                                {formatDuration(r.durationHours)}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-400 text-center">
+                        {records.length} record{records.length !== 1 ? 's' : ''}
+                    </div>
+                </motion.div>
+            )}
+        </div>
+    );
+}
+
+// ─── Avatar color helper (reused from scan page) ──────────────────────────────
+const AVATAR_COLORS_LIST = [
+    'bg-blue-500', 'bg-violet-500', 'bg-emerald-500', 'bg-rose-500',
+    'bg-amber-500', 'bg-cyan-500', 'bg-pink-500', 'bg-indigo-500',
+];
+function getAvatarColor(name: string): string {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
+    return AVATAR_COLORS_LIST[h % AVATAR_COLORS_LIST.length];
+}
+
+
 export default function KeeprPage() {
     const { user } = useAuth();
     const [devices, setDevices]           = useState<Device[]>([]);
@@ -652,6 +1005,7 @@ export default function KeeprPage() {
     const [showAdd, setShowAdd]           = useState(false);
     const [detailDevice, setDetailDevice] = useState<Device | null>(null);
     const [qrDevice, setQrDevice]         = useState<Device | null>(null);
+    const [activeTab, setActiveTab]       = useState<'devices' | 'history'>('devices');
 
     // ── Firestore listener with local-first approach + API polling ──────────
     useEffect(() => {
@@ -887,7 +1241,24 @@ export default function KeeprPage() {
             {/* ── Page body ────────────────────────────────────────────────── */}
             <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
 
+                {/* ── Tab switcher ────────────────────────────────────────── */}
+                <motion.div variants={fadeUp} initial="hidden" animate="show" className="flex items-center gap-1 bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 rounded-xl p-1 w-fit shadow-sm">
+                    <button
+                        onClick={() => setActiveTab('devices')}
+                        className={cn('flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all', activeTab === 'devices' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200')}
+                    >
+                        <Package className="w-4 h-4" />Devices
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('history')}
+                        className={cn('flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all', activeTab === 'history' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200')}
+                    >
+                        <History className="w-4 h-4" />Usage History
+                    </button>
+                </motion.div>
+
                 {/* ── Stats row ──────────────────────────────────────────── */}
+                {activeTab === 'devices' && (<>
                 <motion.div variants={stagger} initial="hidden" animate="show" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <StatCard icon={Package}      label="Total Devices"  value={stats.total}       gradient="from-slate-500 to-slate-700"    sub={`${stats.available} ready`} />
                     <StatCard icon={CheckCircle2} label="Available"      value={stats.available}   gradient="from-emerald-500 to-teal-600"   sub="Ready to check out" delay={0.05} />
@@ -1032,6 +1403,12 @@ export default function KeeprPage() {
                     <motion.p variants={fadeUp} initial="hidden" animate="show" className="text-xs text-slate-400 dark:text-slate-500 text-center pb-4">
                         Showing {filtered.length} of {devices.length} device{devices.length !== 1 ? 's' : ''}
                     </motion.p>
+                )}
+                </>)}
+
+                {/* ── History Tab ─────────────────────────────────────────── */}
+                {activeTab === 'history' && (
+                    <HistoryPanel devices={devices} />
                 )}
             </div>
 

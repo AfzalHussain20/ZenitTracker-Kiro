@@ -2,11 +2,95 @@
  * Public Keepr Device API - no auth required
  * Uses Firebase Admin SDK to bypass security rules
  * Single source of truth for device state - syncs with Keepr web page via Firestore
+ *
+ * History tracking:
+ * Every checkout/checkin writes an immutable record to `keepr_history`.
+ * The device doc is updated as before — no breaking changes.
+ * History schema:
+ *   { deviceId, deviceName, deviceType, action, userName, accountId, team,
+ *     checkedOutAt, checkedInAt, durationHours, sessionId, timestamp }
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebaseAdmin';
 
 const COLLECTION = 'keepr_devices';
+const HISTORY_COLLECTION = 'keepr_history';
+
+// ── Write a history event ─────────────────────────────────────────────────────
+async function writeHistory(
+    db: FirebaseFirestore.Firestore,
+    deviceId: string,
+    deviceSnap: FirebaseFirestore.DocumentSnapshot,
+    update: Record<string, any>,
+) {
+    try {
+        const { FieldValue } = await import('firebase-admin/firestore');
+        const deviceData = deviceSnap.data() ?? {};
+        const now = new Date().toISOString();
+
+        if (update.status === 'checked-out') {
+            // ── Checkout event ──────────────────────────────────────────────
+            const sessionId = `session_${deviceId}_${Date.now()}`;
+            await db.collection(HISTORY_COLLECTION).add({
+                sessionId,
+                deviceId,
+                deviceName:  deviceData.name  ?? deviceId,
+                deviceType:  deviceData.type  ?? 'other',
+                action:      'checkout',
+                userName:    update.checkedOutBy?.name    ?? 'Unknown',
+                accountId:   update.checkedOutBy?.accountId ?? '',
+                team:        update.checkedOutBy?.team    ?? '',
+                checkedOutAt: update.checkedOutAt ?? now,
+                checkedInAt:  null,
+                durationHours: null,
+                timestamp:   FieldValue.serverTimestamp(),
+            });
+        } else if (update.status === 'available' && deviceData.status === 'checked-out') {
+            // ── Checkin event — find the open session and close it ──────────
+            const openSessions = await db.collection(HISTORY_COLLECTION)
+                .where('deviceId', '==', deviceId)
+                .where('action', '==', 'checkout')
+                .where('checkedInAt', '==', null)
+                .orderBy('checkedOutAt', 'desc')
+                .limit(1)
+                .get();
+
+            const checkedOutAt = deviceData.checkedOutAt as string | undefined;
+            const checkedInAt  = now;
+            const durationHours = checkedOutAt
+                ? parseFloat(((Date.now() - new Date(checkedOutAt).getTime()) / 3_600_000).toFixed(2))
+                : null;
+
+            if (!openSessions.empty) {
+                // Update the existing checkout record with checkin time
+                await openSessions.docs[0].ref.update({
+                    checkedInAt,
+                    durationHours,
+                    action: 'checkin',
+                });
+            } else {
+                // No open session found — write a standalone checkin record
+                await db.collection(HISTORY_COLLECTION).add({
+                    sessionId:    `session_${deviceId}_checkin_${Date.now()}`,
+                    deviceId,
+                    deviceName:   deviceData.name ?? deviceId,
+                    deviceType:   deviceData.type ?? 'other',
+                    action:       'checkin',
+                    userName:     deviceData.checkedOutBy?.name    ?? 'Unknown',
+                    accountId:    deviceData.checkedOutBy?.accountId ?? '',
+                    team:         deviceData.checkedOutBy?.team    ?? '',
+                    checkedOutAt: checkedOutAt ?? null,
+                    checkedInAt,
+                    durationHours,
+                    timestamp:    FieldValue.serverTimestamp(),
+                });
+            }
+        }
+    } catch (err) {
+        // History write failure must NEVER break the device update
+        console.error('[Keepr] History write failed (non-fatal):', err);
+    }
+}
 
 const SEED: Record<string, any> = {
     'device_1': { id:'device_1', name:'Oppo A78',              type:'phone',  status:'available',   location:'QA Team Device Rack', os:'Android 13', ram:'8GB',  network:'4G',   condition:'good',      totalCheckouts:12 },
@@ -51,6 +135,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { deviceId: 
             const seed = SEED[deviceId];
             if (seed) await docRef.set(seed);
         }
+
+        // ── Write history BEFORE updating device (so we can read old state) ──
+        const currentSnap = snap.exists ? snap : await docRef.get();
+        await writeHistory(db, deviceId, currentSnap, update);
+
         const { FieldValue } = await import('firebase-admin/firestore');
         const fsUpdate: Record<string, any> = {};
         for (const [k, v] of Object.entries(update)) {
