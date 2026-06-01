@@ -12,7 +12,11 @@ export async function middleware(request: NextRequest) {
   // Define routes that are considered "public" and do not require authentication.
   const publicRoutes = ['/login', '/signup', '/forgot-password'];
 
-  const isPublicRoute = publicRoutes.includes(pathname);
+  // Routes that start with these prefixes are always public (no auth needed)
+  const publicPrefixes = ['/scan/', '/api/keepr/', '/api/jira/teams'];
+  const isPublicPrefix = publicPrefixes.some(prefix => pathname.startsWith(prefix));
+
+  const isPublicRoute = publicRoutes.includes(pathname) || isPublicPrefix;
 
   // The root path '/' should now redirect based on auth status.
   if (pathname === '/') {
@@ -24,8 +28,8 @@ export async function middleware(request: NextRequest) {
   }
 
   // If the user has a session token and is trying to access a public auth page (like login/signup),
-  // redirect them to the dashboard.
-  if (sessionToken && isPublicRoute) {
+  // redirect them to the dashboard — but NOT for scan/api routes which should always be accessible.
+  if (sessionToken && isPublicRoute && !isPublicPrefix) {
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
