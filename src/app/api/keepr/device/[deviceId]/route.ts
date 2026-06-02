@@ -1,90 +1,124 @@
 /**
  * Public Keepr Device API - no auth required
  * Uses Firebase Admin SDK to bypass security rules
- * Single source of truth for device state - syncs with Keepr web page via Firestore
  *
- * History tracking:
- * Every checkout/checkin writes an immutable record to `keepr_history`.
- * The device doc is updated as before — no breaking changes.
- * History schema:
- *   { deviceId, deviceName, deviceType, action, userName, accountId, team,
- *     checkedOutAt, checkedInAt, durationHours, sessionId, timestamp }
+ * Time tracking — accurate approach:
+ * - checkedOutAt is set server-side at the moment of PATCH, not trusted from client
+ * - checkedInAt is set server-side at moment of return PATCH
+ * - durationMs / durationHours calculated from server-recorded times only
+ * - returnedTo (person) and returnLocation (rack/team) stored in history
+ *
+ * History schema (keepr_history collection):
+ *   sessionId, deviceId, deviceName, deviceType,
+ *   action (checkout|checkin),
+ *   userName, accountId, team,           ← who checked it out
+ *   returnedToName, returnedToAccountId, returnedToTeam,  ← who received it back
+ *   returnLocation,                      ← rack/team name if returned to location
+ *   checkedOutAt (ISO, server-set),
+ *   checkedInAt  (ISO, server-set),
+ *   durationMs, durationHours,           ← exact duration
+ *   timestamp (Firestore serverTimestamp)
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebaseAdmin';
 
-const COLLECTION = 'keepr_devices';
+const COLLECTION         = 'keepr_devices';
 const HISTORY_COLLECTION = 'keepr_history';
 
-// ── Write a history event ─────────────────────────────────────────────────────
+// ─── Write history record ─────────────────────────────────────────────────────
 async function writeHistory(
     db: FirebaseFirestore.Firestore,
     deviceId: string,
     deviceSnap: FirebaseFirestore.DocumentSnapshot,
     update: Record<string, any>,
+    serverNow: string,   // ISO string set by server
 ) {
     try {
         const { FieldValue } = await import('firebase-admin/firestore');
-        const deviceData = deviceSnap.data() ?? {};
-        const now = new Date().toISOString();
+        const d = deviceSnap.data() ?? {};
 
         if (update.status === 'checked-out') {
-            // ── Checkout event ──────────────────────────────────────────────
+            // ── CHECKOUT: open a new session ──────────────────────────────
             const sessionId = `session_${deviceId}_${Date.now()}`;
             await db.collection(HISTORY_COLLECTION).add({
                 sessionId,
                 deviceId,
-                deviceName:  deviceData.name  ?? deviceId,
-                deviceType:  deviceData.type  ?? 'other',
-                action:      'checkout',
-                userName:    update.checkedOutBy?.name    ?? 'Unknown',
-                accountId:   update.checkedOutBy?.accountId ?? '',
-                team:        update.checkedOutBy?.team    ?? '',
-                checkedOutAt: update.checkedOutAt ?? now,
-                checkedInAt:  null,
+                deviceName:   d.name ?? deviceId,
+                deviceType:   d.type ?? 'other',
+                action:       'checkout',
+                // Who is taking the device
+                userName:     update.checkedOutBy?.name      ?? 'Unknown',
+                accountId:    update.checkedOutBy?.accountId ?? '',
+                team:         update.checkedOutBy?.team      ?? '',
+                // Return fields — empty until checkin
+                returnedToName:      null,
+                returnedToAccountId: null,
+                returnedToTeam:      null,
+                returnLocation:      null,
+                // Times — server-set, not client-set
+                checkedOutAt:  serverNow,
+                checkedInAt:   null,
+                durationMs:    null,
                 durationHours: null,
-                timestamp:   FieldValue.serverTimestamp(),
+                timestamp:     FieldValue.serverTimestamp(),
             });
-        } else if (update.status === 'available' && deviceData.status === 'checked-out') {
-            // ── Checkin event — find the open session and close it ──────────
-            const openSessions = await db.collection(HISTORY_COLLECTION)
-                .where('deviceId', '==', deviceId)
-                .where('action', '==', 'checkout')
-                .where('checkedInAt', '==', null)
-                .orderBy('checkedOutAt', 'desc')
-                .limit(1)
-                .get();
 
-            const checkedOutAt = deviceData.checkedOutAt as string | undefined;
-            const checkedInAt  = now;
-            const durationHours = checkedOutAt
-                ? parseFloat(((Date.now() - new Date(checkedOutAt).getTime()) / 3_600_000).toFixed(2))
+        } else if (update.status === 'available' && d.status === 'checked-out') {
+            // ── CHECKIN: close the open session ───────────────────────────
+            // Use the server-recorded checkedOutAt from the device doc
+            const checkedOutAt: string | null = d.checkedOutAt ?? null;
+            const durationMs = checkedOutAt
+                ? Date.now() - new Date(checkedOutAt).getTime()
+                : null;
+            const durationHours = durationMs != null
+                ? parseFloat((durationMs / 3_600_000).toFixed(4))
                 : null;
 
-            if (!openSessions.empty) {
-                // Update the existing checkout record with checkin time
-                await openSessions.docs[0].ref.update({
-                    checkedInAt,
-                    durationHours,
-                    action: 'checkin',
-                });
-            } else {
-                // No open session found — write a standalone checkin record
-                await db.collection(HISTORY_COLLECTION).add({
-                    sessionId:    `session_${deviceId}_checkin_${Date.now()}`,
-                    deviceId,
-                    deviceName:   deviceData.name ?? deviceId,
-                    deviceType:   deviceData.type ?? 'other',
-                    action:       'checkin',
-                    userName:     deviceData.checkedOutBy?.name    ?? 'Unknown',
-                    accountId:    deviceData.checkedOutBy?.accountId ?? '',
-                    team:         deviceData.checkedOutBy?.team    ?? '',
-                    checkedOutAt: checkedOutAt ?? null,
-                    checkedInAt,
-                    durationHours,
-                    timestamp:    FieldValue.serverTimestamp(),
-                });
+            // Build return destination fields from the update payload
+            const returnedToPerson   = update.returnedTo ?? null;   // { name, accountId, team }
+            const returnedToLocation = update.returnLocation ?? null; // string e.g. "qa_rack"
+
+            const checkinFields = {
+                checkedInAt:         serverNow,
+                durationMs:          durationMs ?? null,
+                durationHours:       durationHours ?? null,
+                action:              'checkin',
+                returnedToName:      returnedToPerson?.name      ?? null,
+                returnedToAccountId: returnedToPerson?.accountId ?? null,
+                returnedToTeam:      returnedToPerson?.team      ?? null,
+                returnLocation:      returnedToLocation,
+            };
+
+            // Try to find and update the open session
+            try {
+                const openSessions = await db.collection(HISTORY_COLLECTION)
+                    .where('deviceId',    '==', deviceId)
+                    .where('checkedInAt', '==', null)
+                    .orderBy('checkedOutAt', 'desc')
+                    .limit(1)
+                    .get();
+
+                if (!openSessions.empty) {
+                    await openSessions.docs[0].ref.update(checkinFields);
+                    return; // done
+                }
+            } catch {
+                // Index may not exist yet — fall through to write standalone
             }
+
+            // No open session found — write a complete standalone record
+            await db.collection(HISTORY_COLLECTION).add({
+                sessionId:    `session_${deviceId}_checkin_${Date.now()}`,
+                deviceId,
+                deviceName:   d.name ?? deviceId,
+                deviceType:   d.type ?? 'other',
+                userName:     d.checkedOutBy?.name      ?? 'Unknown',
+                accountId:    d.checkedOutBy?.accountId ?? '',
+                team:         d.checkedOutBy?.team      ?? '',
+                checkedOutAt: checkedOutAt,
+                ...checkinFields,
+                timestamp:    FieldValue.serverTimestamp(),
+            });
         }
     } catch (err) {
         // History write failure must NEVER break the device update
@@ -92,6 +126,7 @@ async function writeHistory(
     }
 }
 
+// ─── Seed data ────────────────────────────────────────────────────────────────
 const SEED: Record<string, any> = {
     'device_1': { id:'device_1', name:'Oppo A78',              type:'phone',  status:'available',   location:'QA Team Device Rack', os:'Android 13', ram:'8GB',  network:'4G',   condition:'good',      totalCheckouts:12 },
     'device_2': { id:'device_2', name:'Moto g31',              type:'phone',  status:'available',   location:'QA Team Device Rack', os:'Android 11', ram:'4GB',  network:'4G',   condition:'fair',      totalCheckouts:8  },
@@ -103,14 +138,13 @@ const SEED: Record<string, any> = {
     'device_8': { id:'device_8', name:'Samsung Galaxy Tab S8', type:'tablet', status:'available',   location:'Android Team',        os:'Android 14', ram:'8GB',  network:'5G',   condition:'excellent', totalCheckouts:14 },
 };
 
+// ─── GET ──────────────────────────────────────────────────────────────────────
 export async function GET(_req: NextRequest, { params }: { params: { deviceId: string } }) {
     const { deviceId } = params;
     try {
-        const db = getAdminDb();
+        const db   = getAdminDb();
         const snap = await db.collection(COLLECTION).doc(deviceId).get();
-        if (snap.exists) {
-            return NextResponse.json({ device: { id: snap.id, ...snap.data() } });
-        }
+        if (snap.exists) return NextResponse.json({ device: { id: snap.id, ...snap.data() } });
         const seed = SEED[deviceId];
         if (seed) {
             await db.collection(COLLECTION).doc(deviceId).set(seed);
@@ -124,28 +158,45 @@ export async function GET(_req: NextRequest, { params }: { params: { deviceId: s
     }
 }
 
+// ─── PATCH ────────────────────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest, { params }: { params: { deviceId: string } }) {
     const { deviceId } = params;
-    const update = await req.json();
+    const body = await req.json();
+
+    // ── SERVER-SIDE TIME: ignore any timestamps from the client ──────────────
+    const serverNow = new Date().toISOString();
+
+    // Forcibly replace client-sent timestamps with server time
+    if (body.status === 'checked-out') {
+        body.checkedOutAt = serverNow;   // override — always server time
+    }
+    if (body.status === 'available') {
+        body.lastCheckedIn = serverNow;  // override — always server time
+        // Remove any client-sent checkedOutAt in the update (that's the device field, keep as-is)
+        delete body.checkedOutAt;
+    }
+
     try {
-        const db = getAdminDb();
+        const db     = getAdminDb();
         const docRef = db.collection(COLLECTION).doc(deviceId);
-        const snap = await docRef.get();
+        let   snap   = await docRef.get();
+
         if (!snap.exists) {
             const seed = SEED[deviceId];
-            if (seed) await docRef.set(seed);
+            if (seed) { await docRef.set(seed); snap = await docRef.get(); }
         }
 
-        // ── Write history BEFORE updating device (so we can read old state) ──
-        const currentSnap = snap.exists ? snap : await docRef.get();
-        await writeHistory(db, deviceId, currentSnap, update);
+        // Write history BEFORE device update so we can read the old state (checkedOutAt etc.)
+        await writeHistory(db, deviceId, snap, body, serverNow);
 
+        // Apply update to device doc
         const { FieldValue } = await import('firebase-admin/firestore');
         const fsUpdate: Record<string, any> = {};
-        for (const [k, v] of Object.entries(update)) {
+        for (const [k, v] of Object.entries(body)) {
             fsUpdate[k] = v === null ? FieldValue.delete() : v;
         }
         await docRef.update(fsUpdate);
+
         const updated = await docRef.get();
         return NextResponse.json({ success: true, device: { id: updated.id, ...updated.data() } });
     } catch (err: any) {
@@ -153,9 +204,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { deviceId: 
     }
 }
 
+// ─── POST (seed all devices) ──────────────────────────────────────────────────
 export async function POST(_req: NextRequest) {
     try {
-        const db = getAdminDb();
+        const db   = getAdminDb();
         const snap = await db.collection(COLLECTION).get();
         if (snap.empty) {
             const batch = db.batch();

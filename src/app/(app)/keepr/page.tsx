@@ -735,16 +735,30 @@ function HistoryPanel({ devices }: { devices: Device[] }) {
 
     // ── Per-person usage summary ─────────────────────────────────────────────
     const personSummary = useMemo(() => {
-        const map: Record<string, { name: string; team: string; sessions: number; totalHours: number; devices: Set<string> }> = {};
+        const map: Record<string, {
+            name: string; team: string; sessions: number; totalHours: number;
+            deviceNames: Set<string>;   // actual device names used
+            deviceCheckouts: Record<string, number>; // device → checkout count
+        }> = {};
         for (const r of records) {
             const key = r.accountId || r.userName;
-            if (!map[key]) map[key] = { name: r.userName, team: r.team, sessions: 0, totalHours: 0, devices: new Set() };
+            if (!map[key]) map[key] = { name: r.userName, team: r.team, sessions: 0, totalHours: 0, deviceNames: new Set(), deviceCheckouts: {} };
             map[key].sessions++;
             map[key].totalHours += r.durationHours ?? 0;
-            map[key].devices.add(r.deviceName);
+            if (r.deviceName) {
+                map[key].deviceNames.add(r.deviceName);
+                map[key].deviceCheckouts[r.deviceName] = (map[key].deviceCheckouts[r.deviceName] ?? 0) + 1;
+            }
         }
         return Object.values(map)
-            .map(p => ({ ...p, devices: p.devices.size }))
+            .map(p => ({
+                ...p,
+                deviceCount: p.deviceNames.size,
+                // Top device this person used most
+                topDevice: Object.entries(p.deviceCheckouts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
+                // All device names sorted by usage
+                deviceList: Object.entries(p.deviceCheckouts).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
+            }))
             .sort((a, b) => b.sessions - a.sessions);
     }, [records]);
 
@@ -879,20 +893,43 @@ function HistoryPanel({ devices }: { devices: Device[] }) {
                     <motion.div variants={fadeUp} initial="hidden" animate="show" className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm rounded-2xl border border-slate-200/70 dark:border-slate-700/60 p-5 shadow-sm">
                         <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                             <Users className="w-4 h-4 text-violet-500" />Who Used What
+                            <span className="ml-auto text-[10px] font-normal text-slate-400">{personSummary.length} people</span>
                         </h3>
-                        <div className="space-y-2.5">
-                            {personSummary.slice(0, 8).map(p => (
-                                <div key={p.name} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-                                    <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-black flex-shrink-0', getAvatarColor(p.name))}>
-                                        {p.name.split(' ').map((w: string) => w[0] || '').join('').slice(0, 2).toUpperCase()}
+                        <div className="space-y-3">
+                            {personSummary.slice(0, 8).map((p, idx) => (
+                                <div key={p.name} className="rounded-xl border border-slate-200/80 dark:border-slate-700/60 overflow-hidden">
+                                    {/* Person header row */}
+                                    <div className="flex items-center gap-3 px-3 py-2.5 bg-slate-50 dark:bg-slate-800/60">
+                                        <div className="relative flex-shrink-0">
+                                            <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-black', getAvatarColor(p.name))}>
+                                                {p.name.split(' ').map((w: string) => w[0] || '').join('').slice(0, 2).toUpperCase()}
+                                            </div>
+                                            {idx === 0 && (
+                                                <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-400 rounded-full flex items-center justify-center">
+                                                    <Crown className="w-2 h-2 text-white" />
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{p.name}</p>
+                                            <p className="text-[10px] text-slate-400 truncate">{p.team || 'No team'}</p>
+                                        </div>
+                                        <div className="text-right flex-shrink-0 space-y-0.5">
+                                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                                {p.sessions} <span className="font-normal text-slate-400">checkout{p.sessions !== 1 ? 's' : ''}</span>
+                                            </p>
+                                            <p className="text-[10px] text-slate-400">{p.totalHours.toFixed(1)}h total</p>
+                                        </div>
                                     </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">{p.name}</p>
-                                        <p className="text-[10px] text-slate-400">{p.team} · {p.devices} device{p.devices !== 1 ? 's' : ''}</p>
-                                    </div>
-                                    <div className="text-right flex-shrink-0">
-                                        <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{p.sessions}</p>
-                                        <p className="text-[10px] text-slate-400">{p.totalHours.toFixed(1)}h</p>
+                                    {/* Device breakdown */}
+                                    <div className="px-3 py-2 flex flex-wrap gap-1.5 bg-white/60 dark:bg-slate-900/40">
+                                        {p.deviceList.map(({ name, count }) => (
+                                            <span key={name} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-950/30 border border-violet-200/60 dark:border-violet-700/40 text-[10px] font-semibold text-violet-700 dark:text-violet-300">
+                                                <Package className="w-2.5 h-2.5 flex-shrink-0" />
+                                                {name}
+                                                <span className="ml-0.5 px-1 py-0 rounded-full bg-violet-100 dark:bg-violet-900/50 text-violet-600 dark:text-violet-400 text-[9px]">×{count}</span>
+                                            </span>
+                                        ))}
                                     </div>
                                 </div>
                             ))}
@@ -1065,16 +1102,16 @@ export default function KeeprPage() {
     const handleCheckout = useCallback(async (device: Device) => {
         const userName = user?.displayName ?? user?.email ?? 'You';
         const uid = user?.uid ?? 'local';
-        const now = new Date().toISOString();
         const update: Partial<Device> = {
             status: 'checked-out',
             checkedOutBy: { name: userName, uid },
-            checkedOutAt: now,
+            // checkedOutAt set SERVER-SIDE — set optimistic local time only for UI
+            checkedOutAt: new Date().toISOString(),
             totalCheckouts: (device.totalCheckouts ?? 0) + 1,
         };
         // Update local state immediately for instant UI feedback
         setDevices(prev => prev.map(d => d.id === device.id ? { ...d, ...update } : d));
-        // Write through API (uses Firebase Admin SDK — bypasses security rules)
+        // Write through API (uses Firebase Admin SDK — server sets the real timestamp)
         try {
             await fetch(`/api/keepr/device/${device.id}`, {
                 method: 'PATCH',
@@ -1089,7 +1126,7 @@ export default function KeeprPage() {
             status: 'available' as const,
             checkedOutBy: null,
             checkedOutAt: null,
-            lastCheckedIn: new Date().toISOString(),
+            // lastCheckedIn set SERVER-SIDE — don't send from client
         };
         setDevices(prev => prev.map(d => d.id === device.id ? { ...d, status: 'available', checkedOutBy: undefined, checkedOutAt: undefined } : d));
         try {
@@ -1187,6 +1224,19 @@ export default function KeeprPage() {
                                 <strong>{overdueDevices.length} device{overdueDevices.length > 1 ? 's' : ''}</strong> overdue for check-in (24h+):&nbsp;
                                 {overdueDevices.map(d => d.name).join(', ')}
                             </span>
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        const res = await fetch('/api/keepr/alerts', { method: 'POST' });
+                                        const data = await res.json();
+                                        if (data.sent) alert(`✅ Alert sent for ${data.overdueCount} device(s)`);
+                                        else alert(`ℹ️ ${data.reason ?? data.error ?? 'Configure KEEPR_WEBHOOK_URL in .env to enable alerts'}`);
+                                    } catch { alert('Failed to send alert'); }
+                                }}
+                                className="ml-auto flex-shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-xs font-bold"
+                            >
+                                <Bell className="w-3 h-3" />Alert Team
+                            </button>
                         </div>
                     </motion.div>
                 )}

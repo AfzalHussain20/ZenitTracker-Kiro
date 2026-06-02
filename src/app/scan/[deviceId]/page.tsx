@@ -16,15 +16,16 @@
  * Last-used person remembered in localStorage
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import {
     Smartphone, Tablet, Laptop, Tv, Box, Monitor,
     CheckCircle2, RefreshCw, Wrench, MapPin, Shield,
     Wifi, Zap, User, AlertTriangle, ArrowLeft,
-    Package, Users, ChevronRight, ChevronLeft, Clock
+    Package, Users, ChevronRight, ChevronLeft, Clock,
+    LayoutGrid, Search, X as XIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -109,8 +110,17 @@ function getAvatarColor(name: string) {
     return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
 
+// ─── Return destinations ──────────────────────────────────────────────────────
+const RETURN_LOCATIONS = [
+    { id: 'qa_rack',      label: 'QA Team Rack',      icon: '🗄️' },
+    { id: 'sun_direct',   label: 'Sun Direct Team',   icon: '☀️' },
+    { id: 'android_team', label: 'Android Team',      icon: '🤖' },
+    { id: 'ios_team',     label: 'iOS Team',          icon: '🍎' },
+    { id: 'satish_team',  label: 'Satish Team',       icon: '👤' },
+];
+
 // ─── Step types ───────────────────────────────────────────────────────────────
-type Step = 'device' | 'team' | 'member' | 'confirm' | 'done';
+type Step = 'device' | 'return-mode' | 'return-location' | 'team' | 'member' | 'confirm' | 'done';
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function PublicScanPage() {
@@ -119,6 +129,7 @@ export default function PublicScanPage() {
 
     // State
     const [device, setDevice] = useState<Device | null>(null);
+    const [allDevices, setAllDevices] = useState<Device[]>([]);
     const [teams, setTeams] = useState<JiraTeam[]>([]);
     const [loadingDevice, setLoadingDevice] = useState(true);
     const [loadingTeams, setLoadingTeams] = useState(true);
@@ -129,6 +140,12 @@ export default function PublicScanPage() {
     const [actionLoading, setActionLoading] = useState(false);
     const [action, setAction] = useState<'checkout' | 'checkin'>('checkout');
     const [lastUsed, setLastUsed] = useState<{ teamId: string; accountId: string; name: string } | null>(null);
+    // Return-specific state
+    const [returnMode, setReturnMode] = useState<'person' | 'location' | null>(null);
+    const [returnLocation, setReturnLocation] = useState<string | null>(null);
+    // All-devices picker
+    const [showAllDevices, setShowAllDevices] = useState(false);
+    const [deviceSearch, setDeviceSearch] = useState('');
 
     // ── Load device ──────────────────────────────────────────────────────────
     useEffect(() => {
@@ -147,6 +164,21 @@ export default function PublicScanPage() {
             .catch(() => setNotFound(true))
             .finally(() => setLoadingDevice(false));
     }, [deviceId]);
+
+    // ── Load ALL devices for the device switcher ─────────────────────────────
+    useEffect(() => {
+        const ALL_IDS = ['device_1','device_2','device_3','device_4','device_5','device_6','device_7','device_8'];
+        Promise.all(
+            ALL_IDS.map(id =>
+                fetch(`/api/keepr/device/${id}`, { cache: 'no-store' })
+                    .then(r => r.ok ? r.json() : null)
+                    .catch(() => null)
+            )
+        ).then(results => {
+            const devs = results.filter(Boolean).map((r: any) => r.device).filter(Boolean);
+            setAllDevices(devs);
+        });
+    }, []);
 
     // ── Load Jira teams ──────────────────────────────────────────────────────
     useEffect(() => {
@@ -199,27 +231,46 @@ export default function PublicScanPage() {
 
     // ── Handle action ────────────────────────────────────────────────────────
     const handleAction = useCallback(async () => {
-        if (!device || !selectedMember || !selectedTeam) return;
+        if (!device) return;
+        if (action === 'checkout' && (!selectedMember || !selectedTeam)) return;
+        if (action === 'checkin' && returnMode === 'person' && (!selectedMember || !selectedTeam)) return;
+        if (action === 'checkin' && returnMode === 'location' && !returnLocation) return;
         setActionLoading(true);
 
         const now = new Date().toISOString();
-        const update = action === 'checkout'
-            ? {
+
+        let update: Record<string, any>;
+        if (action === 'checkout') {
+            update = {
                 status: 'checked-out',
                 checkedOutBy: {
-                    name: selectedMember.displayName,
-                    accountId: selectedMember.accountId,
-                    team: selectedTeam.name,
+                    name: selectedMember!.displayName,
+                    accountId: selectedMember!.accountId,
+                    team: selectedTeam!.name,
                 },
-                checkedOutAt: now,
+                // checkedOutAt is set SERVER-SIDE in the API — do not set here
                 totalCheckouts: (device.totalCheckouts ?? 0) + 1,
-            }
-            : {
+                returnedTo: null,
+                returnLocation: null,
+            };
+        } else {
+            // checkin — capture who/where it was returned to
+            const returnedToPerson = returnMode === 'person' && selectedMember
+                ? { name: selectedMember.displayName, accountId: selectedMember.accountId, team: selectedTeam?.name ?? '' }
+                : null;
+            const returnedToLocation = returnMode === 'location' ? returnLocation : null;
+
+            update = {
                 status: 'available',
                 checkedOutBy: null,
                 checkedOutAt: null,
-                lastCheckedIn: now,
+                // lastCheckedIn is set SERVER-SIDE in the API — do not set here
+                returnedTo: returnedToPerson,
+                returnLocation: returnedToLocation,
+                // Update device location if returned to a rack/team
+                ...(returnedToLocation ? { location: RETURN_LOCATIONS.find(l => l.id === returnedToLocation)?.label ?? device.location } : {}),
             };
+        }
 
         try {
             await fetch(`/api/keepr/device/${deviceId}`, {
@@ -229,23 +280,37 @@ export default function PublicScanPage() {
             });
 
             // Save last used to localStorage
-            localStorage.setItem('keepr_last_user', JSON.stringify({
-                teamId: selectedTeam.id,
-                accountId: selectedMember.accountId,
-                name: selectedMember.displayName,
-            }));
+            if (selectedMember && selectedTeam) {
+                localStorage.setItem('keepr_last_user', JSON.stringify({
+                    teamId: selectedTeam.id,
+                    accountId: selectedMember.accountId,
+                    name: selectedMember.displayName,
+                }));
+            }
 
             setDevice(prev => prev ? { ...prev, ...update } as Device : prev);
             setStep('done');
         } catch {
-            // Still show done — optimistic
             setStep('done');
         } finally {
             setActionLoading(false);
         }
-    }, [device, selectedMember, selectedTeam, action, deviceId]);
+    }, [device, selectedMember, selectedTeam, action, deviceId, returnMode, returnLocation]);
 
-    // ── Quick re-use last person ──────────────────────────────────────────────
+    // ── Switch to a different device ─────────────────────────────────────────
+    const switchToDevice = useCallback((d: Device) => {
+        setDevice(d);
+        setAction(d.status === 'checked-out' ? 'checkin' : 'checkout');
+        setStep('device');
+        setSelectedTeam(null);
+        setSelectedMember(null);
+        setReturnMode(null);
+        setReturnLocation(null);
+        setShowAllDevices(false);
+        setDeviceSearch('');
+        // Update the URL without navigation so QR remains shareable
+        window.history.replaceState({}, '', `/scan/${d.id}`);
+    }, []);
     const handleQuickUse = useCallback(() => {
         if (!lastUsed || !teams.length) return;
         const team = teams.find(t => t.id === lastUsed.teamId);
@@ -358,6 +423,103 @@ export default function PublicScanPage() {
                     </div>
                 </motion.div>
 
+                {/* ── "Not the right device?" — All Devices Switcher ── */}
+                <AnimatePresence>
+                {!showAllDevices ? (
+                    <motion.button
+                        key="show-all-btn"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setShowAllDevices(true)}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-white/50 hover:text-white/70 text-xs font-medium"
+                    >
+                        <LayoutGrid className="w-3.5 h-3.5" />
+                        Not this device? See all {allDevices.length} devices
+                        <ChevronRight className="w-3.5 h-3.5" />
+                    </motion.button>
+                ) : (
+                    <motion.div
+                        key="all-devices-panel"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 8 }}
+                        className="bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 overflow-hidden"
+                    >
+                        {/* Header */}
+                        <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10">
+                            <LayoutGrid className="w-4 h-4 text-white/60 flex-shrink-0" />
+                            <p className="text-white/80 text-sm font-semibold flex-1">All Devices</p>
+                            <button onClick={() => { setShowAllDevices(false); setDeviceSearch(''); }} className="text-white/40 hover:text-white transition-colors">
+                                <XIcon className="w-4 h-4" />
+                            </button>
+                        </div>
+                        {/* Search */}
+                        <div className="px-3 py-2 border-b border-white/10">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30 pointer-events-none" />
+                                <input
+                                    type="text"
+                                    value={deviceSearch}
+                                    onChange={e => setDeviceSearch(e.target.value)}
+                                    placeholder="Search devices…"
+                                    className="w-full bg-white/10 border border-white/15 rounded-lg pl-8 pr-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-white/30"
+                                />
+                            </div>
+                        </div>
+                        {/* Device list */}
+                        <div className="max-h-72 overflow-y-auto divide-y divide-white/5">
+                            {allDevices
+                                .filter(d => !deviceSearch || d.name.toLowerCase().includes(deviceSearch.toLowerCase()) || d.location.toLowerCase().includes(deviceSearch.toLowerCase()))
+                                .map(d => {
+                                    const DIcon = TYPE_ICONS[d.type] ?? Box;
+                                    const isActive = d.id === device.id;
+                                    const overdue = getOverdueInfo(d.checkedOutAt);
+                                    return (
+                                        <button
+                                            key={d.id}
+                                            onClick={() => !isActive && switchToDevice(d)}
+                                            disabled={isActive}
+                                            className={cn(
+                                                'w-full flex items-center gap-3 px-4 py-3 transition-all text-left',
+                                                isActive
+                                                    ? 'bg-white/15 cursor-default'
+                                                    : d.status === 'maintenance'
+                                                        ? 'opacity-50 cursor-not-allowed'
+                                                        : 'hover:bg-white/10 active:scale-98 cursor-pointer'
+                                            )}
+                                        >
+                                            {/* Icon */}
+                                            <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-br flex-shrink-0', TYPE_GRADIENTS[d.type] ?? 'from-slate-500 to-slate-700')}>
+                                                <DIcon className="w-4 h-4 text-white" />
+                                            </div>
+                                            {/* Info */}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5">
+                                                    <p className="text-white text-xs font-semibold truncate">{d.name}</p>
+                                                    {isActive && <span className="text-[9px] px-1.5 py-0 rounded-full bg-blue-500/30 text-blue-300 font-bold flex-shrink-0">current</span>}
+                                                </div>
+                                                <p className="text-white/40 text-[10px] truncate">
+                                                    {d.status === 'checked-out' && d.checkedOutBy
+                                                        ? `${d.checkedOutBy.name} · ${overdue.duration}`
+                                                        : d.location}
+                                                </p>
+                                            </div>
+                                            {/* Status dot */}
+                                            <div className={cn(
+                                                'w-2 h-2 rounded-full flex-shrink-0',
+                                                d.status === 'available' ? 'bg-emerald-400 animate-pulse' :
+                                                d.status === 'checked-out' ? (overdue.isOverdue ? 'bg-red-400' : 'bg-sky-400') :
+                                                'bg-amber-400'
+                                            )} />
+                                        </button>
+                                    );
+                                })}
+                        </div>
+                    </motion.div>
+                )}
+                </AnimatePresence>
+
                 {/* ── Step: Device — show action choice ── */}
                 <AnimatePresence mode="wait">
 
@@ -387,7 +549,7 @@ export default function PublicScanPage() {
                             )}
 
                             <button
-                                onClick={() => setStep('team')}
+                                onClick={() => action === 'checkout' ? setStep('team') : setStep('return-mode')}
                                 className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-blue-500/20 border border-blue-500/30 hover:bg-blue-500/30 transition-all active:scale-95"
                             >
                                 <div className="w-10 h-10 rounded-xl bg-blue-500/30 flex items-center justify-center flex-shrink-0">
@@ -397,10 +559,102 @@ export default function PublicScanPage() {
                                     <p className="text-white font-semibold text-sm">
                                         {action === 'checkout' ? 'Take this device' : 'Return this device'}
                                     </p>
-                                    <p className="text-white/50 text-xs">Select your team and name</p>
+                                    <p className="text-white/50 text-xs">
+                                        {action === 'checkout' ? 'Select your team and name' : 'Choose where or who to return to'}
+                                    </p>
                                 </div>
                                 <ChevronRight className="w-4 h-4 text-white/40 flex-shrink-0" />
                             </button>
+                        </motion.div>
+                    )}
+
+                    {/* ── Step: Return mode selection ── */}
+                    {step === 'return-mode' && (
+                        <motion.div
+                            key="return-mode-step"
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            className="space-y-3"
+                        >
+                            <div className="flex items-center gap-2 mb-1">
+                                <button onClick={() => setStep('device')} className="text-white/50 hover:text-white transition-colors">
+                                    <ChevronLeft className="w-5 h-5" />
+                                </button>
+                                <div>
+                                    <p className="text-white/70 text-sm font-medium">How are you returning it?</p>
+                                    <p className="text-white/40 text-xs">Returning {device.name}</p>
+                                </div>
+                            </div>
+
+                            {/* Return to a person */}
+                            <button
+                                onClick={() => { setReturnMode('person'); setStep('team'); }}
+                                className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl bg-violet-500/20 border border-violet-500/30 hover:bg-violet-500/30 transition-all active:scale-95"
+                            >
+                                <div className="w-11 h-11 rounded-xl bg-violet-500/30 flex items-center justify-center flex-shrink-0">
+                                    <User className="w-5 h-5 text-violet-300" />
+                                </div>
+                                <div className="flex-1 text-left">
+                                    <p className="text-white font-bold text-sm">Hand to a person</p>
+                                    <p className="text-white/50 text-xs mt-0.5">Select team → pick who you're giving it to</p>
+                                </div>
+                                <ChevronRight className="w-4 h-4 text-white/40" />
+                            </button>
+
+                            {/* Return to a location */}
+                            <button
+                                onClick={() => { setReturnMode('location'); setStep('return-location'); }}
+                                className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all active:scale-95"
+                            >
+                                <div className="w-11 h-11 rounded-xl bg-emerald-500/30 flex items-center justify-center flex-shrink-0">
+                                    <MapPin className="w-5 h-5 text-emerald-300" />
+                                </div>
+                                <div className="flex-1 text-left">
+                                    <p className="text-white font-bold text-sm">Return to a rack / team area</p>
+                                    <p className="text-white/50 text-xs mt-0.5">QA Rack, Sun Direct, Android, iOS, Satish…</p>
+                                </div>
+                                <ChevronRight className="w-4 h-4 text-white/40" />
+                            </button>
+                        </motion.div>
+                    )}
+
+                    {/* ── Step: Return location picker ── */}
+                    {step === 'return-location' && (
+                        <motion.div
+                            key="return-location-step"
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            className="space-y-3"
+                        >
+                            <div className="flex items-center gap-2 mb-1">
+                                <button onClick={() => setStep('return-mode')} className="text-white/50 hover:text-white transition-colors">
+                                    <ChevronLeft className="w-5 h-5" />
+                                </button>
+                                <p className="text-white/70 text-sm font-medium">Where are you putting it?</p>
+                            </div>
+
+                            <div className="space-y-2">
+                                {RETURN_LOCATIONS.map(loc => (
+                                    <button
+                                        key={loc.id}
+                                        onClick={() => { setReturnLocation(loc.id); setStep('confirm'); }}
+                                        className={cn(
+                                            'w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl border transition-all active:scale-95',
+                                            returnLocation === loc.id
+                                                ? 'bg-emerald-500/30 border-emerald-400/50'
+                                                : 'bg-white/10 border-white/20 hover:bg-white/15'
+                                        )}
+                                    >
+                                        <span className="text-2xl flex-shrink-0">{loc.icon}</span>
+                                        <span className="text-white font-semibold text-sm">{loc.label}</span>
+                                        {returnLocation === loc.id && (
+                                            <CheckCircle2 className="w-4 h-4 text-emerald-400 ml-auto" />
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
                         </motion.div>
                     )}
 
@@ -414,10 +668,12 @@ export default function PublicScanPage() {
                             className="space-y-3"
                         >
                             <div className="flex items-center gap-2 mb-1">
-                                <button onClick={() => setStep('device')} className="text-white/50 hover:text-white transition-colors">
+                                <button onClick={() => action === 'checkin' ? setStep('return-mode') : setStep('device')} className="text-white/50 hover:text-white transition-colors">
                                     <ChevronLeft className="w-5 h-5" />
                                 </button>
-                                <p className="text-white/70 text-sm font-medium">Select your team</p>
+                                <p className="text-white/70 text-sm font-medium">
+                                    {action === 'checkout' ? 'Select your team' : 'Select their team'}
+                                </p>
                             </div>
 
                             {loadingTeams ? (
@@ -464,7 +720,9 @@ export default function PublicScanPage() {
                                     <ChevronLeft className="w-5 h-5" />
                                 </button>
                                 <div>
-                                    <p className="text-white/70 text-sm font-medium">Who are you?</p>
+                                    <p className="text-white/70 text-sm font-medium">
+                                        {action === 'checkout' ? 'Who are you?' : 'Who are you giving it to?'}
+                                    </p>
                                     <p className="text-white/40 text-xs">{selectedTeam.name}</p>
                                 </div>
                             </div>
@@ -515,18 +773,47 @@ export default function PublicScanPage() {
 
                             {/* Who */}
                             <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/10 border border-white/20">
-                                {selectedMember.avatarUrl ? (
+                                {selectedMember?.avatarUrl ? (
                                     <img src={selectedMember.avatarUrl} alt={selectedMember.displayName} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
-                                ) : (
+                                ) : selectedMember ? (
                                     <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center text-white text-base font-black flex-shrink-0', getAvatarColor(selectedMember.displayName))}>
                                         {getInitials(selectedMember.displayName)}
                                     </div>
-                                )}
+                                ) : returnMode === 'location' ? (
+                                    <span className="text-3xl flex-shrink-0">{RETURN_LOCATIONS.find(l => l.id === returnLocation)?.icon ?? '📍'}</span>
+                                ) : null}
                                 <div className="min-w-0">
-                                    <p className="text-white font-bold text-base truncate">{selectedMember.displayName}</p>
-                                    <p className="text-white/50 text-xs">{selectedTeam.name}</p>
+                                    {selectedMember && (
+                                        <>
+                                            <p className="text-white font-bold text-base truncate">{selectedMember.displayName}</p>
+                                            <p className="text-white/50 text-xs">{selectedTeam?.name}</p>
+                                        </>
+                                    )}
+                                    {returnMode === 'location' && !selectedMember && (
+                                        <>
+                                            <p className="text-white font-bold text-base">{RETURN_LOCATIONS.find(l => l.id === returnLocation)?.label}</p>
+                                            <p className="text-white/50 text-xs">Device location will be updated</p>
+                                        </>
+                                    )}
                                 </div>
                             </div>
+
+                            {/* Return destination summary for checkin */}
+                            {action === 'checkin' && (
+                                <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/5 border border-white/10">
+                                    <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
+                                        {returnMode === 'person' ? <User className="w-4 h-4 text-violet-300" /> : <MapPin className="w-4 h-4 text-emerald-300" />}
+                                    </div>
+                                    <div>
+                                        <p className="text-white/50 text-[10px] uppercase font-semibold tracking-wide">Returning to</p>
+                                        <p className="text-white text-sm font-semibold">
+                                            {returnMode === 'person'
+                                                ? `${selectedMember?.displayName} · ${selectedTeam?.name}`
+                                                : RETURN_LOCATIONS.find(l => l.id === returnLocation)?.label}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Action summary */}
                             <div className={cn(
@@ -539,7 +826,11 @@ export default function PublicScanPage() {
                                     {action === 'checkout' ? `Taking "${device.name}"` : `Returning "${device.name}"`}
                                 </p>
                                 <p className="text-white/40 text-xs mt-0.5">
-                                    {action === 'checkout' ? 'This will be logged under your name' : 'Device will be marked as available'}
+                                    {action === 'checkout'
+                                        ? 'This will be logged under your name'
+                                        : returnMode === 'person'
+                                            ? `Handing to ${selectedMember?.displayName}`
+                                            : `Going back to ${RETURN_LOCATIONS.find(l => l.id === returnLocation)?.label}`}
                                 </p>
                             </div>
 
@@ -588,7 +879,9 @@ export default function PublicScanPage() {
                                 <p className="text-white/60 text-sm mt-1">
                                     {action === 'checkout'
                                         ? `${device.name} is now logged to ${selectedMember?.displayName}`
-                                        : `${device.name} has been returned`}
+                                        : returnMode === 'person'
+                                            ? `${device.name} handed to ${selectedMember?.displayName}`
+                                            : `${device.name} returned to ${RETURN_LOCATIONS.find(l => l.id === returnLocation)?.label}`}
                                 </p>
                             </div>
                             <Link href="/keepr" className="text-white/40 text-xs hover:text-white/70 transition-colors mt-2">
