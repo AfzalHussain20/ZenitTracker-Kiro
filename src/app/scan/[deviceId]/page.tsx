@@ -763,7 +763,7 @@ export default function PublicScanPage() {
                     )}
 
                     {/* ── Step: Confirm ── */}
-                    {step === 'confirm' && selectedMember && selectedTeam && (
+                    {step === 'confirm' && (selectedMember || returnMode === 'location') && (
                         <motion.div
                             key="confirm-step"
                             initial={{ opacity: 0, scale: 0.95 }}
@@ -772,7 +772,7 @@ export default function PublicScanPage() {
                             className="space-y-4"
                         >
                             <div className="flex items-center gap-2 mb-1">
-                                <button onClick={() => setStep('member')} className="text-white/50 hover:text-white transition-colors">
+                                <button onClick={() => returnMode === 'location' ? setStep('return-location') : setStep('member')} className="text-white/50 hover:text-white transition-colors">
                                     <ChevronLeft className="w-5 h-5" />
                                 </button>
                                 <p className="text-white/70 text-sm font-medium">Confirm</p>
