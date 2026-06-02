@@ -172,8 +172,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { deviceId: 
     }
     if (body.status === 'available') {
         body.lastCheckedIn = serverNow;  // override — always server time
-        // Remove any client-sent checkedOutAt in the update (that's the device field, keep as-is)
-        delete body.checkedOutAt;
+        // CRITICAL: when returning to available, MUST null out checkedOutBy + checkedOutAt
+        body.checkedOutBy = null;
+        body.checkedOutAt = null;
     }
 
     try {
