@@ -1044,6 +1044,13 @@ export default function KeeprPage() {
     const [qrDevice, setQrDevice]         = useState<Device | null>(null);
     const [activeTab, setActiveTab]       = useState<'devices' | 'history'>('devices');
 
+    // ── Tick every 60s to refresh duration displays without re-fetching ──────────
+    const [, setTick] = useState(0);
+    useEffect(() => {
+        const t = setInterval(() => setTick(n => n + 1), 60_000);
+        return () => clearInterval(t);
+    }, []);
+
     // ── Firestore listener with local-first approach + API polling ──────────
     useEffect(() => {
         // Always start with seed data immediately
@@ -1126,6 +1133,8 @@ export default function KeeprPage() {
             status: 'available' as const,
             checkedOutBy: null,
             checkedOutAt: null,
+            returnedTo: null,
+            returnLocation: 'web_app', // logs that it was returned via web dashboard
             // lastCheckedIn set SERVER-SIDE — don't send from client
         };
         setDevices(prev => prev.map(d => d.id === device.id ? { ...d, status: 'available', checkedOutBy: undefined, checkedOutAt: undefined } : d));
@@ -1470,7 +1479,7 @@ export default function KeeprPage() {
             />
 
             <DeviceDetailModal
-                device={detailDevice}
+                device={detailDevice ? (devices.find(d => d.id === detailDevice.id) ?? detailDevice) : null}
                 onClose={() => setDetailDevice(null)}
                 onCheckout={handleCheckout}
                 onCheckin={handleCheckin}

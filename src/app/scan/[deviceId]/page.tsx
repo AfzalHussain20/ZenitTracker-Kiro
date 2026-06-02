@@ -112,11 +112,11 @@ function getAvatarColor(name: string) {
 
 // ─── Return destinations ──────────────────────────────────────────────────────
 const RETURN_LOCATIONS = [
-    { id: 'qa_rack',      label: 'QA Team Rack',      icon: '🗄️' },
-    { id: 'sun_direct',   label: 'Sun Direct Team',   icon: '☀️' },
-    { id: 'android_team', label: 'Android Team',      icon: '🤖' },
-    { id: 'ios_team',     label: 'iOS Team',          icon: '🍎' },
-    { id: 'satish_team',  label: 'Satish Team',       icon: '👤' },
+    { id: 'qa_rack',       label: 'QA Team Device Rack', icon: '🗄️' },
+    { id: 'sun_direct',    label: 'Sun Direct Team',      icon: '☀️' },
+    { id: 'android_team',  label: 'Android Team',         icon: '🤖' },
+    { id: 'ios_team',      label: 'iOS Team',             icon: '🍎' },
+    { id: 'satish_team',   label: 'Satish Team',          icon: '👤' },
 ];
 
 // ─── Step types ───────────────────────────────────────────────────────────────
@@ -167,17 +167,12 @@ export default function PublicScanPage() {
 
     // ── Load ALL devices for the device switcher ─────────────────────────────
     useEffect(() => {
-        const ALL_IDS = ['device_1','device_2','device_3','device_4','device_5','device_6','device_7','device_8'];
-        Promise.all(
-            ALL_IDS.map(id =>
-                fetch(`/api/keepr/device/${id}`, { cache: 'no-store' })
-                    .then(r => r.ok ? r.json() : null)
-                    .catch(() => null)
-            )
-        ).then(results => {
-            const devs = results.filter(Boolean).map((r: any) => r.device).filter(Boolean);
-            setAllDevices(devs);
-        });
+        fetch('/api/keepr/device/list', { cache: 'no-store' })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data?.devices?.length) setAllDevices(data.devices);
+            })
+            .catch(() => {});
     }, []);
 
     // ── Load Jira teams ──────────────────────────────────────────────────────
@@ -230,6 +225,13 @@ export default function PublicScanPage() {
     }, []);
 
     // ── Handle action ────────────────────────────────────────────────────────
+    const refreshAllDevices = useCallback(async () => {
+        const res = await fetch('/api/keepr/device/list', { cache: 'no-store' }).catch(() => null);
+        if (!res?.ok) return;
+        const data = await res.json().catch(() => null);
+        if (data?.devices?.length) setAllDevices(data.devices);
+    }, []);
+
     const handleAction = useCallback(async () => {
         if (!device) return;
         if (action === 'checkout' && (!selectedMember || !selectedTeam)) return;
@@ -290,8 +292,12 @@ export default function PublicScanPage() {
 
             setDevice(prev => prev ? { ...prev, ...update } as Device : prev);
             setStep('done');
+            // Refresh all devices list to show updated statuses
+            refreshAllDevices().catch(() => {});
         } catch {
             setStep('done');
+            // Refresh all devices list to show updated statuses
+            refreshAllDevices().catch(() => {});
         } finally {
             setActionLoading(false);
         }
@@ -495,9 +501,10 @@ export default function PublicScanPage() {
                                             </div>
                                             {/* Info */}
                                             <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-1.5">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
                                                     <p className="text-white text-xs font-semibold truncate">{d.name}</p>
                                                     {isActive && <span className="text-[9px] px-1.5 py-0 rounded-full bg-blue-500/30 text-blue-300 font-bold flex-shrink-0">current</span>}
+                                                    {d.status === 'maintenance' && <span className="text-[9px] px-1.5 py-0 rounded-full bg-amber-500/30 text-amber-300 font-bold flex-shrink-0">Maintenance</span>}
                                                 </div>
                                                 <p className="text-white/40 text-[10px] truncate">
                                                     {d.status === 'checked-out' && d.checkedOutBy
@@ -532,7 +539,7 @@ export default function PublicScanPage() {
                             className="space-y-3"
                         >
                             {/* Quick re-use last person */}
-                            {lastUsed && !loadingTeams && (
+                            {lastUsed && !loadingTeams && action === 'checkout' && (
                                 <button
                                     onClick={handleQuickUse}
                                     className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 transition-all active:scale-95"
