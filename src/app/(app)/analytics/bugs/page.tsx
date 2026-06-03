@@ -1386,9 +1386,10 @@ export default function KPIDashboard() {
     useEffect(() => {
         if (activeSprint === undefined && allSprints.length > 0) {
             const active = allSprints.find(s => s.state === 'active');
-            if (active) {
-                console.log(`[Dashboard] Auto-selecting active sprint: ${active.name} (${active.id})`);
-                setActiveSprint(String(active.id));
+            // Also check for the most recent closed sprint if no active
+            const latest = active || allSprints[0]; // allSprints is sorted active-first
+            if (latest) {
+                setActiveSprint(String(latest.id));
             }
         }
     }, [allSprints, activeSprint]);
@@ -1530,6 +1531,20 @@ export default function KPIDashboard() {
     const curKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
     const prevDate = new Date(now.getFullYear(),now.getMonth()-1,1);
     const prevKey = `${prevDate.getFullYear()}-${String(prevDate.getMonth()+1).padStart(2,'0')}`;
+
+    // Sprint period info — used for period overview labels and date filtering
+    const activeSprint_info = useMemo(() => {
+        if (!activeSprint || !allSprints.length) return null;
+        return allSprints.find(s => String(s.id) === activeSprint) || null;
+    }, [activeSprint, allSprints]);
+
+    const prevSprint_info = useMemo(() => {
+        if (!activeSprint || !allSprints.length) return null;
+        const idx = allSprints.findIndex(s => String(s.id) === activeSprint);
+        // allSprints is sorted active→future→closed; previous sprint = next in closed list
+        return idx >= 0 && idx < allSprints.length - 1 ? allSprints[idx + 1] : null;
+    }, [activeSprint, allSprints]);
+
     const cm = kpi?.currentMonth;
     const pm = kpi?.previousMonth;
     const typeLabel = filterType==='all'?'Issues':filterType==='Bug'?'Bugs':filterType==='Story'?'Stories':filterType==='Epic'?'Epics':'Tasks';
@@ -1659,28 +1674,56 @@ export default function KPIDashboard() {
 
     // Period card data helper - must be before early returns (React hooks rule)
     const periodCards = useMemo(() => {
-        // Use classifyStatus for accurate open/inProgress/closed counts — matches Jira exactly
         const allBugs = kpi?.bugs || [];
-        const overallData = teamScopedStats ? teamScopedStats.overall : {
-            total: allBugs.length,
-            open: allBugs.filter(b => classifyStatus(b.status) === 'open').length,
-            closed: allBugs.filter(b => classifyStatus(b.status) === 'closed').length,
-            inProgress: allBugs.filter(b => classifyStatus(b.status) === 'in_progress').length,
-            critical: allBugs.filter(b => b.priority === 'Highest').length,
-            high: allBugs.filter(b => b.priority === 'High').length,
+
+        // Helper: sum bugs in a date range
+        const sumRange = (bugs: typeof allBugs, start?: string, end?: string) => {
+            const filtered = start ? bugs.filter(b => {
+                const d = b.created.slice(0, 10);
+                return d >= start && (!end || d <= end);
+            }) : bugs;
+            return {
+                total: filtered.length,
+                open: filtered.filter(b => classifyStatus(b.status) === 'open').length,
+                closed: filtered.filter(b => classifyStatus(b.status) === 'closed').length,
+                inProgress: filtered.filter(b => classifyStatus(b.status) === 'in_progress').length,
+                critical: filtered.filter(b => b.priority === 'Highest').length,
+                high: filtered.filter(b => b.priority === 'High').length,
+            };
         };
+
+        const overallData = teamScopedStats ? teamScopedStats.overall : sumRange(allBugs);
+
+        // Current period = sprint date range if sprint selected, else current calendar month
+        const curStart = activeSprint_info?.startDate?.slice(0, 10) ||
+            `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+        const curEnd = activeSprint_info?.endDate?.slice(0, 10) || undefined;
+
+        // Previous period = previous sprint or previous calendar month
+        const prevStart = prevSprint_info?.startDate?.slice(0, 10) ||
+            `${prevDate.getFullYear()}-${String(prevDate.getMonth()+1).padStart(2,'0')}-01`;
+        const prevEnd = prevSprint_info?.endDate?.slice(0, 10) ||
+            new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
+
+        const curLabel = activeSprint_info
+            ? `${activeSprint_info.name}${activeSprint_info.state === 'active' ? ' 🟢' : ''}`
+            : cm?.label || 'Current Month';
+        const prevLabel = prevSprint_info
+            ? prevSprint_info.name
+            : pm?.label || 'Previous Month';
+
+        const curBugs = teamScopedStats ? teamScopedStats.currentMonth : sumRange(allBugs, curStart, curEnd);
+        const prevBugs = teamScopedStats ? teamScopedStats.previousMonth : sumRange(allBugs, prevStart, prevEnd);
+
         return [
-            {title:'Overall (All Time)',icon:Award,color:'text-purple-500',border:'border-purple-500/40',bg:'bg-purple-500/5',
-             data: overallData,
-             prevData:null as null|{total:number;open:number;closed:number;inProgress:number;critical:number;high:number}},
-            {title:`${cm?.label||''} — Current Month`,icon:TrendingUp,color:'text-amber-500',border:'border-amber-500/40',bg:'bg-amber-500/5',
-             data:teamScopedStats?teamScopedStats.currentMonth:{total:cm?.bugs||0,open:cm?.open||0,closed:cm?.closed||0,inProgress:cm?.inProgress||0,critical:cm?.critical||0,high:cm?.high||0},
-             prevData:teamScopedStats?teamScopedStats.previousMonth:{total:pm?.bugs||0,open:pm?.open||0,closed:pm?.closed||0,inProgress:pm?.inProgress||0,critical:pm?.critical||0,high:pm?.high||0}},
-            {title:`${pm?.label||''} — Previous Month`,icon:Clock,color:'text-blue-500',border:'border-blue-500/40',bg:'bg-blue-500/5',
-             data:teamScopedStats?teamScopedStats.previousMonth:{total:pm?.bugs||0,open:pm?.open||0,closed:pm?.closed||0,inProgress:pm?.inProgress||0,critical:pm?.critical||0,high:pm?.high||0},
-             prevData:null as null|{total:number;open:number;closed:number;inProgress:number;critical:number;high:number}},
+            { title: 'Overall (All Time)', icon: Award, color: 'text-purple-500', border: 'border-purple-500/40', bg: 'bg-purple-500/5',
+              data: overallData, prevData: null as null | typeof overallData },
+            { title: `${curLabel} — Current Sprint`, icon: TrendingUp, color: 'text-amber-500', border: 'border-amber-500/40', bg: 'bg-amber-500/5',
+              data: curBugs, prevData: prevBugs },
+            { title: `${prevLabel} — Previous Sprint`, icon: Clock, color: 'text-blue-500', border: 'border-blue-500/40', bg: 'bg-blue-500/5',
+              data: prevBugs, prevData: null as null | typeof overallData },
         ];
-    }, [teamScopedStats, kpi, cm, pm]);
+    }, [teamScopedStats, kpi, cm, pm, activeSprint_info, prevSprint_info, now, prevDate]);
 
     if(loading&&!kpi) {
         return (
@@ -1782,15 +1825,19 @@ export default function KPIDashboard() {
                         </Button>
                         <Button onClick={forceRefresh} variant="outline" disabled={loading} size="sm"><RefreshCw className={cn('w-4 h-4 mr-2',loading&&'animate-spin')}/>{loading?'Syncing...':'Force Sync'}</Button>
                         {/* Sprint selector — scopes ALL data to the selected sprint */}
-                        <Select value={activeSprint||'active'} onValueChange={v=>{setActiveSprint(v==='active'?undefined:v);}}>
-                            <SelectTrigger className={cn('w-52 h-9 text-xs',activeSprint&&'border-primary bg-primary/10 font-semibold text-primary')}>
-                                <SelectValue placeholder="Active Sprint"/>
+                        <Select value={activeSprint || ''} onValueChange={v => setActiveSprint(v || undefined)}>
+                            <SelectTrigger className={cn('w-56 h-9 text-xs', activeSprint && 'border-primary bg-primary/10 font-semibold text-primary')}>
+                                <SelectValue placeholder={allSprints.length === 0 ? 'Loading sprints…' : 'Select Sprint'} />
                             </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="active">Active Sprint (default)</SelectItem>
-                                {allSprints.map(s=>(
+                            <SelectContent className="max-h-72">
+                                {allSprints.map(s => (
                                     <SelectItem key={s.id} value={String(s.id)}>
-                                        {s.name}{s.state==='active'?' \u25cf':s.state==='future'?' (upcoming)':''}
+                                        {s.state === 'active' ? '🟢 ' : s.state === 'future' ? '🔵 ' : '⬜ '}{s.name}
+                                        {s.startDate && s.endDate && (
+                                            <span className="text-muted-foreground ml-1 text-[10px]">
+                                                ({s.startDate.slice(5, 10)} – {s.endDate.slice(5, 10)})
+                                            </span>
+                                        )}
                                     </SelectItem>
                                 ))}
                             </SelectContent>
