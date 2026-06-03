@@ -179,31 +179,36 @@ async function buildFullSync(sprintId?: string) {
 
     console.log(`[Sync] Starting parallel Jira sync... sprint=${resolvedSprintId || 'openSprints()'}`);
 
-    // Fetch sprint-scoped issues + all-time bugs in parallel
-    // All-time bugs needed for Team KPI bug counts (reporter-based, not sprint-scoped)
-    const [bugs, stories, epics, tasks, subtasks, allTimeBugs] = await Promise.all([
+    // Fetch sprint-scoped issues + all-time issues in parallel
+    // All-time data needed for Team KPI counts (reporter-based, not sprint-scoped)
+    const [bugs, stories, epics, tasks, subtasks, allTimeBugs, allTimeStories, allTimeTasks] = await Promise.all([
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Bug" ORDER BY created DESC`),
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Story" ORDER BY created DESC`),
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Epic" ORDER BY created DESC`),
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Task" ORDER BY created DESC`),
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Sub-task" ORDER BY created DESC`),
-        // All-time bugs — no sprint filter — for accurate reporter-based bug counts in Team KPIs
+        // All-time data — no sprint filter — for accurate reporter/assignee counts in member profiles
         fetchAllPages(`project = ${PROJECT_KEY} AND issuetype = "Bug" ORDER BY created DESC`),
+        fetchAllPages(`project = ${PROJECT_KEY} AND issuetype = "Story" ORDER BY created DESC`),
+        fetchAllPages(`project = ${PROJECT_KEY} AND issuetype in ("Task","Epic") ORDER BY created DESC`),
     ]);
 
     const all = [...bugs, ...stories, ...epics, ...tasks, ...subtasks];
     // allForSP excludes sub-tasks — sub-tasks duplicate parent story SP
     const allForSP = [...bugs, ...stories, ...epics, ...tasks];
+    // allTimeAll — complete all-time dataset for member profile overall view
+    const allTimeAll = [...allTimeBugs, ...allTimeStories, ...allTimeTasks];
     const elapsed = Date.now() - start;
 
     // Live build tickets = any issue with a released fix version
     const liveTickets = all.filter(i => i.isLive);
 
-    console.log(`[Sync] Done in ${elapsed}ms: ${all.length} total (bugs=${bugs.length}, allTimeBugs=${allTimeBugs.length}, stories=${stories.length}, epics=${epics.length}, tasks=${tasks.length}, subtasks=${subtasks.length}, live=${liveTickets.length})`);
+    console.log(`[Sync] Done in ${elapsed}ms: ${all.length} total (bugs=${bugs.length}, allTimeBugs=${allTimeBugs.length}, allTimeAll=${allTimeAll.length}, stories=${stories.length}, epics=${epics.length}, tasks=${tasks.length}, subtasks=${subtasks.length}, live=${liveTickets.length})`);
 
     return {
         all, bugs, stories, epics, tasks, subtasks, allForSP,
         allTimeBugs, // all-time bugs for Team KPI reporter-based counts
+        allTimeAll,  // all-time all issues for member profile overall view
         liveTickets,
         syncedAt: new Date().toISOString(),
         syncDurationMs: elapsed,

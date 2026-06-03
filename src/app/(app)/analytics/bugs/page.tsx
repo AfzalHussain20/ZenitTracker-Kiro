@@ -138,14 +138,39 @@ function SPBreakdown({assigned,todo,inProg,done}:{assigned:number;todo:number;in
 
 
 // --- Member Profile Portal ---------------------------------------------------
-function MemberProfileModal({ person, allIssues, sprintIssues, onClose, onFilterBugs }: { person:PersonKPI; allIssues:JiraIssueRaw[]; sprintIssues?:JiraIssueRaw[]; onClose:()=>void; onFilterBugs?:(filters:{reporterId?:string; assigneeId?:string; statusFilter?:string; priorityFilter?:string; issueType?:string})=>void }) {
+function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClose, onFilterBugs }: {
+    person:PersonKPI; allIssues:JiraIssueRaw[]; sprintIssues?:JiraIssueRaw[];
+    allSprints?: Array<{id:number;name:string;state:string;startDate:string|null;endDate:string|null}>;
+    onClose:()=>void;
+    onFilterBugs?:(filters:{reporterId?:string; assigneeId?:string; statusFilter?:string; priorityFilter?:string; issueType?:string})=>void
+}) {
     const [tab, setTab] = useState<string>('overview');
     const [viewScope, setViewScope] = useState<'overall' | 'sprint'>('overall');
+    const [selectedSprintId, setSelectedSprintId] = useState<string>('current');
+    const [sprintData, setSprintData] = useState<JiraIssueRaw[] | null>(null);
+    const [loadingSprint, setLoadingSprint] = useState(false);
     const av = getAvatarStyle(person.name);
     const initials = person.name.split(' ').map((w:string)=>w[0]||'').join('').slice(0,2).toUpperCase();
 
+    // Fetch issues for a specific sprint when selected
+    useEffect(() => {
+        if (viewScope !== 'sprint') return;
+        if (selectedSprintId === 'current') { setSprintData(sprintIssues || null); return; }
+        setLoadingSprint(true);
+        fetch(`/api/jira/sync?sprintId=${selectedSprintId}`)
+            .then(r => r.json())
+            .then(d => {
+                const all = [...(d.bugs||[]), ...(d.stories||[]), ...(d.epics||[]), ...(d.tasks||[]), ...(d.subtasks||[])];
+                setSprintData(all);
+            })
+            .catch(() => setSprintData([]))
+            .finally(() => setLoadingSprint(false));
+    }, [selectedSprintId, viewScope, sprintIssues]);
+
     // Switch between all-time and sprint-scoped issues
-    const activeIssues = viewScope === 'sprint' && sprintIssues ? sprintIssues : allIssues;
+    const activeIssues = viewScope === 'sprint'
+        ? (sprintData ?? sprintIssues ?? allIssues)
+        : allIssues;
 
     // Derived data — uses activeIssues so Overall/Sprint toggle works
     const myReported = useMemo(()=>activeIssues.filter(i=>i.reporter?.accountId===person.userId),[activeIssues,person.userId]);
@@ -254,15 +279,31 @@ function MemberProfileModal({ person, allIssues, sprintIssues, onClose, onFilter
                             <div className="flex flex-col items-end gap-2 shrink-0">
                                 {/* Overall / Sprint toggle */}
                                 {sprintIssues && (
-                                    <div className="flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-0.5">
-                                        <button
-                                            onClick={() => setViewScope('overall')}
-                                            className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all', viewScope === 'overall' ? 'bg-white text-slate-900 shadow-sm' : 'text-white/50 hover:text-white')}
-                                        >Overall</button>
-                                        <button
-                                            onClick={() => setViewScope('sprint')}
-                                            className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all', viewScope === 'sprint' ? 'bg-white text-slate-900 shadow-sm' : 'text-white/50 hover:text-white')}
-                                        >Sprint</button>
+                                    <div className="flex flex-col items-end gap-1.5">
+                                        <div className="flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-0.5">
+                                            <button
+                                                onClick={() => setViewScope('overall')}
+                                                className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all', viewScope === 'overall' ? 'bg-white text-slate-900 shadow-sm' : 'text-white/50 hover:text-white')}
+                                            >Overall</button>
+                                            <button
+                                                onClick={() => { setViewScope('sprint'); setSelectedSprintId('current'); setSprintData(sprintIssues||null); }}
+                                                className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all', viewScope === 'sprint' ? 'bg-white text-slate-900 shadow-sm' : 'text-white/50 hover:text-white')}
+                                            >Sprint</button>
+                                        </div>
+                                        {/* Sprint selector — only when Sprint tab active */}
+                                        {viewScope === 'sprint' && allSprints && allSprints.length > 0 && (
+                                            <select
+                                                value={selectedSprintId}
+                                                onChange={e => setSelectedSprintId(e.target.value)}
+                                                className="text-[10px] bg-white/10 border border-white/20 text-white rounded-md px-2 py-1 max-w-[160px] truncate"
+                                            >
+                                                <option value="current">Current Sprint</option>
+                                                {allSprints.map(s => (
+                                                    <option key={s.id} value={String(s.id)}>{s.name}</option>
+                                                ))}
+                                            </select>
+                                        )}
+                                        {loadingSprint && <span className="text-[9px] text-white/40">Loading sprint…</span>}
                                     </div>
                                 )}
                                 <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-white/10 text-white/50 hover:text-white transition-all"><X className="w-5 h-5"/></button>
@@ -1636,6 +1677,7 @@ export default function KPIDashboard() {
                         person={selectedPerson} 
                         allIssues={kpi.allTimeIssues ?? kpi.all} 
                         sprintIssues={kpi.all}
+                        allSprints={kpi.sprints}
                         onClose={()=>setSelectedPerson(null)}
                         onFilterBugs={handleFilterBugsFromModal}
                     />

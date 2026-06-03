@@ -143,6 +143,8 @@ function processKPI(raw: any): KPIData {
     const allForSP: JiraIssueRaw[] = raw.allForSP || all.filter(i => !i.isSubTask);
     // allTimeBugs — all bugs ever reported, not sprint-scoped — for Team KPI bug counts
     const allTimeBugs: JiraIssueRaw[] = raw.allTimeBugs || bugs;
+    // allTimeAll — all issues ever (bugs + stories + tasks/epics), not sprint-scoped — for member profile
+    const allTimeAll: JiraIssueRaw[] = raw.allTimeAll || allTimeBugs;
     const liveTickets: JiraIssueRaw[] = raw.liveTickets || all.filter(i => i.isLive);
 
     // ── Per-person map ──
@@ -245,7 +247,7 @@ function processKPI(raw: any): KPIData {
         };
     }).sort((a, b) => b.bugsReported - a.bugsReported);
 
-    // ── Monthly stats (last 12 months) ──
+    // ── Monthly stats (last 12 months) — use allTimeAll so months reflect real data ──
     const now = new Date();
     const monthlyMap = new Map<string, MonthlyStats>();
     for (let i = 11; i >= 0; i--) {
@@ -254,7 +256,8 @@ function processKPI(raw: any): KPIData {
         monthlyMap.set(k, emptyMonth(k));
     }
 
-    all.forEach(issue => {
+    // Use allTimeAll for monthly so June/May show real numbers regardless of sprint scope
+    allTimeAll.forEach(issue => {
         const mk = monthKey(issue.created);
         if (!monthlyMap.has(mk)) return;
         const m = monthlyMap.get(mk)!;
@@ -360,7 +363,7 @@ function processKPI(raw: any): KPIData {
 
     return {
         all, bugs: allTimeBugs, stories, epics, tasks, subtasks, liveTickets,
-        allTimeIssues: allTimeBugs, // all-time bugs for member profile overall counts
+        allTimeIssues: allTimeAll, // all-time all issues for member profile overall counts
         counts: raw.counts || { total: all.length, bugs: bugs.length, stories: stories.length, epics: epics.length, tasks: tasks.length, subtasks: subtasks.length, live: liveTickets.length },
         people, monthly,
         currentMonth: cm,
