@@ -1677,7 +1677,7 @@ export default function KPIDashboard() {
                         person={selectedPerson} 
                         allIssues={kpi.allTimeIssues ?? kpi.all} 
                         sprintIssues={kpi.all}
-                        allSprints={kpi.sprints}
+                        allSprints={allSprints.length > 0 ? allSprints : kpi.sprints}
                         onClose={()=>setSelectedPerson(null)}
                         onFilterBugs={handleFilterBugsFromModal}
                     />

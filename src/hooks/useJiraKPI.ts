@@ -183,8 +183,20 @@ function processKPI(raw: any): KPIData {
         }
     });
 
-    // Use allForSP (no sub-tasks) for SP tracking — sub-tasks duplicate parent story SP
-    allForSP.forEach(i => {
+    // Use allForSP (no sub-tasks) for SP tracking — sprint-scoped
+    // ALSO process allTimeAll assignees for overall assigned ticket counts
+    const allTimeNonSubtasks = allTimeAll.filter(i => !i.isSubTask);
+
+    // Build a set of sprint issue IDs to avoid double-counting
+    const sprintIssueIds = new Set(allForSP.map(i => i.id));
+
+    // Merge: sprint issues for SP, plus all-time non-sprint issues for assigned counts
+    const allTimeForAssignee = [
+        ...allForSP,
+        ...allTimeNonSubtasks.filter(i => !sprintIssueIds.has(i.id)),
+    ];
+
+    allTimeForAssignee.forEach(i => {
         if (i.assignee) {
             const p = get(i.assignee.accountId, i.assignee.displayName, i.assignee.avatarUrl);
             p.allAssigned.push(i);
@@ -194,9 +206,14 @@ function processKPI(raw: any): KPIData {
         }
     });
 
-    stories.forEach(s => { if (s.reporter) get(s.reporter.accountId, s.reporter.displayName, s.reporter.avatarUrl).storiesReported++; });
-    epics.forEach(e => { if (e.reporter) get(e.reporter.accountId, e.reporter.displayName, e.reporter.avatarUrl).epicsReported++; });
-    tasks.forEach(t => { if (t.reporter) get(t.reporter.accountId, t.reporter.displayName, t.reporter.avatarUrl).tasksReported++; });
+    // Use allTimeAll for stories/epics/tasks reporter counts — not sprint-scoped
+    const allTimeStoriesArr = allTimeAll.filter(i => i.issueType === 'Story');
+    const allTimeEpicsArr   = allTimeAll.filter(i => i.issueType === 'Epic');
+    const allTimeTasksArr   = allTimeAll.filter(i => i.issueType === 'Task');
+
+    allTimeStoriesArr.forEach(s => { if (s.reporter) get(s.reporter.accountId, s.reporter.displayName, s.reporter.avatarUrl).storiesReported++; });
+    allTimeEpicsArr.forEach(e => { if (e.reporter) get(e.reporter.accountId, e.reporter.displayName, e.reporter.avatarUrl).epicsReported++; });
+    allTimeTasksArr.forEach(t => { if (t.reporter) get(t.reporter.accountId, t.reporter.displayName, t.reporter.avatarUrl).tasksReported++; });
 
     const people: PersonKPI[] = Array.from(pm.values()).map(p => {
         const br = p.bugsReported;
