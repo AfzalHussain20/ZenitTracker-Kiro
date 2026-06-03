@@ -62,6 +62,8 @@ export interface KPIData {
     all: JiraIssueRaw[]; bugs: JiraIssueRaw[]; stories: JiraIssueRaw[];
     epics: JiraIssueRaw[]; tasks: JiraIssueRaw[]; subtasks: JiraIssueRaw[];
     liveTickets: JiraIssueRaw[];
+    /** all-time bugs — not sprint-scoped — used for member profile overall counts */
+    allTimeIssues: JiraIssueRaw[];
     counts: { total: number; bugs: number; stories: number; epics: number; tasks: number; subtasks: number; live: number };
     people: PersonKPI[];
     monthly: MonthlyStats[];
@@ -358,6 +360,7 @@ function processKPI(raw: any): KPIData {
 
     return {
         all, bugs: allTimeBugs, stories, epics, tasks, subtasks, liveTickets,
+        allTimeIssues: allTimeBugs, // all-time bugs for member profile overall counts
         counts: raw.counts || { total: all.length, bugs: bugs.length, stories: stories.length, epics: epics.length, tasks: tasks.length, subtasks: subtasks.length, live: liveTickets.length },
         people, monthly,
         currentMonth: cm,

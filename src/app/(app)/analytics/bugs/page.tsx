@@ -138,19 +138,23 @@ function SPBreakdown({assigned,todo,inProg,done}:{assigned:number;todo:number;in
 
 
 // --- Member Profile Portal ---------------------------------------------------
-function MemberProfileModal({ person, allIssues, onClose, onFilterBugs }: { person:PersonKPI; allIssues:JiraIssueRaw[]; onClose:()=>void; onFilterBugs?:(filters:{reporterId?:string; assigneeId?:string; statusFilter?:string; priorityFilter?:string; issueType?:string})=>void }) {
+function MemberProfileModal({ person, allIssues, sprintIssues, onClose, onFilterBugs }: { person:PersonKPI; allIssues:JiraIssueRaw[]; sprintIssues?:JiraIssueRaw[]; onClose:()=>void; onFilterBugs?:(filters:{reporterId?:string; assigneeId?:string; statusFilter?:string; priorityFilter?:string; issueType?:string})=>void }) {
     const [tab, setTab] = useState<string>('overview');
+    const [viewScope, setViewScope] = useState<'overall' | 'sprint'>('overall');
     const av = getAvatarStyle(person.name);
     const initials = person.name.split(' ').map((w:string)=>w[0]||'').join('').slice(0,2).toUpperCase();
 
-    // Derived data
-    const myReported = useMemo(()=>allIssues.filter(i=>i.reporter?.accountId===person.userId),[allIssues,person.userId]);
+    // Switch between all-time and sprint-scoped issues
+    const activeIssues = viewScope === 'sprint' && sprintIssues ? sprintIssues : allIssues;
+
+    // Derived data — uses activeIssues so Overall/Sprint toggle works
+    const myReported = useMemo(()=>activeIssues.filter(i=>i.reporter?.accountId===person.userId),[activeIssues,person.userId]);
     const myBugs     = useMemo(()=>myReported.filter(i=>i.issueType==='Bug'),[myReported]);
     const myStories  = useMemo(()=>myReported.filter(i=>i.issueType==='Story'),[myReported]);
     const myEpics    = useMemo(()=>myReported.filter(i=>i.issueType==='Epic'),[myReported]);
     const myTasks    = useMemo(()=>myReported.filter(i=>i.issueType==='Task'),[myReported]);
-    const myLive     = useMemo(()=>allIssues.filter(i=>i.assignee?.accountId===person.userId&&i.isLive),[allIssues,person.userId]);
-    const myAssigned = useMemo(()=>allIssues.filter(i=>i.assignee?.accountId===person.userId),[allIssues,person.userId]);
+    const myLive     = useMemo(()=>activeIssues.filter(i=>i.assignee?.accountId===person.userId&&i.isLive),[activeIssues,person.userId]);
+    const myAssigned = useMemo(()=>activeIssues.filter(i=>i.assignee?.accountId===person.userId),[activeIssues,person.userId]);
     const openBugs   = useMemo(()=>myBugs.filter(b=>classifyStatus(b.status)==='open'),[myBugs]);
     const closedBugs = useMemo(()=>myBugs.filter(b=>classifyStatus(b.status)==='closed'),[myBugs]);
     const inProgBugs = useMemo(()=>myBugs.filter(b=>classifyStatus(b.status)==='in_progress'),[myBugs]);
@@ -247,7 +251,22 @@ function MemberProfileModal({ person, allIssues, onClose, onFilterBugs }: { pers
                                     {spAssigned>0&&<><span className="opacity-40">|</span><span>{fmtSP(spAssigned)} SP total</span></>}
                                 </div>
                             </div>
-                            <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-white/10 text-white/50 hover:text-white transition-all shrink-0"><X className="w-5 h-5"/></button>
+                            <div className="flex flex-col items-end gap-2 shrink-0">
+                                {/* Overall / Sprint toggle */}
+                                {sprintIssues && (
+                                    <div className="flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-0.5">
+                                        <button
+                                            onClick={() => setViewScope('overall')}
+                                            className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all', viewScope === 'overall' ? 'bg-white text-slate-900 shadow-sm' : 'text-white/50 hover:text-white')}
+                                        >Overall</button>
+                                        <button
+                                            onClick={() => setViewScope('sprint')}
+                                            className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all', viewScope === 'sprint' ? 'bg-white text-slate-900 shadow-sm' : 'text-white/50 hover:text-white')}
+                                        >Sprint</button>
+                                    </div>
+                                )}
+                                <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-white/10 text-white/50 hover:text-white transition-all"><X className="w-5 h-5"/></button>
+                            </div>
                         </div>
                         {/* 5 KPI cards — Total SP replaces redundant SP To-Do */}
                         <div className="grid grid-cols-3 md:grid-cols-5 gap-2 mt-4">
@@ -1615,7 +1634,8 @@ export default function KPIDashboard() {
                 <AnimatePresence>
                     <MemberProfileModal 
                         person={selectedPerson} 
-                        allIssues={kpi.all} 
+                        allIssues={kpi.allTimeIssues ?? kpi.all} 
+                        sprintIssues={kpi.all}
                         onClose={()=>setSelectedPerson(null)}
                         onFilterBugs={handleFilterBugsFromModal}
                     />
