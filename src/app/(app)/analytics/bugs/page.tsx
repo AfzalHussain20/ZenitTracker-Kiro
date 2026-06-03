@@ -156,17 +156,32 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
 
     // Load sprint list on mount if not provided or empty
     useEffect(() => {
-        if (allSprints && allSprints.length > 1) { setLocalSprints(allSprints); return; }
+        if (allSprints && allSprints.length > 1) {
+            setLocalSprints(allSprints);
+            // Auto-select the active sprint as default (if none already selected)
+            const active = allSprints.find(s => s.state === 'active');
+            if (active) setSelectedSprintId(String(active.id));
+            return;
+        }
         fetch('/api/jira/sprints')
             .then(r => r.json())
-            .then(d => { if (d.sprints?.length) setLocalSprints(d.sprints); })
+            .then(d => {
+                if (d.sprints?.length) {
+                    setLocalSprints(d.sprints);
+                    const active = d.sprints.find((s: any) => s.state === 'active');
+                    if (active) setSelectedSprintId(String(active.id));
+                }
+            })
             .catch(() => {});
     }, [allSprints]);
 
     // Fetch issues for a specific sprint when selected
     useEffect(() => {
         if (viewScope !== 'sprint') return;
-        if (selectedSprintId === 'current') { setSprintData(sprintIssues || null); return; }
+        if (!selectedSprintId || selectedSprintId === 'current') {
+            setSprintData(sprintIssues || null);
+            return;
+        }
         setLoadingSprint(true);
         fetch(`/api/jira/sync?sprintId=${selectedSprintId}`)
             .then(r => r.json())
@@ -300,7 +315,7 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
                                                 className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all', viewScope === 'overall' ? 'bg-white text-slate-900 shadow-sm' : 'text-white/50 hover:text-white')}
                                             >Overall</button>
                                             <button
-                                                onClick={() => { setViewScope('sprint'); setSelectedSprintId('current'); setSprintData(sprintIssues||null); }}
+                                                onClick={() => { setViewScope('sprint'); setSprintData(sprintIssues||null); }}
                                                 className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all', viewScope === 'sprint' ? 'bg-white text-slate-900 shadow-sm' : 'text-white/50 hover:text-white')}
                                             >Sprint</button>
                                         </div>
@@ -311,7 +326,6 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
                                                     <SelectValue placeholder="Select Sprint" />
                                                 </SelectTrigger>
                                                 <SelectContent className="max-h-60">
-                                                    <SelectItem value="current">Current Sprint</SelectItem>
                                                     {localSprints.map(s => (
                                                         <SelectItem key={s.id} value={String(s.id)}>
                                                             {s.state === 'active' ? '🟢 ' : s.state === 'future' ? '🔵 ' : ''}{s.name}
