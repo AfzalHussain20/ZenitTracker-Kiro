@@ -305,19 +305,22 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
                                             >Sprint</button>
                                         </div>
                                         {/* Sprint selector — only when Sprint tab active */}
-                                        {viewScope === 'sprint' && allSprints && allSprints.length > 0 && (
-                                            <select
-                                                value={selectedSprintId}
-                                                onChange={e => setSelectedSprintId(e.target.value)}
-                                                className="text-[10px] bg-white/10 border border-white/20 text-white rounded-md px-2 py-1 max-w-[160px] truncate"
-                                            >
-                                                <option value="current">Current Sprint</option>
-                                                {allSprints.map(s => (
-                                                    <option key={s.id} value={String(s.id)}>{s.name}</option>
-                                                ))}
-                                            </select>
+                                        {viewScope === 'sprint' && localSprints.length > 0 && (
+                                            <Select value={selectedSprintId} onValueChange={v => setSelectedSprintId(v)}>
+                                                <SelectTrigger className="h-7 text-[10px] bg-white/10 border-white/20 text-white w-[180px] [&>svg]:text-white">
+                                                    <SelectValue placeholder="Select Sprint" />
+                                                </SelectTrigger>
+                                                <SelectContent className="max-h-60">
+                                                    <SelectItem value="current">Current Sprint</SelectItem>
+                                                    {localSprints.map(s => (
+                                                        <SelectItem key={s.id} value={String(s.id)}>
+                                                            {s.state === 'active' ? '🟢 ' : s.state === 'future' ? '🔵 ' : ''}{s.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
                                         )}
-                                        {loadingSprint && <span className="text-[9px] text-white/40">Loading sprint…</span>}
+                                        {loadingSprint && <span className="text-[9px] text-white/40 animate-pulse">Loading…</span>}
                                     </div>
                                 )}
                                 <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-white/10 text-white/50 hover:text-white transition-all"><X className="w-5 h-5"/></button>

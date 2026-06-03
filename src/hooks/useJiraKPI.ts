@@ -381,7 +381,15 @@ function processKPI(raw: any): KPIData {
     return {
         all, bugs: allTimeBugs, stories, epics, tasks, subtasks, liveTickets,
         allTimeIssues: allTimeAll, // all-time all issues for member profile overall counts
-        counts: raw.counts || { total: all.length, bugs: bugs.length, stories: stories.length, epics: epics.length, tasks: tasks.length, subtasks: subtasks.length, live: liveTickets.length },
+        counts: {
+            total: allTimeAll.length,
+            bugs: allTimeBugs.length,
+            stories: allTimeAll.filter(i=>i.issueType==='Story').length,
+            epics:   allTimeAll.filter(i=>i.issueType==='Epic').length,
+            tasks:   allTimeAll.filter(i=>i.issueType==='Task').length,
+            subtasks: allTimeAll.filter(i=>i.isSubTask).length,
+            live: liveTickets.length,
+        },
         people, monthly,
         currentMonth: cm,
         previousMonth: monthlyMap.get(prevKey) || emptyMonth(prevKey),
