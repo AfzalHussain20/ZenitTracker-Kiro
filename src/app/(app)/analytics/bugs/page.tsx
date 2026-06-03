@@ -149,8 +149,19 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
     const [selectedSprintId, setSelectedSprintId] = useState<string>('current');
     const [sprintData, setSprintData] = useState<JiraIssueRaw[] | null>(null);
     const [loadingSprint, setLoadingSprint] = useState(false);
+    // Load sprints independently so the dropdown always has data
+    const [localSprints, setLocalSprints] = useState<Array<{id:number;name:string;state:string;startDate:string|null;endDate:string|null}>>(allSprints || []);
     const av = getAvatarStyle(person.name);
     const initials = person.name.split(' ').map((w:string)=>w[0]||'').join('').slice(0,2).toUpperCase();
+
+    // Load sprint list on mount if not provided or empty
+    useEffect(() => {
+        if (allSprints && allSprints.length > 1) { setLocalSprints(allSprints); return; }
+        fetch('/api/jira/sprints')
+            .then(r => r.json())
+            .then(d => { if (d.sprints?.length) setLocalSprints(d.sprints); })
+            .catch(() => {});
+    }, [allSprints]);
 
     // Fetch issues for a specific sprint when selected
     useEffect(() => {
@@ -160,8 +171,9 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
         fetch(`/api/jira/sync?sprintId=${selectedSprintId}`)
             .then(r => r.json())
             .then(d => {
-                const all = [...(d.bugs||[]), ...(d.stories||[]), ...(d.epics||[]), ...(d.tasks||[]), ...(d.subtasks||[])];
-                setSprintData(all);
+                // Include all-time bugs too so reporter data works for this sprint
+                const sprintAll = [...(d.bugs||[]), ...(d.stories||[]), ...(d.epics||[]), ...(d.tasks||[]), ...(d.subtasks||[])];
+                setSprintData(sprintAll);
             })
             .catch(() => setSprintData([]))
             .finally(() => setLoadingSprint(false));
@@ -172,39 +184,40 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
         ? (sprintData ?? sprintIssues ?? allIssues)
         : allIssues;
 
-    // Derived data — uses activeIssues so Overall/Sprint toggle works
+    // Derived data — all computed from activeIssues so toggle/sprint-select works
     const myReported = useMemo(()=>activeIssues.filter(i=>i.reporter?.accountId===person.userId),[activeIssues,person.userId]);
     const myBugs     = useMemo(()=>myReported.filter(i=>i.issueType==='Bug'),[myReported]);
     const myStories  = useMemo(()=>myReported.filter(i=>i.issueType==='Story'),[myReported]);
     const myEpics    = useMemo(()=>myReported.filter(i=>i.issueType==='Epic'),[myReported]);
     const myTasks    = useMemo(()=>myReported.filter(i=>i.issueType==='Task'),[myReported]);
     const myLive     = useMemo(()=>activeIssues.filter(i=>i.assignee?.accountId===person.userId&&i.isLive),[activeIssues,person.userId]);
-    const myAssigned = useMemo(()=>activeIssues.filter(i=>i.assignee?.accountId===person.userId),[activeIssues,person.userId]);
+    const myAssigned = useMemo(()=>activeIssues.filter(i=>i.assignee?.accountId===person.userId&&!i.isSubTask),[activeIssues,person.userId]);
     const openBugs   = useMemo(()=>myBugs.filter(b=>classifyStatus(b.status)==='open'),[myBugs]);
     const closedBugs = useMemo(()=>myBugs.filter(b=>classifyStatus(b.status)==='closed'),[myBugs]);
     const inProgBugs = useMemo(()=>myBugs.filter(b=>classifyStatus(b.status)==='in_progress'),[myBugs]);
     const priBreak   = useMemo(()=>{const c:Record<string,number>={Highest:0,High:0,Medium:0,Low:0,Lowest:0};myBugs.forEach(b=>{if(b.priority in c)c[b.priority]++;});return c;},[myBugs]);
 
+    // SP — computed dynamically from activeIssues so sprint toggle shows correct SP
+    const spAssigned   = useMemo(()=>myAssigned.reduce((s,i)=>s+(i.storyPoints||0),0),[myAssigned]);
+    const spDone       = useMemo(()=>myAssigned.filter(i=>classifyStatus(i.status)==='closed').reduce((s,i)=>s+(i.storyPoints||0),0),[myAssigned]);
+    const spInProgress = useMemo(()=>myAssigned.filter(i=>classifyStatus(i.status)==='in_progress').reduce((s,i)=>s+(i.storyPoints||0),0),[myAssigned]);
+    const spTodo       = useMemo(()=>myAssigned.filter(i=>classifyStatus(i.status)==='open').reduce((s,i)=>s+(i.storyPoints||0),0),[myAssigned]);
+    const spPct        = spAssigned>0?Math.round((spDone/spAssigned)*100):0;
+
     // 6-month trend
     const monthlyTrend = useMemo(()=>{
         const m=new Map<string,number>();
-        myReported.forEach(b=>{const mk=b.created.slice(0,7);m.set(mk,(m.get(mk)||0)+1);});
+        // For monthly trend, always use all-time reported issues for context
+        allIssues.filter(i=>i.reporter?.accountId===person.userId).forEach(b=>{const mk=b.created.slice(0,7);m.set(mk,(m.get(mk)||0)+1);});
         const now=new Date();
         return Array.from({length:6},(_,i)=>{
             const d=new Date(now.getFullYear(),now.getMonth()-5+i,1);
             const mk=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
             return {month:mk.slice(5),key:mk,count:m.get(mk)||0};
         });
-    },[myReported]);
+    },[allIssues,person.userId]);
     const maxMC = Math.max(...monthlyTrend.map(m=>m.count),1);
     const peakMonth = monthlyTrend.reduce((a,b)=>b.count>a.count?b:a,{month:'',key:'',count:0});
-
-    // SP values
-    const spAssigned   = person.storyPointsAssigned||0;
-    const spDone       = person.storyPointsCompleted||0;
-    const spInProgress = (person as any).storyPointsInProgress||0;
-    const spTodo       = (person as any).storyPointsTodo||0;
-    const spPct        = spAssigned>0?Math.round((spDone/spAssigned)*100):0;
 
     // Handlers
     const handleFilterBugs = (statusFilter?:string, priorityFilter?:string) => {
@@ -270,10 +283,11 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
                                 <div className="flex items-center gap-3 mt-1.5 text-[11px] text-white/50">
                                     <span>{myReported.length} reported</span>
                                     <span className="opacity-40">|</span>
-                                    <span>{person.ticketsAssigned} assigned</span>
+                                    <span>{myAssigned.length} assigned</span>
                                     <span className="opacity-40">|</span>
                                     <span>{myLive.length} live</span>
-                                    {spAssigned>0&&<><span className="opacity-40">|</span><span>{fmtSP(spAssigned)} SP total</span></>}
+                                    {spAssigned>0&&<><span className="opacity-40">|</span><span>{fmtSP(spAssigned)} SP</span></>}
+                                    {viewScope==='sprint'&&<span className="text-blue-300 font-semibold">· Sprint view</span>}
                                 </div>
                             </div>
                             <div className="flex flex-col items-end gap-2 shrink-0">
