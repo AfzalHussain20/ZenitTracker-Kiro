@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 const JIRA_BASE = process.env.JIRA_BASE_URL!;
 const JIRA_AUTH = () => Buffer.from(`${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64');
 const PROJECT_KEY = process.env.JIRA_PROJECT_KEY || 'SUN';
-const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes — reduced API calls, data rarely changes mid-session
 
 // Story points field — Jira uses customfield_10016 (most common) or customfield_10028
 const STORY_POINTS_FIELD = 'customfield_10016';

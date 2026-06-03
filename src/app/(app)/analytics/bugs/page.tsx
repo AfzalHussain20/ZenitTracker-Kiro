@@ -1683,12 +1683,35 @@ export default function KPIDashboard() {
     }, [teamScopedStats, kpi, cm, pm]);
 
     if(loading&&!kpi) {
-        return (<div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-            <RefreshCw className="w-12 h-12 animate-spin text-primary"/>
-            <div className="text-xl font-bold">Syncing all Jira data...</div>
-            <div className="text-sm text-muted-foreground text-center max-w-md">Fetching all bugs, stories, epics, tasks across all pages.<br/>First load takes ~30 seconds. After that, data is cached for 10 minutes.</div>
-            <div className="text-xs text-muted-foreground bg-muted px-4 py-2 rounded-full">This is a one-time wait — subsequent loads are instant</div>
-        </div>);
+        return (
+            <div className="space-y-6">
+                {/* Full-page loading state — much more visible than a tiny spinner */}
+                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/10 via-blue-500/5 to-purple-500/10 border border-primary/20 p-6">
+                    <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-primary/20 animate-pulse flex items-center justify-center">
+                            <RefreshCw className="w-5 h-5 text-primary animate-spin"/>
+                        </div>
+                        <div>
+                            <h1 className="text-2xl font-bold">Loading Jira KPI Dashboard</h1>
+                            <p className="text-sm text-muted-foreground mt-0.5">Fetching all-time data from Jira — this may take 15–30s on first load</p>
+                        </div>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="mt-4 h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-primary rounded-full animate-[shimmer_1.5s_ease-in-out_infinite]" style={{width:'60%',animation:'progress-indeterminate 1.5s ease-in-out infinite'}}/>
+                    </div>
+                    <style>{`@keyframes progress-indeterminate{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}`}</style>
+                </div>
+                {/* Skeleton cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {[1,2,3].map(i=><div key={i} className="h-52 rounded-2xl bg-muted animate-pulse"/>)}
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                    {[1,2,3,4,5,6,7].map(i=><div key={i} className="h-24 rounded-xl bg-muted animate-pulse"/>)}
+                </div>
+                <div className="h-96 rounded-2xl bg-muted animate-pulse"/>
+            </div>
+        );
     }
     
     if(error&&!kpi) {
@@ -1702,6 +1725,13 @@ export default function KPIDashboard() {
     // Main component return
     return (
         <div className="space-y-6">
+            {/* Top loading bar — shows when refreshing with existing data */}
+            {loading && kpi && (
+                <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-primary/20 overflow-hidden">
+                    <div className="h-full bg-primary" style={{animation:'progress-indeterminate 1.5s ease-in-out infinite',width:'40%'}}/>
+                    <style>{`@keyframes progress-indeterminate{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}`}</style>
+                </div>
+            )}
             {selectedPerson&&kpi&&(
                 <AnimatePresence>
                     <MemberProfileModal 
