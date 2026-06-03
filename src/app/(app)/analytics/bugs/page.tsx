@@ -186,13 +186,31 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
         fetch(`/api/jira/sync?sprintId=${selectedSprintId}`)
             .then(r => r.json())
             .then(d => {
-                // Include all-time bugs too so reporter data works for this sprint
+                // Sprint-scoped issues: bugs/stories/epics/tasks assigned to this sprint
                 const sprintAll = [...(d.bugs||[]), ...(d.stories||[]), ...(d.epics||[]), ...(d.tasks||[]), ...(d.subtasks||[])];
-                setSprintData(sprintAll);
+                // Also include allTimeAll so reporter-based counts work (all-time bugs reported by this person)
+                // BUT mark sprint issues separately so we can filter by sprint membership accurately
+                const sprintIds = new Set(sprintAll.map((i:any) => i.id));
+                // For reporter view: use sprint issues + filter allTimeAll by sprint date range
+                const sprintInfo = localSprints.find(s => String(s.id) === selectedSprintId);
+                if (sprintInfo?.startDate && sprintInfo?.endDate) {
+                    // Include all-time issues created WITHIN the sprint's date range for reporter counts
+                    const allTime: JiraIssueRaw[] = d.allTimeAll || [];
+                    const inRange = allTime.filter(i => {
+                        const created = i.created.slice(0, 10);
+                        return created >= sprintInfo.startDate!.slice(0, 10) && created <= sprintInfo.endDate!.slice(0, 10);
+                    });
+                    // Merge: sprint membership issues + date-range issues (deduplicated)
+                    const merged = [...sprintAll];
+                    inRange.forEach(i => { if (!sprintIds.has(i.id)) merged.push(i); });
+                    setSprintData(merged);
+                } else {
+                    setSprintData(sprintAll);
+                }
             })
             .catch(() => setSprintData([]))
             .finally(() => setLoadingSprint(false));
-    }, [selectedSprintId, viewScope, sprintIssues]);
+    }, [selectedSprintId, viewScope, sprintIssues, localSprints]);
 
     // Switch between all-time and sprint-scoped issues
     const activeIssues = viewScope === 'sprint'
