@@ -378,7 +378,22 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
                 </div>
 
                 {/* BODY */}
-                <div className="flex-1 overflow-y-auto overscroll-contain">
+                <div className="flex-1 overflow-y-auto overscroll-contain relative">
+                    {/* Sprint loading overlay — shown while fetching sprint data */}
+                    {loadingSprint && (
+                        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm">
+                            <div className="flex flex-col items-center gap-3 p-6 rounded-2xl bg-background border border-border shadow-xl max-w-xs text-center">
+                                <div className="w-12 h-12 rounded-full border-4 border-primary/20 border-t-primary animate-spin"/>
+                                <div>
+                                    <p className="font-bold text-sm">Loading Sprint Data</p>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        {localSprints.find(s => String(s.id) === selectedSprintId)?.name || 'Fetching from Jira…'}
+                                    </p>
+                                </div>
+                                <p className="text-[10px] text-muted-foreground">This may take a few seconds</p>
+                            </div>
+                        </div>
+                    )}
 
                     {/* OVERVIEW TAB */}
                     {tab==='overview'&&(
@@ -1794,12 +1809,25 @@ export default function KPIDashboard() {
     // Main component return
     return (
         <div className="space-y-6">
-            {/* Top loading bar — shows when refreshing with existing data */}
+            {/* Top loading bar + toast banner — shows when refreshing with existing data */}
             {loading && kpi && (
-                <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-primary/20 overflow-hidden">
-                    <div className="h-full bg-primary" style={{animation:'progress-indeterminate 1.5s ease-in-out infinite',width:'40%'}}/>
-                    <style>{`@keyframes progress-indeterminate{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}`}</style>
-                </div>
+                <>
+                    {/* Thin progress bar at very top */}
+                    <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-primary/20 overflow-hidden">
+                        <div className="h-full bg-primary" style={{animation:'progress-indeterminate 1.5s ease-in-out infinite',width:'40%'}}/>
+                        <style>{`@keyframes progress-indeterminate{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}`}</style>
+                    </div>
+                    {/* Toast banner at bottom — very visible */}
+                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 bg-slate-900 text-white rounded-2xl shadow-2xl border border-white/10 backdrop-blur-xl">
+                        <div className="w-5 h-5 rounded-full border-2 border-white/20 border-t-white animate-spin flex-shrink-0"/>
+                        <div>
+                            <p className="text-sm font-semibold leading-tight">Syncing Jira data…</p>
+                            <p className="text-xs text-white/50">
+                                {activeSprint ? `Sprint ${allSprints.find(s=>String(s.id)===activeSprint)?.name || activeSprint}` : 'All sprints'}
+                            </p>
+                        </div>
+                    </div>
+                </>
             )}
             {selectedPerson&&kpi&&(
                 <AnimatePresence>
