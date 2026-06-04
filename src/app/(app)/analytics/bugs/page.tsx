@@ -1692,25 +1692,43 @@ export default function KPIDashboard() {
 
     // Period card data helper - must be before early returns (React hooks rule)
     const periodCards = useMemo(() => {
-        const allBugs = kpi?.bugs || [];
+        // Use allTimeAll (all issue types) for accurate overall counts
+        const allIssues = kpi?.allTimeIssues || kpi?.bugs || [];
 
-        // Helper: sum bugs in a date range
-        const sumRange = (bugs: typeof allBugs, start?: string, end?: string) => {
-            const filtered = start ? bugs.filter(b => {
-                const d = b.created.slice(0, 10);
+        // Helper: sum ALL issues (not just bugs) in a date range with full breakdown
+        const sumRange = (issues: typeof allIssues, start?: string, end?: string) => {
+            const filtered = start ? issues.filter(i => {
+                const d = i.created.slice(0, 10);
                 return d >= start && (!end || d <= end);
-            }) : bugs;
+            }) : issues;
             return {
-                total: filtered.length,
-                open: filtered.filter(b => classifyStatus(b.status) === 'open').length,
-                closed: filtered.filter(b => classifyStatus(b.status) === 'closed').length,
-                inProgress: filtered.filter(b => classifyStatus(b.status) === 'in_progress').length,
-                critical: filtered.filter(b => b.priority === 'Highest').length,
-                high: filtered.filter(b => b.priority === 'High').length,
+                total:      filtered.length,
+                bugs:       filtered.filter(i => i.issueType === 'Bug').length,
+                stories:    filtered.filter(i => i.issueType === 'Story').length,
+                epics:      filtered.filter(i => i.issueType === 'Epic').length,
+                tasks:      filtered.filter(i => i.issueType === 'Task').length,
+                open:       filtered.filter(i => classifyStatus(i.status) === 'open').length,
+                closed:     filtered.filter(i => classifyStatus(i.status) === 'closed').length,
+                inProgress: filtered.filter(i => classifyStatus(i.status) === 'in_progress').length,
+                critical:   filtered.filter(i => i.priority === 'Highest').length,
+                high:       filtered.filter(i => i.priority === 'High').length,
+                storyPoints: Math.round(filtered.reduce((s, i) => s + (i.storyPoints || 0), 0) * 10) / 10,
             };
         };
 
-        const overallData = teamScopedStats ? teamScopedStats.overall : sumRange(allBugs);
+        // For team filter: use all issues (not just bugs) attributed to team
+        const teamAllIssues = (kpi && teamFilter !== 'all')
+            ? (() => {
+                const teamPeopleIds = new Set(kpi.people.filter(p => p.teams.includes(teamFilter)).map(p => p.userId));
+                return allIssues.filter(i =>
+                    i.team === teamFilter ||
+                    (i.reporter && teamPeopleIds.has(i.reporter.accountId)) ||
+                    (i.assignee && teamPeopleIds.has(i.assignee.accountId))
+                );
+            })()
+            : allIssues;
+
+        const overallData = sumRange(teamAllIssues);
 
         // Current period = sprint date range if sprint selected, else current calendar month
         const curStart = activeSprint_info?.startDate?.slice(0, 10) ||
@@ -1730,18 +1748,18 @@ export default function KPIDashboard() {
             ? prevSprint_info.name
             : pm?.label || 'Previous Month';
 
-        const curBugs = teamScopedStats ? teamScopedStats.currentMonth : sumRange(allBugs, curStart, curEnd);
-        const prevBugs = teamScopedStats ? teamScopedStats.previousMonth : sumRange(allBugs, prevStart, prevEnd);
+        const curData  = sumRange(teamAllIssues, curStart, curEnd);
+        const prevData = sumRange(teamAllIssues, prevStart, prevEnd);
 
         return [
             { title: 'Overall (All Time)', icon: Award, color: 'text-purple-500', border: 'border-purple-500/40', bg: 'bg-purple-500/5',
               data: overallData, prevData: null as null | typeof overallData },
-            { title: `${curLabel} — Current Sprint`, icon: TrendingUp, color: 'text-amber-500', border: 'border-amber-500/40', bg: 'bg-amber-500/5',
-              data: curBugs, prevData: prevBugs },
-            { title: `${prevLabel} — Previous Sprint`, icon: Clock, color: 'text-blue-500', border: 'border-blue-500/40', bg: 'bg-blue-500/5',
-              data: prevBugs, prevData: null as null | typeof overallData },
+            { title: `${curLabel}`, icon: TrendingUp, color: 'text-amber-500', border: 'border-amber-500/40', bg: 'bg-amber-500/5',
+              data: curData, prevData: prevData },
+            { title: `${prevLabel}`, icon: Clock, color: 'text-blue-500', border: 'border-blue-500/40', bg: 'bg-blue-500/5',
+              data: prevData, prevData: null as null | typeof overallData },
         ];
-    }, [teamScopedStats, kpi, cm, pm, activeSprint_info, prevSprint_info, now, prevDate]);
+    }, [kpi, cm, pm, activeSprint_info, prevSprint_info, now, prevDate, teamFilter]);
 
     if(loading&&!kpi) {
         return (
@@ -1896,15 +1914,27 @@ export default function KPIDashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {periodCards.map(({title,icon:Icon,color,border,bg,data,prevData})=>{
                         const closeRate=data.total>0?Math.min(100,Math.round((data.closed/data.total)*100)):0;
+                        const d = data as any; // has bugs,stories,epics,tasks,storyPoints
                         return(
                             <Card key={title} className={`border-2 ${border}`}>
                                 <CardHeader className={`pb-2 ${bg}`}>
                                     <CardTitle className="text-sm flex items-center gap-2"><Icon className={`w-4 h-4 ${color}`}/>{title}</CardTitle>
+                                    {/* Ticket type breakdown — Total: 4 | 2 Bugs · 1 Story · 1 Task */}
+                                    {data.total > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 mt-1">
+                                            <span className={cn('text-xs font-bold', color)}>{data.total} total</span>
+                                            {d.bugs>0&&<span className="text-[10px] bg-red-500/10 text-red-600 px-1.5 py-0.5 rounded-full border border-red-500/20 font-medium">{d.bugs}B</span>}
+                                            {d.stories>0&&<span className="text-[10px] bg-blue-500/10 text-blue-600 px-1.5 py-0.5 rounded-full border border-blue-500/20 font-medium">{d.stories}S</span>}
+                                            {d.epics>0&&<span className="text-[10px] bg-purple-500/10 text-purple-600 px-1.5 py-0.5 rounded-full border border-purple-500/20 font-medium">{d.epics}E</span>}
+                                            {d.tasks>0&&<span className="text-[10px] bg-green-500/10 text-green-600 px-1.5 py-0.5 rounded-full border border-green-500/20 font-medium">{d.tasks}T</span>}
+                                            {d.storyPoints>0&&<span className="text-[10px] bg-violet-500/10 text-violet-600 px-1.5 py-0.5 rounded-full border border-violet-500/20 font-medium">{d.storyPoints}SP</span>}
+                                        </div>
+                                    )}
                                 </CardHeader>
                                 <CardContent className="pt-3">
                                     <div className="grid grid-cols-3 gap-2">
                                         {[
-                                            {label:'Total Bugs',value:data.total,c:color,b:'bg-muted/40',dk:null as string|null,delta:prevData?data.total-prevData.total:0,hib:true},
+                                            {label:'Total Issues',value:data.total,c:color,b:'bg-muted/40',dk:null as string|null,delta:prevData?data.total-prevData.total:0,hib:true},
                                             {label:'Open',value:data.open,c:'text-red-600',b:'bg-red-500/5 border border-red-500/20',dk:'open',delta:prevData?data.open-prevData.open:0,hib:false},
                                             {label:'Closed',value:data.closed,c:'text-green-600',b:'bg-green-500/5 border border-green-500/20',dk:'closed',delta:prevData?data.closed-prevData.closed:0,hib:true},
                                             {label:'In Progress',value:data.inProgress,c:'text-amber-600',b:'bg-amber-500/5 border border-amber-500/20',dk:'in_progress',delta:0,hib:true},
@@ -1913,7 +1943,7 @@ export default function KPIDashboard() {
                                         ].map(({label,value,c,b,dk,delta,hib})=>(
                                             <button key={label} onClick={()=>dk&&drillToIssues(dk as any)}
                                                 className={cn('text-center p-2 rounded-xl w-full transition-all',b,dk?'cursor-pointer hover:scale-105 hover:shadow-md active:scale-95 hover:ring-1 hover:ring-primary/30':'cursor-default')}
-                                                title={dk?`Click to view ${label} bugs`:undefined}>
+                                                title={dk?`Click to view ${label} issues`:undefined}>
                                                 <div className={cn('text-2xl font-bold',c)}>{value}</div>
                                                 <div className="text-[10px] text-muted-foreground mt-0.5">{label}</div>
                                                 {delta!==0&&<Delta v={delta} hib={hib} size="xs"/>}
