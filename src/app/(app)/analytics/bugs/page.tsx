@@ -146,21 +146,21 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
 }) {
     const [tab, setTab] = useState<string>('overview');
     const [viewScope, setViewScope] = useState<'overall' | 'sprint'>('overall');
-    const [selectedSprintId, setSelectedSprintId] = useState<string>('current');
+    // Start with no sprint selected — will be set once localSprints loads
+    const [selectedSprintId, setSelectedSprintId] = useState<string>('');
     const [sprintData, setSprintData] = useState<JiraIssueRaw[] | null>(null);
     const [loadingSprint, setLoadingSprint] = useState(false);
-    // Load sprints independently so the dropdown always has data
     const [localSprints, setLocalSprints] = useState<Array<{id:number;name:string;state:string;startDate:string|null;endDate:string|null}>>(allSprints || []);
     const av = getAvatarStyle(person.name);
     const initials = person.name.split(' ').map((w:string)=>w[0]||'').join('').slice(0,2).toUpperCase();
 
-    // Load sprint list on mount if not provided or empty
+    // Load sprint list on mount
     useEffect(() => {
-        if (allSprints && allSprints.length > 1) {
-            setLocalSprints(allSprints);
-            // Auto-select the active sprint as default (if none already selected)
-            const active = allSprints.find(s => s.state === 'active');
-            if (active) setSelectedSprintId(String(active.id));
+        const sprints = allSprints && allSprints.length > 1 ? allSprints : null;
+        if (sprints) {
+            setLocalSprints(sprints);
+            const active = sprints.find(s => s.state === 'active') || sprints[0];
+            if (active && !selectedSprintId) setSelectedSprintId(String(active.id));
             return;
         }
         fetch('/api/jira/sprints')
@@ -168,39 +168,29 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
             .then(d => {
                 if (d.sprints?.length) {
                     setLocalSprints(d.sprints);
-                    const active = d.sprints.find((s: any) => s.state === 'active');
-                    if (active) setSelectedSprintId(String(active.id));
+                    const active = d.sprints.find((s: any) => s.state === 'active') || d.sprints[0];
+                    if (active && !selectedSprintId) setSelectedSprintId(String(active.id));
                 }
             })
             .catch(() => {});
-    }, [allSprints]);
+    }, [allSprints]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Fetch issues for a specific sprint when selected
     useEffect(() => {
-        if (viewScope !== 'sprint') return;
-        if (!selectedSprintId || selectedSprintId === 'current') {
-            setSprintData(sprintIssues || null);
-            return;
-        }
+        if (viewScope !== 'sprint' || !selectedSprintId) return;
         setLoadingSprint(true);
         fetch(`/api/jira/sync?sprintId=${selectedSprintId}`)
             .then(r => r.json())
             .then(d => {
-                // Sprint-scoped issues: bugs/stories/epics/tasks assigned to this sprint
                 const sprintAll = [...(d.bugs||[]), ...(d.stories||[]), ...(d.epics||[]), ...(d.tasks||[]), ...(d.subtasks||[])];
-                // Also include allTimeAll so reporter-based counts work (all-time bugs reported by this person)
-                // BUT mark sprint issues separately so we can filter by sprint membership accurately
-                const sprintIds = new Set(sprintAll.map((i:any) => i.id));
-                // For reporter view: use sprint issues + filter allTimeAll by sprint date range
                 const sprintInfo = localSprints.find(s => String(s.id) === selectedSprintId);
                 if (sprintInfo?.startDate && sprintInfo?.endDate) {
-                    // Include all-time issues created WITHIN the sprint's date range for reporter counts
                     const allTime: JiraIssueRaw[] = d.allTimeAll || [];
+                    const sprintIds = new Set(sprintAll.map((i:any) => i.id));
                     const inRange = allTime.filter(i => {
-                        const created = i.created.slice(0, 10);
-                        return created >= sprintInfo.startDate!.slice(0, 10) && created <= sprintInfo.endDate!.slice(0, 10);
+                        const cd = i.created.slice(0, 10);
+                        return cd >= sprintInfo.startDate!.slice(0, 10) && cd <= sprintInfo.endDate!.slice(0, 10);
                     });
-                    // Merge: sprint membership issues + date-range issues (deduplicated)
                     const merged = [...sprintAll];
                     inRange.forEach(i => { if (!sprintIds.has(i.id)) merged.push(i); });
                     setSprintData(merged);
@@ -210,9 +200,9 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
             })
             .catch(() => setSprintData([]))
             .finally(() => setLoadingSprint(false));
-    }, [selectedSprintId, viewScope, sprintIssues, localSprints]);
+    }, [selectedSprintId, viewScope]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Switch between all-time and sprint-scoped issues
+    // activeIssues: Overall = all-time, Sprint = fetched sprint data (falls back to sprintIssues while loading)
     const activeIssues = viewScope === 'sprint'
         ? (sprintData ?? sprintIssues ?? allIssues)
         : allIssues;
@@ -333,7 +323,7 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
                                                 className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all', viewScope === 'overall' ? 'bg-white text-slate-900 shadow-sm' : 'text-white/50 hover:text-white')}
                                             >Overall</button>
                                             <button
-                                                onClick={() => { setViewScope('sprint'); setSprintData(sprintIssues||null); }}
+                                                onClick={() => { setViewScope('sprint'); if (!sprintData) setSprintData(sprintIssues||null); }}
                                                 className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all', viewScope === 'sprint' ? 'bg-white text-slate-900 shadow-sm' : 'text-white/50 hover:text-white')}
                                             >Sprint</button>
                                         </div>
@@ -1906,11 +1896,28 @@ export default function KPIDashboard() {
 
             {/* PERIOD OVERVIEW */}
             <div>
-                <h2 className="text-base font-semibold mb-3 flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-primary"/>
-                    {teamFilter!=='all'?`${teamFilter} — Period Overview`:'Period Overview'}
-                    {teamFilter!=='all'&&<span className="text-xs font-normal bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 ml-1">{teamFilter}</span>}
-                </h2>
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                    <h2 className="text-base font-semibold flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-primary"/>
+                        {teamFilter!=='all'?`${teamFilter} — Period Overview`:'Period Overview'}
+                        {teamFilter!=='all'&&<span className="text-xs font-normal bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 ml-1">{teamFilter}</span>}
+                    </h2>
+                    {/* Badge legend */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] text-muted-foreground font-medium mr-1">Legend:</span>
+                        {[
+                            {label:'B',title:'Bugs',color:'bg-red-500/10 text-red-600 border-red-500/20'},
+                            {label:'S',title:'Stories',color:'bg-blue-500/10 text-blue-600 border-blue-500/20'},
+                            {label:'E',title:'Epics',color:'bg-purple-500/10 text-purple-600 border-purple-500/20'},
+                            {label:'T',title:'Tasks',color:'bg-green-500/10 text-green-600 border-green-500/20'},
+                            {label:'SP',title:'Story Points',color:'bg-violet-500/10 text-violet-600 border-violet-500/20'},
+                        ].map(({label,title,color})=>(
+                            <span key={label} title={title} className={`text-[10px] px-1.5 py-0.5 rounded-full border font-semibold cursor-help ${color}`}>
+                                {label} = {title}
+                            </span>
+                        ))}
+                    </div>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {periodCards.map(({title,icon:Icon,color,border,bg,data,prevData})=>{
                         const closeRate=data.total>0?Math.min(100,Math.round((data.closed/data.total)*100)):0;
