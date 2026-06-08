@@ -290,6 +290,16 @@ export default function ZenitVisionPage() {
   const connectWebSocket = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     setWsStatus('connecting');
+
+    // Use wss:// on HTTPS pages, ws:// on HTTP (localhost dev)
+    // Vision backend runs locally — if on HTTPS/Vercel, gracefully show "not available" instead of crashing
+    const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    if (isSecure) {
+      // Vision requires local backend — not available on cloud deployment
+      setWsStatus('disconnected');
+      return;
+    }
+
     const ws = new WebSocket(`ws://${window.location.hostname}:8767`);
     wsRef.current = ws;
     ws.onopen = () => setWsStatus('connected');
@@ -445,7 +455,10 @@ export default function ZenitVisionPage() {
     ws.onclose = () => {
       setWsStatus('disconnected');
       wsRef.current = null;
-      reconnectTimerRef.current = setTimeout(() => connectWebSocket(), 2000);
+      // Only auto-reconnect on HTTP (local) — on HTTPS the backend isn't reachable
+      if (typeof window !== 'undefined' && window.location.protocol !== 'https:') {
+        reconnectTimerRef.current = setTimeout(() => connectWebSocket(), 2000);
+      }
     };
     ws.onerror = () => setWsStatus('disconnected');
   }, []);
@@ -1277,13 +1290,26 @@ const caps = {
                         <div className="w-16 h-16 rounded-2xl bg-[#1A1A1A] flex items-center justify-center">
                           <Smartphone className="w-8 h-8 text-[#444]" />
                         </div>
-                        <div className="text-center">
-                          <div className="text-[#555] text-[13px] font-medium">
-                            {wsStatus === 'connecting' ? 'Connecting to device…' : wsStatus === 'connected' ? 'Waiting for stream…' : 'No device connected'}
-                          </div>
-                          <div className="text-[#333] text-[11px] mt-1">
-                            {wsStatus === 'disconnected' ? 'Connect via ADB: adb devices' : ''}
-                          </div>
+                        <div className="text-center px-6">
+                          {typeof window !== 'undefined' && window.location.protocol === 'https:' ? (
+                            <>
+                              <div className="text-amber-400 text-[13px] font-semibold mb-1">Local Backend Required</div>
+                              <div className="text-[#555] text-[11px] leading-relaxed">
+                                Vision uses a local WebSocket server.<br/>
+                                Run <span className="font-mono text-[#888] bg-[#1A1A1A] px-1 py-0.5 rounded">python vision_server.py</span> on your machine,<br/>
+                                then open <span className="font-mono text-[#888] bg-[#1A1A1A] px-1 py-0.5 rounded">http://localhost:3000</span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="text-[#555] text-[13px] font-medium">
+                                {wsStatus === 'connecting' ? 'Connecting to device…' : wsStatus === 'connected' ? 'Waiting for stream…' : 'No device connected'}
+                              </div>
+                              <div className="text-[#333] text-[11px] mt-1">
+                                {wsStatus === 'disconnected' ? 'Start vision_server.py then connect via ADB: adb devices' : ''}
+                              </div>
+                            </>
+                          )}
                         </div>
                         {wsStatus === 'connecting' && <div className="flex gap-1">{[0,1,2].map(i => <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#0078D4] animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}</div>}
                       </div>
