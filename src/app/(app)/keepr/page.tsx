@@ -139,7 +139,7 @@ const SEED_DEVICES: Omit<Device, 'id'>[] = [
     { name: 'Power Cable (Apple TV)', type: 'accessory', status: 'available', location: 'iOS Team',        accessoryType: 'Power cable', quantity: 1, quantityAvailable: 1, condition: 'good',    linkedDeviceId: 'Apple TV 4K Box',  notes: 'Power cable for Apple TV — with Seeman' },
     { name: 'Power Cable (HD Box)',   type: 'accessory', status: 'available', location: 'Sun Direct Team', accessoryType: 'Power cable', quantity: 1, quantityAvailable: 1, condition: 'good',    linkedDeviceId: 'HD Box',           notes: 'Power cable for HD Box — Prasanth place' },
     { name: 'Power Cable (Fire TV)',  type: 'accessory', status: 'available', location: 'QA Team Device Rack', accessoryType: 'Power cable', quantity: 1, quantityAvailable: 1, condition: 'good', linkedDeviceId: 'Fire TV 4K Stick', notes: 'Micro-USB power for Fire TV Stick' },
-];];
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function getTypeConfig(type: string) {
