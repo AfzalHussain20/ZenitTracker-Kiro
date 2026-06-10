@@ -32,21 +32,28 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 // ─── Constants ────────────────────────────────────────────────────────────────
 const LOCATIONS = [
     "QA Team Device Rack", "Raja Sekar Rack", "API Team",
-    "Android Team", "Sun Direct Team", "iOS Team", "Others"
+    "Android Team", "Sun Direct Team", "iOS Team", "PM Desk", "Satish Team", "Others"
 ];
 
 const DEVICE_TYPES = [
-    { value: 'phone',   label: 'Phone',   icon: Smartphone, gradient: 'from-blue-500 to-indigo-600' },
-    { value: 'tablet',  label: 'Tablet',  icon: Tablet,     gradient: 'from-violet-500 to-purple-600' },
-    { value: 'laptop',  label: 'Laptop',  icon: Laptop,     gradient: 'from-slate-500 to-gray-600' },
-    { value: 'tv',      label: 'TV / STB',icon: Tv,         gradient: 'from-rose-500 to-pink-600' },
-    { value: 'monitor', label: 'Monitor', icon: Monitor,    gradient: 'from-teal-500 to-cyan-600' },
-    { value: 'other',   label: 'Other',   icon: Box,        gradient: 'from-amber-500 to-orange-600' },
+    { value: 'phone',     label: 'Phone',       icon: Smartphone, gradient: 'from-blue-500 to-indigo-600' },
+    { value: 'tablet',    label: 'Tablet',       icon: Tablet,     gradient: 'from-violet-500 to-purple-600' },
+    { value: 'laptop',    label: 'Laptop / Mac', icon: Laptop,     gradient: 'from-slate-500 to-gray-600' },
+    { value: 'tv',        label: 'TV / STB',     icon: Tv,         gradient: 'from-rose-500 to-pink-600' },
+    { value: 'monitor',   label: 'Monitor',      icon: Monitor,    gradient: 'from-teal-500 to-cyan-600' },
+    { value: 'accessory', label: 'Accessory',    icon: Package,    gradient: 'from-amber-500 to-yellow-500' },
+    { value: 'other',     label: 'Other',        icon: Box,        gradient: 'from-amber-500 to-orange-600' },
 ];
 
 const OS_OPTIONS = [
     'Android 14','Android 13','Android 12','Android 11','Android 10',
     'iOS 17','iOS 16','iOS 15','tvOS 17','Fire OS 8','Windows 11','macOS','Other'
+];
+
+const ACCESSORY_TYPES = [
+    'Lightning cable', 'Type-C cable', 'Type-B cable',
+    'HDMI cable', 'Power cable', 'Charger adaptor',
+    'USB-A to USB-C', 'Display Port cable', 'Remote control', 'Other',
 ];
 
 const CONDITION_OPTIONS = [
@@ -61,7 +68,7 @@ interface Device {
     id: string;
     name: string;
     type: string;
-    status: 'available' | 'checked-out' | 'maintenance';
+    status: 'available' | 'checked-out' | 'maintenance' | 'missing';
     location: string;
     os?: string;
     ram?: string;
@@ -73,6 +80,12 @@ interface Device {
     totalCheckouts?: number;
     serialNumber?: string;
     lastCheckedIn?: string;
+    // Accessory fields
+    quantity?: number;          // how many exist (e.g. 3 chargers)
+    quantityAvailable?: number; // how many are currently available
+    linkedDeviceId?: string;    // which device this accessory belongs to
+    accessoryType?: string;     // 'Lightning cable' | 'Type-C cable' | 'Type-B cable' | 'Charger adaptor' | 'Other'
+    assignedTo?: string;        // person name for permanently assigned devices
 }
 
 interface AddDeviceForm {
@@ -88,17 +101,45 @@ interface AddDeviceForm {
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
 const SEED_DEVICES: Omit<Device, 'id'>[] = [
+    // ── QA Team ──
     { name: 'Oppo A78',             type: 'phone',  status: 'available',   location: 'QA Team Device Rack', os: 'Android 13', ram: '8GB', network: '4G',  condition: 'good',      totalCheckouts: 12 },
     { name: 'Moto g31',             type: 'phone',  status: 'available',   location: 'QA Team Device Rack', os: 'Android 11', ram: '4GB', network: '4G',  condition: 'fair',      totalCheckouts: 8  },
-    { name: 'Galaxy M32 5G',        type: 'phone',  status: 'checked-out', location: 'QA Team Device Rack', os: 'Android 13', ram: '6GB', network: '5G',  condition: 'excellent', totalCheckouts: 21,
-      checkedOutBy: { name: 'Saranya', uid: 'system' }, checkedOutAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
+    { name: 'Galaxy M32 5G',        type: 'phone',  status: 'available',   location: 'QA Team Device Rack', os: 'Android 13', ram: '6GB', network: '5G',  condition: 'excellent', totalCheckouts: 21 },
     { name: 'Redmi Tab Pad',        type: 'tablet', status: 'available',   location: 'QA Team Device Rack', os: 'Android 13', ram: '4GB', network: 'WiFi',condition: 'good',      totalCheckouts: 5  },
     { name: 'Fire TV 4K Stick',     type: 'tv',     status: 'available',   location: 'QA Team Device Rack', os: 'Fire OS 8',              network: 'WiFi',condition: 'excellent', totalCheckouts: 3  },
-    { name: 'iPhone 14',            type: 'phone',  status: 'available',   location: 'iOS Team',            os: 'iOS 17',     ram: '6GB', network: '5G',  condition: 'excellent', totalCheckouts: 17 },
-    { name: 'iPad Air 5',           type: 'tablet', status: 'maintenance', location: 'iOS Team',            os: 'iOS 17',     ram: '8GB', network: 'WiFi',condition: 'poor',      totalCheckouts: 9,
-      notes: 'Screen crack — sent for repair' },
-    { name: 'Samsung Galaxy Tab S8',type: 'tablet', status: 'available',   location: 'Android Team',        os: 'Android 14', ram: '8GB', network: '5G',  condition: 'excellent', totalCheckouts: 14 },
-];
+    // ── iOS Team ──
+    { name: 'iPhone 12',            type: 'phone',  status: 'available',   location: 'iOS Team', os: 'iOS 15', network: '5G',  condition: 'good',      assignedTo: 'QA', notes: 'Assigned to QA team', totalCheckouts: 0 },
+    { name: 'iPhone XR',            type: 'phone',  status: 'checked-out', location: 'iOS Team', os: 'iOS 16', network: '4G',  condition: 'good',      assignedTo: 'Prasanth', checkedOutBy: { name: 'Prasanth', uid: 'prasanth' }, totalCheckouts: 0 },
+    { name: 'iPhone 8',             type: 'phone',  status: 'available',   location: 'iOS Team', os: 'iOS 15', network: '4G',  condition: 'fair',      assignedTo: 'QA', notes: 'Assigned to QA team', totalCheckouts: 0 },
+    { name: 'iPhone 14 Pro',        type: 'phone',  status: 'checked-out', location: 'iOS Team', os: 'iOS 17', network: '5G',  condition: 'excellent', assignedTo: 'Mahendran', checkedOutBy: { name: 'Mahendran', uid: 'mahendran' }, totalCheckouts: 0 },
+    { name: 'iPad Mini',            type: 'tablet', status: 'available',   location: 'API Team', os: 'iOS 16', network: 'WiFi',condition: 'good',      notes: 'Assigned to API Team', totalCheckouts: 0 },
+    { name: 'iPhone 14',            type: 'phone',  status: 'available',   location: 'iOS Team', os: 'iOS 17', ram: '6GB', network: '5G', condition: 'excellent', totalCheckouts: 17 },
+    { name: 'iPad Air 5',           type: 'tablet', status: 'maintenance', location: 'iOS Team', os: 'iOS 17', ram: '8GB', network: 'WiFi', condition: 'poor', totalCheckouts: 9, notes: 'Screen crack — sent for repair' },
+    // ── iOS Team TVs / Boxes ──
+    { name: 'Apple TV 4K Box',      type: 'tv',     status: 'checked-out', location: 'iOS Team', os: 'tvOS 17', network: 'WiFi', condition: 'good', assignedTo: 'Seeman', checkedOutBy: { name: 'Seeman', uid: 'seeman' }, notes: 'With Seeman', totalCheckouts: 0 },
+    { name: 'HD Box',               type: 'tv',     status: 'checked-out', location: 'Sun Direct Team', network: 'WiFi', condition: 'good', assignedTo: 'Prasanth', checkedOutBy: { name: 'Prasanth', uid: 'prasanth' }, notes: 'Prasanth place', totalCheckouts: 0 },
+    // ── iOS Team Laptops ──
+    { name: 'MacBook Pro (Elayaraja)',  type: 'laptop', status: 'checked-out', location: 'iOS Team', os: 'macOS', ram: '16GB', condition: 'good', assignedTo: 'Elayaraja', checkedOutBy: { name: 'Elayaraja', uid: 'elayaraja' }, totalCheckouts: 0 },
+    { name: 'MacBook Pro (Seeman)',     type: 'laptop', status: 'checked-out', location: 'iOS Team', os: 'macOS', ram: '16GB', condition: 'good', assignedTo: 'Seeman',    checkedOutBy: { name: 'Seeman', uid: 'seeman' }, totalCheckouts: 0 },
+    { name: 'MacBook Pro (Prasanth)',   type: 'laptop', status: 'checked-out', location: 'iOS Team', os: 'macOS', ram: '16GB', condition: 'good', assignedTo: 'Prasanth',  checkedOutBy: { name: 'Prasanth', uid: 'prasanth' }, totalCheckouts: 0 },
+    { name: 'MacBook Pro (Mahendran)', type: 'laptop', status: 'checked-out', location: 'iOS Team', os: 'macOS', ram: '16GB', condition: 'good', assignedTo: 'Mahendran', checkedOutBy: { name: 'Mahendran', uid: 'mahendran' }, totalCheckouts: 0 },
+    { name: 'MacBook Pro (Vignesh)',   type: 'laptop', status: 'checked-out', location: 'PM Desk',  os: 'macOS', ram: '16GB', condition: 'good', assignedTo: 'Vignesh (PM)', checkedOutBy: { name: 'Vignesh', uid: 'vignesh' }, notes: 'PM MacBook', totalCheckouts: 0 },
+    // ── Android Team ──
+    { name: 'Samsung Galaxy Tab S8', type: 'tablet', status: 'available', location: 'Android Team', os: 'Android 14', ram: '8GB', network: '5G', condition: 'excellent', totalCheckouts: 14 },
+    // ── Accessories ──
+    { name: 'Device Charger',   type: 'accessory', status: 'available', location: 'QA Team Device Rack', accessoryType: 'Charger adaptor', quantity: 3, quantityAvailable: 3, condition: 'good',    notes: '3 device chargers in rack' },
+    { name: 'Lightning Cable',  type: 'accessory', status: 'available', location: 'iOS Team',            accessoryType: 'Lightning cable',  quantity: 2, quantityAvailable: 1, condition: 'fair',    notes: '1 missing — track with iPhone XR' },
+    { name: 'Type-C Cable',     type: 'accessory', status: 'missing',   location: 'iOS Team',            accessoryType: 'Type-C cable',     quantity: 3, quantityAvailable: 0, condition: 'unknown', notes: 'All 3 cables missing — last seen iOS team area' },
+    { name: 'Type-B Cable',     type: 'accessory', status: 'missing',   location: 'QA Team Device Rack', accessoryType: 'Type-B cable',     quantity: 2, quantityAvailable: 0, condition: 'unknown', notes: '2 Type-B cables missing' },
+    { name: 'Charger Adaptor',  type: 'accessory', status: 'available', location: 'iOS Team',            accessoryType: 'Charger adaptor',  quantity: 4, quantityAvailable: 2, condition: 'good',    notes: '2 with devices, 2 in rack' },
+    // ── TV Accessories ──
+    { name: 'HDMI Cable (Apple TV)', type: 'accessory', status: 'available', location: 'iOS Team',         accessoryType: 'HDMI cable', quantity: 1, quantityAvailable: 1, condition: 'good',    linkedDeviceId: 'Apple TV 4K Box',  notes: 'HDMI for Apple TV 4K — with Seeman' },
+    { name: 'HDMI Cable (HD Box)',   type: 'accessory', status: 'available', location: 'Sun Direct Team',  accessoryType: 'HDMI cable', quantity: 1, quantityAvailable: 1, condition: 'good',    linkedDeviceId: 'HD Box',           notes: 'HDMI for HD Box — Prasanth place' },
+    { name: 'HDMI Cable (QA Rack)',  type: 'accessory', status: 'missing',   location: 'QA Team Device Rack', accessoryType: 'HDMI cable', quantity: 2, quantityAvailable: 0, condition: 'unknown', notes: '2 HDMI cables missing from QA rack' },
+    { name: 'Power Cable (Apple TV)', type: 'accessory', status: 'available', location: 'iOS Team',        accessoryType: 'Power cable', quantity: 1, quantityAvailable: 1, condition: 'good',    linkedDeviceId: 'Apple TV 4K Box',  notes: 'Power cable for Apple TV — with Seeman' },
+    { name: 'Power Cable (HD Box)',   type: 'accessory', status: 'available', location: 'Sun Direct Team', accessoryType: 'Power cable', quantity: 1, quantityAvailable: 1, condition: 'good',    linkedDeviceId: 'HD Box',           notes: 'Power cable for HD Box — Prasanth place' },
+    { name: 'Power Cable (Fire TV)',  type: 'accessory', status: 'available', location: 'QA Team Device Rack', accessoryType: 'Power cable', quantity: 1, quantityAvailable: 1, condition: 'good', linkedDeviceId: 'Fire TV 4K Stick', notes: 'Micro-USB power for Fire TV Stick' },
+];];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function getTypeConfig(type: string) {
@@ -110,6 +151,7 @@ function getStatusConfig(status: string) {
         case 'available':   return { dot: 'bg-emerald-500', text: 'text-emerald-700 dark:text-emerald-400', bg: 'bg-emerald-500/10 border border-emerald-500/20', label: 'Available',   pulse: true  };
         case 'checked-out': return { dot: 'bg-sky-500',     text: 'text-sky-700 dark:text-sky-400',         bg: 'bg-sky-500/10 border border-sky-500/20',         label: 'In Use',      pulse: false };
         case 'maintenance': return { dot: 'bg-amber-500',   text: 'text-amber-700 dark:text-amber-400',     bg: 'bg-amber-500/10 border border-amber-500/20',     label: 'Maintenance', pulse: false };
+        case 'missing':     return { dot: 'bg-red-500',     text: 'text-red-700 dark:text-red-400',         bg: 'bg-red-500/10 border border-red-500/20',         label: 'Missing',     pulse: true  };
         default:            return { dot: 'bg-slate-400',   text: 'text-slate-600',                         bg: 'bg-slate-500/10 border border-slate-500/20',     label: status,        pulse: false };
     }
 }
@@ -1193,6 +1235,8 @@ export default function KeeprPage() {
         available:   devices.filter(d => d.status === 'available').length,
         inUse:       devices.filter(d => d.status === 'checked-out').length,
         maintenance: devices.filter(d => d.status === 'maintenance').length,
+        missing:     devices.filter(d => d.status === 'missing').length,
+        accessories: devices.filter(d => d.type === 'accessory').length,
     }), [devices]);
 
     const overdueDevices = useMemo(() =>
@@ -1207,6 +1251,7 @@ export default function KeeprPage() {
                 if (statusFilter === 'available'   && d.status !== 'available')   return false;
                 if (statusFilter === 'checked-out' && d.status !== 'checked-out') return false;
                 if (statusFilter === 'maintenance' && d.status !== 'maintenance') return false;
+                if (statusFilter === 'missing'     && d.status !== 'missing')     return false;
             }
             if (typeFilter !== 'all' && d.type !== typeFilter) return false;
             if (q && !d.name.toLowerCase().includes(q) && !d.location.toLowerCase().includes(q) && !(d.os ?? '').toLowerCase().includes(q)) return false;
@@ -1292,6 +1337,7 @@ export default function KeeprPage() {
                             <StatPill label="Available"   value={stats.available}   color="bg-emerald-500/20 border-emerald-400/30 text-emerald-300" />
                             <StatPill label="In Use"      value={stats.inUse}       color="bg-sky-500/20 border-sky-400/30 text-sky-300" />
                             <StatPill label="Maintenance" value={stats.maintenance} color="bg-amber-500/20 border-amber-400/30 text-amber-300" />
+                            {stats.missing > 0 && <StatPill label="Missing" value={stats.missing} color="bg-red-500/20 border-red-400/30 text-red-300" />}
                         </motion.div>
                     </div>
                 </div>
@@ -1359,6 +1405,7 @@ export default function KeeprPage() {
                             <SelectItem value="available">Available</SelectItem>
                             <SelectItem value="checked-out">In Use</SelectItem>
                             <SelectItem value="maintenance">Maintenance</SelectItem>
+                            <SelectItem value="missing">Missing</SelectItem>
                         </SelectContent>
                     </Select>
 
