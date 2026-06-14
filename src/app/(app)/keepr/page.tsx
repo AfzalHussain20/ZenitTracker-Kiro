@@ -1445,6 +1445,23 @@ export default function KeeprPage() {
                     <Button onClick={() => setShowAdd(true)} size="sm" className="h-9 text-sm bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-0 shadow-sm gap-1.5">
                         <Plus className="w-4 h-4" />Add Device
                     </Button>
+                    {/* Sync Fleet — pushes master device list to Firebase */}
+                    <Button
+                        onClick={async () => {
+                            try {
+                                const res = await fetch('/api/keepr/device/list', { method: 'POST' });
+                                const data = await res.json();
+                                alert(data.added > 0
+                                    ? `✅ Synced! Added ${data.added} new device(s): ${data.newDevices?.join(', ')}`
+                                    : `ℹ️ ${data.message || 'All devices already in sync'}`);
+                            } catch { alert('Sync failed'); }
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="h-9 text-sm gap-1.5"
+                    >
+                        <RefreshCw className="w-4 h-4" />Sync Fleet
+                    </Button>
                 </motion.div>
 
                 {/* ── Device Grid / List ───────────────────────────────────── */}
