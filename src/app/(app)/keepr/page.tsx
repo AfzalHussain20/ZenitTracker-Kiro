@@ -126,6 +126,12 @@ const SEED_DEVICES: Omit<Device, 'id'>[] = [
     { name: 'MacBook Pro (Vignesh)',   type: 'laptop', status: 'checked-out', location: 'PM Desk',  os: 'macOS', ram: '16GB', condition: 'good', assignedTo: 'Vignesh (PM)', checkedOutBy: { name: 'Vignesh', uid: 'vignesh' }, notes: 'PM MacBook', totalCheckouts: 0 },
     // ── Android Team ──
     { name: 'Samsung Galaxy Tab S8', type: 'tablet', status: 'available', location: 'Android Team', os: 'Android 14', ram: '8GB', network: '5G', condition: 'excellent', totalCheckouts: 14 },
+    { name: 'Realme 11 Pro',          type: 'phone',  status: 'available', location: 'Android Team', os: 'Android 14', ram: '8GB', network: '5G', condition: 'excellent', totalCheckouts: 0 },
+    { name: 'Samsung Galaxy S21 FE 5G', type: 'phone', status: 'available', location: 'Android Team', os: 'Android 13', ram: '8GB', network: '5G', condition: 'good', totalCheckouts: 0 },
+    { name: 'Samsung Galaxy Z Fold 5', type: 'phone',  status: 'available', location: 'Android Team', os: 'Android 14', ram: '12GB', network: '5G', condition: 'excellent', totalCheckouts: 0, notes: 'Foldable — handle with care' },
+    { name: 'Oppo A78 5G (Android)',   type: 'phone',  status: 'available', location: 'Android Team', os: 'Android 13', ram: '8GB', network: '5G', condition: 'good', totalCheckouts: 0 },
+    { name: 'Fire Stick 4K Max',       type: 'tv',     status: 'available', location: 'Android Team', os: 'Fire OS 8', network: 'WiFi', condition: 'excellent', totalCheckouts: 0 },
+    { name: 'JIO STB',                 type: 'tv',     status: 'available', location: 'Android Team', network: 'WiFi', condition: 'good', totalCheckouts: 0 },
     // ── Accessories ──
     { name: 'Device Charger',   type: 'accessory', status: 'available', location: 'QA Team Device Rack', accessoryType: 'Charger adaptor', quantity: 3, quantityAvailable: 3, condition: 'good',    notes: '3 device chargers in rack' },
     { name: 'Lightning Cable',  type: 'accessory', status: 'available', location: 'iOS Team',            accessoryType: 'Lightning cable',  quantity: 2, quantityAvailable: 1, condition: 'fair',    notes: '1 missing — track with iPhone XR' },
@@ -139,6 +145,11 @@ const SEED_DEVICES: Omit<Device, 'id'>[] = [
     { name: 'Power Cable (Apple TV)', type: 'accessory', status: 'available', location: 'iOS Team',        accessoryType: 'Power cable', quantity: 1, quantityAvailable: 1, condition: 'good',    linkedDeviceId: 'Apple TV 4K Box',  notes: 'Power cable for Apple TV — with Seeman' },
     { name: 'Power Cable (HD Box)',   type: 'accessory', status: 'available', location: 'Sun Direct Team', accessoryType: 'Power cable', quantity: 1, quantityAvailable: 1, condition: 'good',    linkedDeviceId: 'HD Box',           notes: 'Power cable for HD Box — Prasanth place' },
     { name: 'Power Cable (Fire TV)',  type: 'accessory', status: 'available', location: 'QA Team Device Rack', accessoryType: 'Power cable', quantity: 1, quantityAvailable: 1, condition: 'good', linkedDeviceId: 'Fire TV 4K Stick', notes: 'Micro-USB power for Fire TV Stick' },
+    // ── Android Team TV Accessories ──
+    { name: 'HDMI Cable (Fire Stick 4K Max)', type: 'accessory', status: 'available', location: 'Android Team', accessoryType: 'HDMI cable', quantity: 1, quantityAvailable: 1, condition: 'good', linkedDeviceId: 'Fire Stick 4K Max', notes: 'HDMI for Fire Stick 4K Max' },
+    { name: 'Power Cable (Fire Stick 4K Max)', type: 'accessory', status: 'available', location: 'Android Team', accessoryType: 'Power cable', quantity: 1, quantityAvailable: 1, condition: 'good', linkedDeviceId: 'Fire Stick 4K Max', notes: 'USB power for Fire Stick 4K Max' },
+    { name: 'HDMI Cable (JIO STB)', type: 'accessory', status: 'available', location: 'Android Team', accessoryType: 'HDMI cable', quantity: 1, quantityAvailable: 1, condition: 'good', linkedDeviceId: 'JIO STB', notes: 'HDMI for JIO STB' },
+    { name: 'Power Cable (JIO STB)', type: 'accessory', status: 'available', location: 'Android Team', accessoryType: 'Power cable', quantity: 1, quantityAvailable: 1, condition: 'good', linkedDeviceId: 'JIO STB', notes: 'Power adaptor for JIO STB' },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1101,24 +1112,14 @@ export default function KeeprPage() {
         setLoading(false);
 
         // Poll the API every 5 seconds to pick up QR scan changes
-        // This ensures web page stays in sync when someone scans a QR code
+        // Uses /api/keepr/device/list to get ALL devices from Firestore (not hardcoded IDs)
         const pollApi = async () => {
             try {
-                const res = await fetch('/api/keepr/device/device_1', { cache: 'no-store' });
-                // If API responds, fetch all devices
+                const res = await fetch('/api/keepr/device/list', { cache: 'no-store' });
                 if (res.ok) {
-                    const allIds = ['device_1','device_2','device_3','device_4','device_5','device_6','device_7','device_8'];
-                    const results = await Promise.all(
-                        allIds.map(id => fetch(`/api/keepr/device/${id}`, { cache: 'no-store' })
-                            .then(r => r.ok ? r.json() : null)
-                            .catch(() => null))
-                    );
-                    const fetched = results
-                        .filter(Boolean)
-                        .map((r: any) => r.device)
-                        .filter(Boolean);
-                    if (fetched.length > 0) {
-                        setDevices(fetched);
+                    const data = await res.json();
+                    if (data.devices?.length > 0) {
+                        setDevices(data.devices);
                     }
                 }
             } catch { /* ignore */ }
