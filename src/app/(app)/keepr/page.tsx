@@ -363,7 +363,7 @@ function DeviceRow({ device, onCheckout, onCheckin, onShowQR, onExpand, isExpand
 }
 
 // ─── Location Section ─────────────────────────────────────────────────────────
-function LocationSection({ location, devices, onCheckout, onCheckin, onShowQR, expandedId, onExpand }: {
+function LocationSection({ location, devices, onCheckout, onCheckin, onShowQR, expandedId, onExpand, isOpen, onToggle }: {
     location: string;
     devices: Device[];
     onCheckout: (device: Device) => void;
@@ -371,15 +371,16 @@ function LocationSection({ location, devices, onCheckout, onCheckin, onShowQR, e
     onShowQR: (device: Device) => void;
     expandedId: string | null;
     onExpand: (device: Device) => void;
+    isOpen: boolean;
+    onToggle: () => void;
 }) {
-    const [isOpen, setIsOpen] = useState(true);
     const deviceItems = devices.filter(d => d.type !== 'accessory');
     const accessories = devices.filter(d => d.type === 'accessory');
     const missingCount = devices.filter(d => d.status === 'missing').length;
 
     return (
-        <motion.div variants={fadeUp} className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm rounded-xl border border-slate-200/80 dark:border-slate-700/60 overflow-hidden shadow-sm">
-            <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <motion.div variants={fadeUp} id={`loc-${location.replace(/\s+/g, '-')}`} className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm rounded-xl border border-slate-200/80 dark:border-slate-700/60 overflow-hidden shadow-sm scroll-mt-28">
+            <Collapsible open={isOpen} onOpenChange={onToggle}>
                 <CollapsibleTrigger className="w-full">
                     <div className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors cursor-pointer">
                         <MapPin className="w-4 h-4 text-blue-500 flex-shrink-0" />
@@ -792,6 +793,7 @@ export default function KeeprPage() {
     const [showAdd, setShowAdd] = useState(false);
     const [qrDevice, setQrDevice] = useState<Device | null>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [openLocation, setOpenLocation] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'devices' | 'history' | 'accessories'>('devices');
     const [showWelcome, setShowWelcome] = useState(false);
 
@@ -908,6 +910,15 @@ export default function KeeprPage() {
 
     const handleExpand = useCallback((device: Device) => {
         setExpandedId(prev => prev === device.id ? null : device.id);
+    }, []);
+
+    const handleJumpToLocation = useCallback((location: string) => {
+        setOpenLocation(location);
+        // Scroll to the section after a brief delay for the collapsible to open
+        setTimeout(() => {
+            const el = document.getElementById(`loc-${location.replace(/\s+/g, '-')}`);
+            el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 100);
     }, []);
 
     // ── Derived data ─────────────────────────────────────────────────────────
@@ -1175,20 +1186,51 @@ export default function KeeprPage() {
                                 </Button>
                             </motion.div>
                         ) : (
-                            <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-4">
-                                {locationGroups.map(([location, items]) => (
-                                    <LocationSection
-                                        key={location}
-                                        location={location}
-                                        devices={items}
-                                        onCheckout={handleCheckout}
-                                        onCheckin={handleCheckin}
-                                        onShowQR={setQrDevice}
-                                        expandedId={expandedId}
-                                        onExpand={handleExpand}
-                                    />
-                                ))}
-                            </motion.div>
+                            <>
+                                {/* Jump nav — click to scroll & expand */}
+                                <div className="flex items-center gap-2 flex-wrap sticky top-0 z-10 bg-gradient-to-b from-slate-50 via-slate-50/95 to-transparent dark:from-slate-950 dark:via-slate-950/95 pb-3 pt-1 -mt-1">
+                                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mr-1">Jump to:</span>
+                                    {locationGroups.map(([location, items]) => {
+                                        const devCount = items.filter(d => d.type !== 'accessory').length;
+                                        const isActive = openLocation === location;
+                                        return (
+                                            <button
+                                                key={location}
+                                                onClick={() => handleJumpToLocation(location)}
+                                                className={cn(
+                                                    'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border',
+                                                    isActive
+                                                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                                        : 'bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/30'
+                                                )}
+                                            >
+                                                <MapPin className="w-3 h-3" />
+                                                {location}
+                                                <span className={cn('px-1.5 py-0.5 rounded-full text-[10px] font-bold', isActive ? 'bg-white/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500')}>
+                                                    {devCount}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-3">
+                                    {locationGroups.map(([location, items]) => (
+                                        <LocationSection
+                                            key={location}
+                                            location={location}
+                                            devices={items}
+                                            onCheckout={handleCheckout}
+                                            onCheckin={handleCheckin}
+                                            onShowQR={setQrDevice}
+                                            expandedId={expandedId}
+                                            onExpand={handleExpand}
+                                            isOpen={openLocation === location}
+                                            onToggle={() => setOpenLocation(prev => prev === location ? null : location)}
+                                        />
+                                    ))}
+                                </motion.div>
+                            </>
                         )}
 
                         {/* Results count */}
