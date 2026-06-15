@@ -779,6 +779,475 @@ function AccessoriesPanel({ devices }: { devices: Device[] }) {
     );
 }
 
+// ─── Audit Panel ──────────────────────────────────────────────────────────────
+type AuditStatus = 'present' | 'missing' | 'reassigned' | 'pending';
+
+interface AuditResult {
+    deviceId: string;
+    deviceName: string;
+    deviceType: string;
+    location: string;
+    status: AuditStatus;
+    assignedTo?: string;
+    notes?: string;
+}
+
+interface PastAudit {
+    id: string;
+    auditedBy: string;
+    auditedAt: string;
+    weekNumber: number;
+    summary: { total: number; present: number; missing: number; reassigned: number };
+}
+
+function AuditPanel({ devices, userName }: { devices: Device[]; userName: string }) {
+    const [phase, setPhase] = useState<'start' | 'auditing' | 'summary'>('start');
+    const [results, setResults] = useState<AuditResult[]>([]);
+    const [currentLocationIdx, setCurrentLocationIdx] = useState(0);
+    const [saving, setSaving] = useState(false);
+    const [pastAudits, setPastAudits] = useState<PastAudit[]>([]);
+    const [loadingHistory, setLoadingHistory] = useState(false);
+    const [assignDialog, setAssignDialog] = useState<{ deviceId: string; deviceName: string } | null>(null);
+    const [assignName, setAssignName] = useState('');
+    const [assignNotes, setAssignNotes] = useState('');
+
+    // Only audit non-accessory devices
+    const auditableDevices = useMemo(() => devices.filter(d => d.type !== 'accessory'), [devices]);
+
+    // Group by location
+    const locationGroups = useMemo(() => {
+        const map: Record<string, Device[]> = {};
+        for (const d of auditableDevices) {
+            if (!map[d.location]) map[d.location] = [];
+            map[d.location].push(d);
+        }
+        return Object.entries(map).sort(([, a], [, b]) => b.length - a.length);
+    }, [auditableDevices]);
+
+    const currentLocation = locationGroups[currentLocationIdx];
+    const currentDevices = currentLocation?.[1] ?? [];
+
+    // Fetch past audits on mount
+    useEffect(() => {
+        setLoadingHistory(true);
+        fetch('/api/keepr/audit?limit=10')
+            .then(r => r.json())
+            .then(d => setPastAudits(d.audits ?? []))
+            .catch(() => {})
+            .finally(() => setLoadingHistory(false));
+    }, []);
+
+    // Start a new audit
+    const startAudit = () => {
+        const initial: AuditResult[] = auditableDevices.map(d => ({
+            deviceId: d.id,
+            deviceName: d.name,
+            deviceType: d.type,
+            location: d.location,
+            status: 'pending',
+        }));
+        setResults(initial);
+        setCurrentLocationIdx(0);
+        setPhase('auditing');
+    };
+
+    // Mark a device
+    const markDevice = (deviceId: string, status: AuditStatus) => {
+        setResults(prev => prev.map(r => r.deviceId === deviceId ? { ...r, status } : r));
+    };
+
+    // Mark all in current location as present
+    const markAllPresent = () => {
+        setResults(prev => prev.map(r =>
+            currentDevices.some(d => d.id === r.deviceId) && r.status === 'pending'
+                ? { ...r, status: 'present' }
+                : r
+        ));
+    };
+
+    // Assign dialog submit
+    const submitAssign = () => {
+        if (!assignDialog || !assignName.trim()) return;
+        setResults(prev => prev.map(r =>
+            r.deviceId === assignDialog.deviceId
+                ? { ...r, status: 'reassigned', assignedTo: assignName.trim(), notes: assignNotes.trim() || undefined }
+                : r
+        ));
+        setAssignDialog(null);
+        setAssignName('');
+        setAssignNotes('');
+    };
+
+    // Navigation
+    const nextLocation = () => {
+        if (currentLocationIdx < locationGroups.length - 1) {
+            setCurrentLocationIdx(i => i + 1);
+        } else {
+            setPhase('summary');
+        }
+    };
+
+    const prevLocation = () => {
+        if (currentLocationIdx > 0) setCurrentLocationIdx(i => i - 1);
+    };
+
+    // Save audit
+    const saveAudit = async () => {
+        setSaving(true);
+        try {
+            const finalResults = results.filter(r => r.status !== 'pending');
+            const res = await fetch('/api/keepr/audit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ auditedBy: userName, results: finalResults }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(`✅ Audit saved! ${data.summary.present} present, ${data.summary.missing} missing, ${data.summary.reassigned} reassigned.`);
+                setPhase('start');
+                // Refresh history
+                fetch('/api/keepr/audit?limit=10').then(r => r.json()).then(d => setPastAudits(d.audits ?? [])).catch(() => {});
+            } else {
+                alert(`Error: ${data.error}`);
+            }
+        } catch {
+            alert('Failed to save audit');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // Progress stats
+    const progress = useMemo(() => {
+        const audited = results.filter(r => r.status !== 'pending').length;
+        const total = results.length;
+        return { audited, total, pct: total > 0 ? Math.round((audited / total) * 100) : 0 };
+    }, [results]);
+
+    const currentResults = results.filter(r => currentDevices.some(d => d.id === r.deviceId));
+    const currentDone = currentResults.filter(r => r.status !== 'pending').length;
+
+    // ── START PHASE ──────────────────────────────────────────────────────────
+    if (phase === 'start') {
+        return (
+            <div className="space-y-6">
+                {/* Start new audit card */}
+                <motion.div variants={fadeUp} initial="hidden" animate="show"
+                    className="bg-gradient-to-br from-indigo-50 via-blue-50 to-violet-50 dark:from-indigo-950/30 dark:via-blue-950/20 dark:to-violet-950/20 border border-indigo-200/60 dark:border-indigo-800/40 rounded-xl p-6 text-center"
+                >
+                    <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg">
+                        <ClipboardCheck className="w-7 h-7 text-white" />
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-1">Weekly Device Audit</h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-md mx-auto">
+                        Walk through each location, confirm devices are present, flag missing ones, and reassign as needed. Takes about 5 minutes.
+                    </p>
+                    <Button
+                        onClick={startAudit}
+                        className="h-10 px-6 text-sm font-bold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white border-0 shadow-md"
+                    >
+                        <ClipboardCheck className="w-4 h-4 mr-2" />Start Audit ({auditableDevices.length} devices)
+                    </Button>
+                </motion.div>
+
+                {/* Past audits */}
+                <div>
+                    <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
+                        <History className="w-4 h-4 text-slate-400" />Past Audits
+                    </h4>
+                    {loadingHistory ? (
+                        <div className="flex items-center justify-center py-8">
+                            <RefreshCw className="w-5 h-5 text-indigo-500 animate-spin" />
+                        </div>
+                    ) : pastAudits.length === 0 ? (
+                        <p className="text-xs text-slate-400 text-center py-8">No audits completed yet. Start your first one above!</p>
+                    ) : (
+                        <div className="space-y-2">
+                            {pastAudits.map(a => (
+                                <div key={a.id} className="flex items-center gap-4 px-4 py-3 bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-700/60 rounded-lg">
+                                    <div className="w-9 h-9 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                                        <ClipboardCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                            Week {a.weekNumber} — by {a.auditedBy}
+                                        </p>
+                                        <p className="text-[10px] text-slate-400">
+                                            {new Date(a.auditedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-3 flex-shrink-0">
+                                        <span className="text-[10px] font-bold text-emerald-600">✓ {a.summary.present}</span>
+                                        {a.summary.missing > 0 && <span className="text-[10px] font-bold text-red-500">✗ {a.summary.missing}</span>}
+                                        {a.summary.reassigned > 0 && <span className="text-[10px] font-bold text-amber-500">↻ {a.summary.reassigned}</span>}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // ── AUDITING PHASE ───────────────────────────────────────────────────────
+    if (phase === 'auditing') {
+        return (
+            <div className="space-y-5">
+                {/* Progress bar */}
+                <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-700/60 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            📍 {currentLocation?.[0]} ({currentLocationIdx + 1}/{locationGroups.length})
+                        </span>
+                        <span className="text-xs text-slate-400 font-medium">{progress.pct}% complete</span>
+                    </div>
+                    <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <motion.div
+                            className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${progress.pct}%` }}
+                            transition={{ duration: 0.4 }}
+                        />
+                    </div>
+                    <div className="flex items-center gap-4 mt-2 text-[10px] text-slate-400">
+                        <span>✓ {progress.audited} done</span>
+                        <span>○ {progress.total - progress.audited} remaining</span>
+                    </div>
+                </div>
+
+                {/* Quick action */}
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={markAllPresent} className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+                        <CheckCircle2 className="w-3.5 h-3.5" />All Present Here
+                    </Button>
+                    <span className="text-[10px] text-slate-400 ml-2">{currentDone}/{currentResults.length} checked</span>
+                </div>
+
+                {/* Device checklist */}
+                <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-700/60 rounded-xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
+                    {currentDevices.map(device => {
+                        const result = results.find(r => r.deviceId === device.id);
+                        const status = result?.status ?? 'pending';
+                        const typeConfig = getTypeConfig(device.type);
+                        const TypeIcon = typeConfig.icon;
+
+                        return (
+                            <div key={device.id} className={cn(
+                                'flex items-center gap-3 px-4 py-3 transition-colors',
+                                status === 'present' && 'bg-emerald-50/50 dark:bg-emerald-950/10',
+                                status === 'missing' && 'bg-red-50/50 dark:bg-red-950/10',
+                                status === 'reassigned' && 'bg-amber-50/50 dark:bg-amber-950/10',
+                            )}>
+                                {/* Icon */}
+                                <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-gradient-to-br shadow-sm', typeConfig.gradient)}>
+                                    <TypeIcon className="w-4 h-4 text-white" />
+                                </div>
+
+                                {/* Name + info */}
+                                <div className="flex-1 min-w-0">
+                                    <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 block truncate">{device.name}</span>
+                                    <span className="text-[10px] text-slate-400">{device.os ?? device.type}</span>
+                                    {status === 'reassigned' && result?.assignedTo && (
+                                        <span className="text-[10px] text-amber-600 font-medium block">→ {result.assignedTo}</span>
+                                    )}
+                                </div>
+
+                                {/* Action buttons */}
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                    <button
+                                        onClick={() => markDevice(device.id, 'present')}
+                                        className={cn(
+                                            'h-8 w-8 rounded-lg flex items-center justify-center border transition-all',
+                                            status === 'present'
+                                                ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
+                                                : 'border-slate-200 dark:border-slate-700 text-slate-400 hover:border-emerald-400 hover:text-emerald-500 hover:bg-emerald-50'
+                                        )}
+                                        title="Present"
+                                    >
+                                        <CheckCircle2 className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => markDevice(device.id, 'missing')}
+                                        className={cn(
+                                            'h-8 w-8 rounded-lg flex items-center justify-center border transition-all',
+                                            status === 'missing'
+                                                ? 'bg-red-500 border-red-500 text-white shadow-sm'
+                                                : 'border-slate-200 dark:border-slate-700 text-slate-400 hover:border-red-400 hover:text-red-500 hover:bg-red-50'
+                                        )}
+                                        title="Missing"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => setAssignDialog({ deviceId: device.id, deviceName: device.name })}
+                                        className={cn(
+                                            'h-8 w-8 rounded-lg flex items-center justify-center border transition-all',
+                                            status === 'reassigned'
+                                                ? 'bg-amber-500 border-amber-500 text-white shadow-sm'
+                                                : 'border-slate-200 dark:border-slate-700 text-slate-400 hover:border-amber-400 hover:text-amber-500 hover:bg-amber-50'
+                                        )}
+                                        title="Reassign"
+                                    >
+                                        <User className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* Navigation */}
+                <div className="flex items-center justify-between pt-2">
+                    <Button variant="outline" size="sm" onClick={prevLocation} disabled={currentLocationIdx === 0} className="h-9 text-xs gap-1.5">
+                        <ArrowLeft className="w-3.5 h-3.5" />Previous
+                    </Button>
+                    <span className="text-xs text-slate-400">
+                        Location {currentLocationIdx + 1} of {locationGroups.length}
+                    </span>
+                    <Button size="sm" onClick={nextLocation} className="h-9 text-xs gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white border-0">
+                        {currentLocationIdx < locationGroups.length - 1 ? 'Next Location' : 'Review & Finish'}
+                        <ChevronRight className="w-3.5 h-3.5" />
+                    </Button>
+                </div>
+
+                {/* Assign dialog */}
+                <Dialog open={!!assignDialog} onOpenChange={v => !v && setAssignDialog(null)}>
+                    <DialogContent className="max-w-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700">
+                        <DialogHeader>
+                            <DialogTitle className="text-sm font-bold text-slate-900 dark:text-white">
+                                Reassign: {assignDialog?.deviceName}
+                            </DialogTitle>
+                            <DialogDescription className="text-xs text-slate-500">
+                                Who has this device? We&apos;ll update the record.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-3 mt-2">
+                            <div className="space-y-1.5">
+                                <Label className="text-xs font-semibold">Assigned To *</Label>
+                                <Input
+                                    value={assignName}
+                                    onChange={e => setAssignName(e.target.value)}
+                                    placeholder="e.g. Prasanth"
+                                    className="h-9 text-sm"
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label className="text-xs font-semibold">Notes (optional)</Label>
+                                <Input
+                                    value={assignNotes}
+                                    onChange={e => setAssignNotes(e.target.value)}
+                                    placeholder="e.g. Found on their desk"
+                                    className="h-9 text-sm"
+                                />
+                            </div>
+                        </div>
+                        <DialogFooter className="gap-2 pt-3">
+                            <Button variant="outline" size="sm" onClick={() => setAssignDialog(null)} className="h-8 text-xs">Cancel</Button>
+                            <Button size="sm" onClick={submitAssign} disabled={!assignName.trim()} className="h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white border-0">
+                                <User className="w-3.5 h-3.5 mr-1" />Assign
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            </div>
+        );
+    }
+
+    // ── SUMMARY PHASE ────────────────────────────────────────────────────────
+    const present = results.filter(r => r.status === 'present');
+    const missing = results.filter(r => r.status === 'missing');
+    const reassigned = results.filter(r => r.status === 'reassigned');
+    const pending = results.filter(r => r.status === 'pending');
+
+    return (
+        <div className="space-y-5">
+            {/* Summary header */}
+            <motion.div variants={fadeUp} initial="hidden" animate="show"
+                className="bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-950/30 dark:to-violet-950/20 border border-indigo-200/60 dark:border-indigo-800/40 rounded-xl p-6 text-center"
+            >
+                <div className="text-4xl mb-2">🎉</div>
+                <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-1">Audit Complete!</h3>
+                <p className="text-sm text-slate-500 mb-4">Here&apos;s your summary — review and save.</p>
+
+                <div className="flex items-center justify-center gap-6">
+                    <div className="text-center">
+                        <p className="text-2xl font-black text-emerald-600">{present.length}</p>
+                        <p className="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Present</p>
+                    </div>
+                    <div className="text-center">
+                        <p className="text-2xl font-black text-red-500">{missing.length}</p>
+                        <p className="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Missing</p>
+                    </div>
+                    <div className="text-center">
+                        <p className="text-2xl font-black text-amber-500">{reassigned.length}</p>
+                        <p className="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Reassigned</p>
+                    </div>
+                    {pending.length > 0 && (
+                        <div className="text-center">
+                            <p className="text-2xl font-black text-slate-400">{pending.length}</p>
+                            <p className="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Skipped</p>
+                        </div>
+                    )}
+                </div>
+            </motion.div>
+
+            {/* Missing items detail */}
+            {missing.length > 0 && (
+                <div className="bg-red-50/80 dark:bg-red-950/20 border border-red-200/60 dark:border-red-800/40 rounded-xl p-4">
+                    <h4 className="text-xs font-bold text-red-700 dark:text-red-400 mb-2 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" />Missing Devices ({missing.length})
+                    </h4>
+                    <div className="space-y-1.5">
+                        {missing.map(r => (
+                            <div key={r.deviceId} className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400">
+                                <X className="w-3 h-3 flex-shrink-0" />
+                                <span className="font-medium">{r.deviceName}</span>
+                                <span className="text-red-400 dark:text-red-500">— {r.location}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Reassigned items detail */}
+            {reassigned.length > 0 && (
+                <div className="bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/40 rounded-xl p-4">
+                    <h4 className="text-xs font-bold text-amber-700 dark:text-amber-400 mb-2 flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5" />Reassigned Devices ({reassigned.length})
+                    </h4>
+                    <div className="space-y-1.5">
+                        {reassigned.map(r => (
+                            <div key={r.deviceId} className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+                                <ChevronRight className="w-3 h-3 flex-shrink-0" />
+                                <span className="font-medium">{r.deviceName}</span>
+                                <span className="text-amber-500">→ {r.assignedTo}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex items-center gap-3 pt-2">
+                <Button variant="outline" size="sm" onClick={() => setPhase('auditing')} className="h-9 text-xs gap-1.5">
+                    <ArrowLeft className="w-3.5 h-3.5" />Go Back & Edit
+                </Button>
+                <div className="flex-1" />
+                <Button
+                    onClick={saveAudit}
+                    disabled={saving}
+                    className="h-9 text-sm font-bold gap-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white border-0 shadow-md"
+                >
+                    {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                    {saving ? 'Saving…' : 'Save Audit'}
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─── MAIN PAGE COMPONENT ──────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -794,7 +1263,7 @@ export default function KeeprPage() {
     const [qrDevice, setQrDevice] = useState<Device | null>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [openLocation, setOpenLocation] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'devices' | 'history' | 'accessories'>('devices');
+    const [activeTab, setActiveTab] = useState<'devices' | 'history' | 'accessories' | 'audit'>('devices');
     const [showWelcome, setShowWelcome] = useState(false);
 
     // Check first-visit flag
@@ -1094,6 +1563,7 @@ export default function KeeprPage() {
                 <div className="flex items-center gap-1 bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 rounded-lg p-1 w-fit">
                     {([
                         { key: 'devices', label: 'Devices', icon: Package },
+                        { key: 'audit', label: 'Audit', icon: ClipboardCheck },
                         { key: 'history', label: 'History', icon: History },
                         { key: 'accessories', label: 'Accessories', icon: Cable },
                     ] as const).map(tab => (
@@ -1244,6 +1714,9 @@ export default function KeeprPage() {
 
                 {/* ── History Tab ──────────────────────────────────────────── */}
                 {activeTab === 'history' && <HistoryPanel devices={devices} />}
+
+                {/* ── Audit Tab ────────────────────────────────────────────── */}
+                {activeTab === 'audit' && <AuditPanel devices={devices} userName={user?.displayName ?? user?.email ?? 'Unknown'} />}
 
                 {/* ── Accessories Tab ──────────────────────────────────────── */}
                 {activeTab === 'accessories' && <AccessoriesPanel devices={devices} />}
