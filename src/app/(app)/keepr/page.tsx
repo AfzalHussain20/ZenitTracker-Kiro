@@ -766,8 +766,49 @@ function HistoryPanel({ devices }: { devices: Device[] }) {
     );
 }
 
+// ─── Reusable Jump Nav Bar ────────────────────────────────────────────────────
+function JumpNavBar({ items, activeKey, onJump, label = 'Jump to:' }: {
+    items: { key: string; label: string; count?: number; danger?: boolean }[];
+    activeKey?: string | null;
+    onJump: (key: string) => void;
+    label?: string;
+}) {
+    if (items.length <= 1) return null;
+    return (
+        <div className="flex items-center gap-2 flex-wrap sticky top-0 z-10 bg-gradient-to-b from-slate-50 via-slate-50/95 to-transparent dark:from-slate-950 dark:via-slate-950/95 pb-3 pt-1 -mt-1">
+            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mr-1">{label}</span>
+            {items.map(item => {
+                const isActive = activeKey === item.key;
+                return (
+                    <button
+                        key={item.key}
+                        onClick={() => onJump(item.key)}
+                        className={cn(
+                            'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border',
+                            isActive
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                : item.danger
+                                    ? 'bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800/50 hover:bg-red-100'
+                                    : 'bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/30'
+                        )}
+                    >
+                        <MapPin className="w-3 h-3" />
+                        {item.label}
+                        {item.count != null && (
+                            <span className={cn('px-1.5 py-0.5 rounded-full text-[10px] font-bold', isActive ? 'bg-white/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500')}>
+                                {item.count}
+                            </span>
+                        )}
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
 // ─── Accessories Panel ────────────────────────────────────────────────────────
 function AccessoriesPanel({ devices }: { devices: Device[] }) {
+    const [openLocation, setOpenLocation] = useState<string | null>(null);
     const accessories = devices.filter(d => d.type === 'accessory');
     const grouped = useMemo(() => {
         const map: Record<string, Device[]> = {};
@@ -776,8 +817,15 @@ function AccessoriesPanel({ devices }: { devices: Device[] }) {
             if (!map[loc]) map[loc] = [];
             map[loc].push(a);
         }
-        return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
+        return Object.entries(map).sort(([, a], [, b]) => b.length - a.length);
     }, [accessories]);
+
+    const jumpTo = (location: string) => {
+        setOpenLocation(location);
+        setTimeout(() => {
+            document.getElementById(`acc-${location.replace(/\s+/g, '-')}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 100);
+    };
 
     if (accessories.length === 0) {
         return (
@@ -789,41 +837,374 @@ function AccessoriesPanel({ devices }: { devices: Device[] }) {
     }
 
     return (
-        <div className="space-y-4">
-            {grouped.map(([location, items]) => (
-                <div key={location} className="bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-700/60 rounded-xl overflow-hidden">
-                    <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-                        <div className="flex items-center gap-2">
-                            <MapPin className="w-3.5 h-3.5 text-amber-500" />
-                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{location}</span>
-                            <span className="text-[10px] text-slate-400 ml-auto">{items.length} item{items.length !== 1 ? 's' : ''}</span>
-                        </div>
-                    </div>
-                    <div className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                        {items.map(a => {
-                            const statusConfig = getStatusConfig(a.status);
-                            return (
-                                <div key={a.id} className="flex items-center gap-3 px-4 py-2.5">
-                                    <Cable className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                        <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate block">{a.name}</span>
-                                        {a.accessoryType && <span className="text-[10px] text-slate-400">{a.accessoryType}</span>}
-                                    </div>
-                                    <div className={cn('flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold', statusConfig.bg, statusConfig.text)}>
-                                        <span className={cn('w-1.5 h-1.5 rounded-full', statusConfig.dot)} />
-                                        {statusConfig.label}
-                                    </div>
-                                    {a.quantity && (
-                                        <span className={cn('text-xs font-semibold tabular-nums', (a.quantityAvailable ?? 0) === 0 ? 'text-red-500' : 'text-slate-500')}>
-                                            {a.quantityAvailable ?? 0}/{a.quantity}
+        <div className="space-y-3">
+            <JumpNavBar
+                items={grouped.map(([loc, items]) => ({
+                    key: loc,
+                    label: loc,
+                    count: items.length,
+                    danger: items.some(a => a.status === 'missing'),
+                }))}
+                activeKey={openLocation}
+                onJump={jumpTo}
+            />
+            {grouped.map(([location, items]) => {
+                const isOpen = openLocation === location;
+                const missingCount = items.filter(a => a.status === 'missing').length;
+                return (
+                    <div key={location} id={`acc-${location.replace(/\s+/g, '-')}`} className="bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-700/60 rounded-xl overflow-hidden scroll-mt-28">
+                        <Collapsible open={isOpen} onOpenChange={() => setOpenLocation(prev => prev === location ? null : location)}>
+                            <CollapsibleTrigger className="w-full">
+                                <div className="flex items-center gap-2 px-4 py-3 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors cursor-pointer">
+                                    <MapPin className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-300 flex-1 text-left">{location}</span>
+                                    <span className="text-[10px] text-slate-400">{items.length} item{items.length !== 1 ? 's' : ''}</span>
+                                    {missingCount > 0 && (
+                                        <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20 text-[10px] font-bold text-red-600 dark:text-red-400">
+                                            <AlertTriangle className="w-3 h-3" />{missingCount}
                                         </span>
                                     )}
+                                    <ChevronDown className={cn('w-4 h-4 text-slate-400 transition-transform duration-200', isOpen && 'rotate-180')} />
                                 </div>
-                            );
-                        })}
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                                <div className="border-t border-slate-100 dark:border-slate-800 divide-y divide-slate-50 dark:divide-slate-800/50">
+                                    {items.map(a => {
+                                        const statusConfig = getStatusConfig(a.status);
+                                        return (
+                                            <div key={a.id} className="flex items-center gap-3 px-4 py-2.5">
+                                                <Cable className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                                                <div className="flex-1 min-w-0">
+                                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate block">{a.name}</span>
+                                                    {a.accessoryType && <span className="text-[10px] text-slate-400">{a.accessoryType}</span>}
+                                                </div>
+                                                <div className={cn('flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold', statusConfig.bg, statusConfig.text)}>
+                                                    <span className={cn('w-1.5 h-1.5 rounded-full', statusConfig.dot)} />
+                                                    {statusConfig.label}
+                                                </div>
+                                                {a.quantity && (
+                                                    <span className={cn('text-xs font-semibold tabular-nums', (a.quantityAvailable ?? 0) === 0 ? 'text-red-500' : 'text-slate-500')}>
+                                                        {a.quantityAvailable ?? 0}/{a.quantity}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </CollapsibleContent>
+                        </Collapsible>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ─── Avatar color helper ──────────────────────────────────────────────────────
+const AVATAR_COLORS = [
+    'bg-blue-500', 'bg-violet-500', 'bg-emerald-500', 'bg-rose-500',
+    'bg-amber-500', 'bg-cyan-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500', 'bg-orange-500',
+];
+function getAvatarColor(name: string): string {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
+    return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+function getInitials(name: string): string {
+    return name.split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
+}
+
+// ─── People / Users Panel ─────────────────────────────────────────────────────
+interface PeopleHistoryRecord {
+    id: string;
+    deviceId: string;
+    deviceName: string;
+    deviceType: string;
+    userName: string;
+    accountId: string;
+    team: string;
+    checkedOutAt: string | null;
+    checkedInAt: string | null;
+    durationHours: number | null;
+}
+
+interface PersonSummary {
+    key: string;
+    name: string;
+    team: string;
+    sessions: number;
+    totalHours: number;
+    currentlyHolding: number;
+    uniqueDevices: number;
+    lastActivity: string;
+    records: PeopleHistoryRecord[];
+}
+
+function PeoplePanel({ devices }: { devices: Device[] }) {
+    const [records, setRecords] = useState<PeopleHistoryRecord[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [search, setSearch] = useState('');
+    const [selectedKey, setSelectedKey] = useState<string | null>(null);
+
+    useEffect(() => {
+        setLoading(true);
+        fetch('/api/keepr/history?limit=500')
+            .then(r => r.json())
+            .then(d => setRecords(d.records ?? []))
+            .catch(() => setRecords([]))
+            .finally(() => setLoading(false));
+    }, []);
+
+    // Build per-person summaries from history + current device assignments
+    const people = useMemo<PersonSummary[]>(() => {
+        const map: Record<string, PersonSummary> = {};
+
+        const ensure = (key: string, name: string, team: string) => {
+            if (!map[key]) {
+                map[key] = { key, name, team: team || '', sessions: 0, totalHours: 0, currentlyHolding: 0, uniqueDevices: 0, lastActivity: '', records: [] };
+            }
+            return map[key];
+        };
+
+        // From history
+        for (const r of records) {
+            const key = r.accountId || r.userName;
+            if (!key) continue;
+            const p = ensure(key, r.userName, r.team);
+            p.records.push(r);
+            p.sessions++;
+            p.totalHours += r.durationHours ?? 0;
+            if (!r.checkedInAt) p.currentlyHolding++;
+            const activity = r.checkedOutAt ?? '';
+            if (activity > p.lastActivity) { p.lastActivity = activity; if (r.team) p.team = r.team; }
+        }
+
+        // Merge in current device holders (may not yet be in history)
+        for (const d of devices) {
+            if (d.status === 'checked-out' && d.checkedOutBy) {
+                const key = d.checkedOutBy.uid || d.checkedOutBy.name;
+                const p = ensure(key, d.checkedOutBy.name, '');
+                // If this device session isn't already represented as an open record, add a synthetic one
+                const alreadyOpen = p.records.some(r => r.deviceName === d.name && !r.checkedInAt);
+                if (!alreadyOpen) {
+                    p.records.push({
+                        id: `live_${d.id}`,
+                        deviceId: d.id,
+                        deviceName: d.name,
+                        deviceType: d.type,
+                        userName: d.checkedOutBy.name,
+                        accountId: d.checkedOutBy.uid,
+                        team: '',
+                        checkedOutAt: d.checkedOutAt ?? null,
+                        checkedInAt: null,
+                        durationHours: null,
+                    });
+                    p.currentlyHolding++;
+                    p.sessions++;
+                    const activity = d.checkedOutAt ?? '';
+                    if (activity > p.lastActivity) p.lastActivity = activity;
+                }
+            }
+        }
+
+        // Finalize unique device counts + sort each person's records newest first
+        for (const p of Object.values(map)) {
+            p.uniqueDevices = new Set(p.records.map(r => r.deviceName)).size;
+            p.totalHours = parseFloat(p.totalHours.toFixed(1));
+            p.records.sort((a, b) => (b.checkedOutAt ?? '').localeCompare(a.checkedOutAt ?? ''));
+        }
+
+        return Object.values(map).sort((a, b) => {
+            // People currently holding devices first, then by recent activity
+            if (b.currentlyHolding !== a.currentlyHolding) return b.currentlyHolding - a.currentlyHolding;
+            return (b.lastActivity ?? '').localeCompare(a.lastActivity ?? '');
+        });
+    }, [records, devices]);
+
+    const filteredPeople = useMemo(() => {
+        const q = search.toLowerCase().trim();
+        if (!q) return people;
+        return people.filter(p => p.name.toLowerCase().includes(q) || p.team.toLowerCase().includes(q));
+    }, [people, search]);
+
+    // Auto-select first person on load
+    useEffect(() => {
+        if (!selectedKey && filteredPeople.length > 0) setSelectedKey(filteredPeople[0].key);
+    }, [filteredPeople, selectedKey]);
+
+    const selected = people.find(p => p.key === selectedKey) ?? null;
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center py-16">
+                <RefreshCw className="w-5 h-5 text-blue-500 animate-spin" />
+            </div>
+        );
+    }
+
+    if (people.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+                <Users className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-3" />
+                <p className="text-sm text-slate-500 font-medium">No user activity yet</p>
+                <p className="text-xs text-slate-400 mt-1">As people check out devices, they&apos;ll show up here with full history.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
+            {/* ── People list ── */}
+            <div className="space-y-3">
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                    <Input
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        placeholder="Search people…"
+                        className="pl-9 h-9 text-sm bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-700"
+                    />
+                </div>
+                <div className="space-y-1.5 lg:max-h-[600px] lg:overflow-y-auto lg:pr-1">
+                    {filteredPeople.map(p => {
+                        const isSelected = p.key === selectedKey;
+                        return (
+                            <button
+                                key={p.key}
+                                onClick={() => setSelectedKey(p.key)}
+                                className={cn(
+                                    'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all text-left',
+                                    isSelected
+                                        ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700 shadow-sm'
+                                        : 'bg-white/80 dark:bg-slate-900/80 border-slate-200/80 dark:border-slate-700/60 hover:border-blue-200 dark:hover:border-blue-800'
+                                )}
+                            >
+                                <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center text-white text-xs font-black flex-shrink-0', getAvatarColor(p.name))}>
+                                    {getInitials(p.name)}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">{p.name}</p>
+                                    <p className="text-[10px] text-slate-400 truncate">{p.team || `${p.uniqueDevices} device${p.uniqueDevices !== 1 ? 's' : ''} used`}</p>
+                                </div>
+                                {p.currentlyHolding > 0 && (
+                                    <span className="flex-shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/20 text-[10px] font-bold text-sky-600 dark:text-sky-400">
+                                        {p.currentlyHolding} held
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* ── Selected person timeline ── */}
+            {selected ? (
+                <div className="space-y-4">
+                    {/* Person header */}
+                    <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-700/60 rounded-xl p-5">
+                        <div className="flex items-center gap-4">
+                            <div className={cn('w-14 h-14 rounded-2xl flex items-center justify-center text-white text-lg font-black flex-shrink-0 shadow-md', getAvatarColor(selected.name))}>
+                                {getInitials(selected.name)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <h3 className="text-lg font-bold text-slate-800 dark:text-white truncate">{selected.name}</h3>
+                                {selected.team && <p className="text-xs text-slate-400">{selected.team}</p>}
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-4 gap-2 mt-4">
+                            {[
+                                { label: 'Currently Has', value: selected.currentlyHolding, color: 'text-sky-600' },
+                                { label: 'Total Sessions', value: selected.sessions, color: 'text-slate-700 dark:text-slate-200' },
+                                { label: 'Devices Used', value: selected.uniqueDevices, color: 'text-violet-600' },
+                                { label: 'Total Hours', value: `${selected.totalHours}h`, color: 'text-emerald-600' },
+                            ].map(s => (
+                                <div key={s.label} className="text-center px-2 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                                    <p className={cn('text-lg font-black tabular-nums', s.color)}>{s.value}</p>
+                                    <p className="text-[9px] uppercase tracking-wide text-slate-400 font-bold">{s.label}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Currently holding */}
+                    {selected.records.some(r => !r.checkedInAt) && (
+                        <div className="bg-sky-50/80 dark:bg-sky-950/20 border border-sky-200/60 dark:border-sky-800/40 rounded-xl p-4">
+                            <h4 className="text-xs font-bold text-sky-700 dark:text-sky-400 mb-2.5 flex items-center gap-1.5">
+                                <Smartphone className="w-3.5 h-3.5" />Currently Has
+                            </h4>
+                            <div className="space-y-1.5">
+                                {selected.records.filter(r => !r.checkedInAt).map(r => {
+                                    const overdue = getOverdueInfo(r.checkedOutAt ?? undefined);
+                                    return (
+                                        <div key={r.id} className="flex items-center gap-2 text-xs">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse flex-shrink-0" />
+                                            <span className="font-semibold text-slate-700 dark:text-slate-200">{r.deviceName}</span>
+                                            <span className="text-slate-400 ml-auto">
+                                                since {r.checkedOutAt ? formatDate(r.checkedOutAt) : '—'}
+                                            </span>
+                                            {overdue.isOverdue && (
+                                                <span className="text-[10px] font-bold text-red-500 flex items-center gap-0.5">
+                                                    <AlertTriangle className="w-3 h-3" />{overdue.duration}
+                                                </span>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Full timeline */}
+                    <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-700/60 rounded-xl p-5">
+                        <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-1.5">
+                            <History className="w-3.5 h-3.5 text-slate-400" />Device Timeline
+                        </h4>
+                        <div className="relative pl-5">
+                            {/* Vertical line */}
+                            <div className="absolute left-[7px] top-1 bottom-1 w-px bg-slate-200 dark:bg-slate-700" />
+                            <div className="space-y-4">
+                                {selected.records.map(r => {
+                                    const typeConfig = getTypeConfig(r.deviceType);
+                                    const isOpen = !r.checkedInAt;
+                                    return (
+                                        <div key={r.id} className="relative">
+                                            {/* Dot */}
+                                            <div className={cn(
+                                                'absolute -left-5 top-1 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-slate-900',
+                                                isOpen ? 'bg-sky-500' : 'bg-slate-300 dark:bg-slate-600'
+                                            )} />
+                                            <div className="flex items-start gap-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{r.deviceName}</p>
+                                                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                                        <span className="text-[11px] text-slate-400">
+                                                            {r.checkedOutAt ? formatDate(r.checkedOutAt) : '—'}
+                                                        </span>
+                                                        <ChevronRight className="w-3 h-3 text-slate-300" />
+                                                        <span className="text-[11px] text-slate-400">
+                                                            {isOpen ? 'still has it' : (r.checkedInAt ? formatDate(r.checkedInAt) : '—')}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <span className={cn(
+                                                    'flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold',
+                                                    isOpen ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                                                )}>
+                                                    {isOpen ? 'In use' : formatDuration(r.durationHours)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     </div>
                 </div>
-            ))}
+            ) : (
+                <div className="flex items-center justify-center py-16 text-sm text-slate-400">
+                    Select a person to see their device history
+                </div>
+            )}
         </div>
     );
 }
@@ -1393,7 +1774,7 @@ export default function KeeprPage() {
     const [qrDevice, setQrDevice] = useState<Device | null>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [openLocation, setOpenLocation] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'devices' | 'history' | 'accessories' | 'audit'>('devices');
+    const [activeTab, setActiveTab] = useState<'devices' | 'history' | 'accessories' | 'audit' | 'people'>('devices');
     const [showWelcome, setShowWelcome] = useState(false);
     const [assignTarget, setAssignTarget] = useState<Device | null>(null);
 
@@ -1771,6 +2152,7 @@ export default function KeeprPage() {
                 <div className="flex items-center gap-1 bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 rounded-lg p-1 w-fit">
                     {([
                         { key: 'devices', label: 'Devices', icon: Package },
+                        { key: 'people', label: 'People', icon: Users },
                         { key: 'audit', label: 'Audit', icon: ClipboardCheck },
                         { key: 'history', label: 'History', icon: History },
                         { key: 'accessories', label: 'Accessories', icon: Cable },
@@ -1899,31 +2281,16 @@ export default function KeeprPage() {
                         ) : (
                             <>
                                 {/* Jump nav — click to scroll & expand */}
-                                <div className="flex items-center gap-2 flex-wrap sticky top-0 z-10 bg-gradient-to-b from-slate-50 via-slate-50/95 to-transparent dark:from-slate-950 dark:via-slate-950/95 pb-3 pt-1 -mt-1">
-                                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mr-1">Jump to:</span>
-                                    {locationGroups.map(([location, items]) => {
-                                        const devCount = items.filter(d => d.type !== 'accessory').length;
-                                        const isActive = openLocation === location;
-                                        return (
-                                            <button
-                                                key={location}
-                                                onClick={() => handleJumpToLocation(location)}
-                                                className={cn(
-                                                    'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border',
-                                                    isActive
-                                                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                                                        : 'bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/30'
-                                                )}
-                                            >
-                                                <MapPin className="w-3 h-3" />
-                                                {location}
-                                                <span className={cn('px-1.5 py-0.5 rounded-full text-[10px] font-bold', isActive ? 'bg-white/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500')}>
-                                                    {devCount}
-                                                </span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
+                                <JumpNavBar
+                                    items={locationGroups.map(([location, items]) => ({
+                                        key: location,
+                                        label: location,
+                                        count: items.filter(d => d.type !== 'accessory').length,
+                                        danger: items.some(d => d.status === 'missing'),
+                                    }))}
+                                    activeKey={openLocation}
+                                    onJump={handleJumpToLocation}
+                                />
 
                                 <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-3">
                                     {locationGroups.map(([location, items]) => (
@@ -1960,6 +2327,9 @@ export default function KeeprPage() {
 
                 {/* ── Audit Tab ────────────────────────────────────────────── */}
                 {activeTab === 'audit' && <AuditPanel devices={devices} userName={user?.displayName ?? user?.email ?? 'Unknown'} />}
+
+                {/* ── People Tab ───────────────────────────────────────────── */}
+                {activeTab === 'people' && <PeoplePanel devices={devices} />}
 
                 {/* ── Accessories Tab ──────────────────────────────────────── */}
                 {activeTab === 'accessories' && <AccessoriesPanel devices={devices} />}
