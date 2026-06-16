@@ -3,40 +3,29 @@
 /**
  * PeopleOrbit3D — a smooth, cinematic 3D "fleet command center".
  *
- * Reliability-first design (no EffectComposer / no raw GLSL — both caused the
- * blank screen + flash on recent three versions):
- *  • Glow is faked with additive radial-gradient sprites stacked behind every
- *    emissive object — bulletproof "bloom" that renders on every GPU.
- *  • Connections use drei <Line> (already proven elsewhere in this app).
- *  • The camera only EASES THE ORBIT TARGET for ~1s after a selection, then
- *    hands full control back to OrbitControls — so drag/rotate always works.
+ * Reliability-first (no EffectComposer / no raw GLSL — both caused the blank
+ * screen + flash on recent three). Glow is faked with additive sprites; energy
+ * beams use drei <Line> with an animated dash flow; camera only eases the orbit
+ * target briefly on selection so drag/rotate always stays in the user's hands.
  *
  * Fully self-contained. Safe to remove without touching the rest of Keepr.
  */
 
 import { useRef, useMemo, useState, useEffect, Suspense } from 'react';
 import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber';
-import { OrbitControls, Billboard, Text, Stars, Trail, Line } from '@react-three/drei';
+import { OrbitControls, Billboard, Text, Stars, Trail, Line, Float, AdaptiveDpr, AdaptiveEvents } from '@react-three/drei';
 import * as THREE from 'three';
 
 // ─── Public data shapes ─────────────────────────────────────────────────────
-export interface OrbitDevice {
-    id: string;
-    name: string;
-    type: string;
-    active: boolean;
-}
+export interface OrbitDevice { id: string; name: string; type: string; active: boolean; }
 export interface OrbitPerson {
-    key: string;
-    name: string;
-    team: string;
-    currentlyHolding: number;
-    sessions: number;
-    uniqueDevices: number;
+    key: string; name: string; team: string;
+    currentlyHolding: number; sessions: number; uniqueDevices: number;
     devices: OrbitDevice[];
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
+const easeOutCubic = (x: number) => 1 - Math.pow(1 - x, 3);
 function hashStr(s: string): number {
     let h = 0;
     for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0x7fffffff;
@@ -83,7 +72,7 @@ function satellitePositions(count: number, seed: number): THREE.Vector3[] {
     return out;
 }
 
-// ─── Soft glow sprite texture (built once) ───────────────────────────────────
+// ─── Soft glow sprite (built once) ───────────────────────────────────────────
 let _glowTex: THREE.Texture | null = null;
 function glowTexture(): THREE.Texture {
     if (_glowTex) return _glowTex;
@@ -101,8 +90,6 @@ function glowTexture(): THREE.Texture {
     _glowTex = new THREE.CanvasTexture(c);
     return _glowTex;
 }
-
-// Stacked additive glow sprites behind an object — the "bloom" bleed
 function Glow({ color, scale, opacity = 1 }: { color: THREE.Color; scale: number; opacity?: number }) {
     const tex = useMemo(() => glowTexture(), []);
     return (
@@ -111,9 +98,33 @@ function Glow({ color, scale, opacity = 1 }: { color: THREE.Color; scale: number
                 <spriteMaterial map={tex} color={color} blending={THREE.AdditiveBlending} transparent opacity={0.55 * opacity} depthWrite={false} />
             </sprite>
             <sprite scale={[scale * 1.9, scale * 1.9, scale * 1.9]}>
-                <spriteMaterial map={tex} color={color} blending={THREE.AdditiveBlending} transparent opacity={0.22 * opacity} depthWrite={false} />
+                <spriteMaterial map={tex} color={color} blending={THREE.AdditiveBlending} transparent opacity={0.2 * opacity} depthWrite={false} />
             </sprite>
         </>
+    );
+}
+
+// ─── Flowing energy line (animated dash offset) ──────────────────────────────
+function EnergyLine({ from, to, color, active, speed = 1 }: {
+    from: [number, number, number]; to: [number, number, number]; color: string; active: boolean; speed?: number;
+}) {
+    const ref = useRef<any>(null);
+    useFrame((_, dt) => {
+        const mat = ref.current?.material;
+        if (mat && 'dashOffset' in mat) mat.dashOffset -= dt * (active ? 1.6 : 0.7) * speed;
+    });
+    return (
+        <Line
+            ref={ref}
+            points={[from, to]}
+            color={color}
+            lineWidth={active ? 1.8 : 1}
+            transparent
+            opacity={active ? 0.85 : 0.4}
+            dashed
+            dashSize={0.28}
+            gapSize={0.14}
+        />
     );
 }
 
@@ -137,10 +148,12 @@ function Core() {
     return (
         <group>
             <Glow color={new THREE.Color('#818cf8')} scale={6} />
-            <mesh ref={inner}>
-                <icosahedronGeometry args={[0.8, 2]} />
-                <meshStandardMaterial color="#c7d2fe" emissive="#6366f1" emissiveIntensity={2.4} roughness={0.2} metalness={0.7} />
-            </mesh>
+            <Float speed={1.2} rotationIntensity={0.15} floatIntensity={0.25}>
+                <mesh ref={inner}>
+                    <icosahedronGeometry args={[0.8, 2]} />
+                    <meshStandardMaterial color="#c7d2fe" emissive="#6366f1" emissiveIntensity={2.4} roughness={0.2} metalness={0.7} />
+                </mesh>
+            </Float>
             <mesh ref={shell}>
                 <icosahedronGeometry args={[1.3, 1]} />
                 <meshBasicMaterial color="#818cf8" wireframe transparent opacity={0.35} />
@@ -158,7 +171,7 @@ function Core() {
     );
 }
 
-// ─── Device crystal w/ motion trail ──────────────────────────────────────────
+// ─── Device crystal ──────────────────────────────────────────────────────────
 function Satellite({ device, position, onClick, isSelected }: {
     device: OrbitDevice; position: THREE.Vector3; onClick: () => void; isSelected: boolean;
 }) {
@@ -174,8 +187,7 @@ function Satellite({ device, position, onClick, isSelected }: {
             ref.current.rotation.x += dt * 0.5;
             const target = (isSelected ? 1.5 : hovered ? 1.25 : 1) * 0.24;
             const cur = ref.current.scale.x;
-            const next = cur + (target - cur) * 0.2 + (isSelected ? Math.sin(t * 6) * 0.01 : 0);
-            ref.current.scale.setScalar(next);
+            ref.current.scale.setScalar(cur + (target - cur) * 0.2 + (isSelected ? Math.sin(t * 6) * 0.01 : 0));
         }
         if (ring.current) { ring.current.rotation.z += dt * 3; ring.current.rotation.x = Math.PI / 2; }
     });
@@ -215,25 +227,32 @@ function Satellite({ device, position, onClick, isSelected }: {
     );
 }
 
-// ─── A person's device cluster ───────────────────────────────────────────────
+// ─── A person's device cluster (animated entrance) ───────────────────────────
 function DeviceCluster({ person, onSelectDevice, selectedDeviceId }: {
     person: OrbitPerson; onSelectDevice: (d: OrbitDevice) => void; selectedDeviceId: string | null;
 }) {
     const groupRef = useRef<THREE.Group>(null);
+    const grow = useRef(0);
     const seed = useMemo(() => hashStr(person.name), [person.name]);
     const positions = useMemo(() => satellitePositions(person.devices.length, seed), [person.devices.length, seed]);
-    useFrame((_, dt) => { if (groupRef.current) groupRef.current.rotation.y += dt * 0.2; });
+
+    useFrame((_, dt) => {
+        grow.current = Math.min(grow.current + dt * 2.4, 1);
+        if (groupRef.current) {
+            groupRef.current.rotation.y += dt * 0.2;
+            groupRef.current.scale.setScalar(easeOutCubic(grow.current));
+        }
+    });
 
     return (
-        <group ref={groupRef}>
+        <group ref={groupRef} scale={0.001}>
             {person.devices.map((d, i) => (
                 <group key={d.id}>
-                    <Line
-                        points={[[0, 0, 0], [positions[i].x, positions[i].y, positions[i].z]]}
-                        color={d.active ? '#e0f2fe' : '#475569'}
-                        lineWidth={d.active ? 1.6 : 0.9}
-                        transparent
-                        opacity={d.active ? 0.7 : 0.3}
+                    <EnergyLine
+                        from={[0, 0, 0]}
+                        to={[positions[i].x, positions[i].y, positions[i].z]}
+                        color={d.active ? '#e0f2fe' : '#64748b'}
+                        active={d.active}
                     />
                     <Satellite device={d} position={positions[i]} onClick={() => onSelectDevice(d)} isSelected={selectedDeviceId === d.id} />
                 </group>
@@ -262,7 +281,12 @@ function PersonNode({ person, position, isSelected, anySelected, onSelect, onSel
             const cur = grpRef.current.scale.x;
             grpRef.current.scale.setScalar(cur + (target - cur) * 0.12);
         }
-        if (coreRef.current) coreRef.current.rotation.y += dt * 0.5;
+        if (coreRef.current) {
+            coreRef.current.rotation.y += dt * 0.5;
+            // gentle idle breathing on the emissive heart
+            const breathe = 1 + Math.sin(t * 1.8 + position.x) * 0.04;
+            coreRef.current.scale.setScalar(breathe);
+        }
         if (halo.current && isSelected) {
             halo.current.rotation.z += dt * 0.9;
             halo.current.scale.setScalar(2.0 + Math.sin(t * 2) * 0.1);
@@ -271,28 +295,17 @@ function PersonNode({ person, position, isSelected, anySelected, onSelect, onSel
 
     return (
         <group position={position}>
-            {/* glow halo (dimmed when another is selected) */}
             <Glow color={color} scale={baseSize * 3} opacity={dim ? 0.3 : isSelected ? 1.3 : 0.9} />
 
             <group ref={grpRef}>
-                {/* emissive heart */}
                 <mesh ref={coreRef}
                     onClick={(e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); onSelect(); }}
                     onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer'; }}
                     onPointerOut={() => { setHovered(false); document.body.style.cursor = 'auto'; }}
                 >
                     <icosahedronGeometry args={[0.6, 3]} />
-                    <meshStandardMaterial
-                        color={color}
-                        emissive={color}
-                        emissiveIntensity={dim ? 0.5 : isSelected ? 2.2 : 1.3}
-                        roughness={0.2}
-                        metalness={0.5}
-                        transparent
-                        opacity={dim ? 0.5 : 1}
-                    />
+                    <meshStandardMaterial color={color} emissive={color} emissiveIntensity={dim ? 0.5 : isSelected ? 2.2 : 1.3} roughness={0.2} metalness={0.5} transparent opacity={dim ? 0.5 : 1} />
                 </mesh>
-                {/* wireframe energy shell */}
                 <mesh scale={1.25}>
                     <icosahedronGeometry args={[0.6, 1]} />
                     <meshBasicMaterial color={color} wireframe transparent opacity={dim ? 0.08 : 0.25} />
@@ -305,7 +318,6 @@ function PersonNode({ person, position, isSelected, anySelected, onSelect, onSel
                 )}
             </group>
 
-            {/* name label */}
             <Billboard position={[0, baseSize + 0.45, 0]}>
                 <Text fontSize={isSelected ? 0.34 : 0.26} color={dim ? '#475569' : '#ffffff'} anchorX="center" anchorY="bottom" outlineWidth={0.016} outlineColor="#000000">
                     {person.name}
@@ -317,19 +329,14 @@ function PersonNode({ person, position, isSelected, anySelected, onSelect, onSel
                 )}
             </Billboard>
 
-            {/* connection to core + device cluster when selected */}
             {isSelected && (
                 <>
-                    <Line
-                        points={[[0, 0, 0], [-position.x, -position.y, -position.z]]}
+                    <EnergyLine
+                        from={[0, 0, 0]}
+                        to={[-position.x, -position.y, -position.z]}
                         color={color.getStyle()}
-                        lineWidth={1.3}
-                        transparent
-                        opacity={0.4}
-                        dashed
-                        dashScale={4}
-                        dashSize={0.3}
-                        gapSize={0.15}
+                        active
+                        speed={0.8}
                     />
                     <DeviceCluster person={person} onSelectDevice={onSelectDevice} selectedDeviceId={selectedDeviceId} />
                 </>
@@ -338,20 +345,39 @@ function PersonNode({ person, position, isSelected, anySelected, onSelect, onSel
     );
 }
 
-// ─── Camera focus — eases ORBIT TARGET only, briefly, never fights the user ──
+// ─── Faint orbital track rings + containment field ───────────────────────────
+function OrbitTracks({ radius }: { radius: number }) {
+    return (
+        <group>
+            <mesh rotation={[Math.PI / 2, 0, 0]}>
+                <torusGeometry args={[radius, 0.012, 8, 160]} />
+                <meshBasicMaterial color="#334155" transparent opacity={0.5} />
+            </mesh>
+            <mesh rotation={[Math.PI / 2, 0, 0]} scale={1.18}>
+                <torusGeometry args={[radius, 0.006, 8, 160]} />
+                <meshBasicMaterial color="#1e293b" transparent opacity={0.4} />
+            </mesh>
+            {/* containment field */}
+            <mesh>
+                <sphereGeometry args={[radius * 1.7, 24, 24]} />
+                <meshBasicMaterial color="#1e293b" wireframe transparent opacity={0.06} />
+            </mesh>
+        </group>
+    );
+}
+
+// ─── Camera focus — eases ORBIT TARGET only, briefly ─────────────────────────
 function FocusController({ targetPos, controlsRef, selectionToken }: {
     targetPos: THREE.Vector3 | null; controlsRef: React.MutableRefObject<any>; selectionToken: string;
 }) {
     const animating = useRef(false);
     const dest = useRef(new THREE.Vector3(0, 0, 0));
-
     useEffect(() => {
         dest.current.copy(targetPos ?? new THREE.Vector3(0, 0, 0));
         animating.current = true;
         const id = setTimeout(() => { animating.current = false; }, 1000);
         return () => clearTimeout(id);
     }, [selectionToken]); // eslint-disable-line react-hooks/exhaustive-deps
-
     useFrame(() => {
         if (animating.current && controlsRef.current) {
             controlsRef.current.target.lerp(dest.current, 0.09);
@@ -366,43 +392,56 @@ function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDe
     onSelectDevice: (d: OrbitDevice) => void; selectedDeviceId: string | null;
 }) {
     const controlsRef = useRef<any>(null);
+    const introGrp = useRef<THREE.Group>(null);
+    const intro = useRef(0);
+
+    const ringRadius = useMemo(() => 4.5 + Math.min(people.length, 14) * 0.42, [people.length]);
     const positions = useMemo(() => {
         const n = people.length;
-        const R = 4.5 + Math.min(n, 14) * 0.42;
         return people.map((_, i) => {
             const a = (i / Math.max(n, 1)) * Math.PI * 2;
             const y = (i % 3 - 1) * 1.2;
-            return new THREE.Vector3(Math.cos(a) * R, y, Math.sin(a) * R);
+            return new THREE.Vector3(Math.cos(a) * ringRadius, y, Math.sin(a) * ringRadius);
         });
-    }, [people]);
+    }, [people, ringRadius]);
 
     const selectedIdx = people.findIndex(p => p.key === selectedKey);
     const focusTarget = selectedIdx >= 0 ? positions[selectedIdx] : null;
 
+    // scene entrance reveal
+    useFrame((_, dt) => {
+        if (intro.current < 1) {
+            intro.current = Math.min(intro.current + dt * 1.1, 1);
+            if (introGrp.current) introGrp.current.scale.setScalar(0.82 + 0.18 * easeOutCubic(intro.current));
+        }
+    });
+
     return (
         <>
             <color attach="background" args={['#04060f']} />
-            <fog attach="fog" args={['#04060f', 18, 48]} />
+            <fog attach="fog" args={['#04060f', 18, 50]} />
             <ambientLight intensity={0.35} />
             <pointLight position={[12, 10, 10]} intensity={1.3} />
             <pointLight position={[-12, -8, -10]} intensity={0.7} color="#8b5cf6" />
             <pointLight position={[0, 14, 0]} intensity={0.6} color="#38bdf8" />
             <Stars radius={70} depth={50} count={2200} factor={4} saturation={0} fade speed={1} />
 
-            <Core />
-
-            {people.map((p, i) => (
-                <PersonNode
-                    key={p.key}
-                    person={p}
-                    position={positions[i]}
-                    isSelected={p.key === selectedKey}
-                    anySelected={selectedKey !== null}
-                    onSelect={() => onSelectPerson(p.key === selectedKey ? null : p.key)}
-                    onSelectDevice={onSelectDevice}
-                    selectedDeviceId={selectedDeviceId}
-                />
-            ))}
+            <group ref={introGrp} scale={0.82}>
+                <OrbitTracks radius={ringRadius} />
+                <Core />
+                {people.map((p, i) => (
+                    <PersonNode
+                        key={p.key}
+                        person={p}
+                        position={positions[i]}
+                        isSelected={p.key === selectedKey}
+                        anySelected={selectedKey !== null}
+                        onSelect={() => onSelectPerson(p.key === selectedKey ? null : p.key)}
+                        onSelectDevice={onSelectDevice}
+                        selectedDeviceId={selectedDeviceId}
+                    />
+                ))}
+            </group>
 
             <FocusController targetPos={focusTarget} controlsRef={controlsRef} selectionToken={selectedKey ?? '__none__'} />
 
@@ -419,6 +458,9 @@ function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDe
                 rotateSpeed={0.8}
                 zoomSpeed={0.8}
             />
+
+            <AdaptiveDpr pixelated={false} />
+            <AdaptiveEvents />
         </>
     );
 }
@@ -432,7 +474,7 @@ export default function PeopleOrbit3D({ people, selectedKey, onSelectPerson, onS
         <Canvas
             camera={{ position: [0, 3, 15], fov: 55 }}
             dpr={[1, 2]}
-            gl={{ antialias: true, alpha: false }}
+            gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
             onPointerMissed={() => onSelectPerson(null)}
         >
             <Suspense fallback={null}>
