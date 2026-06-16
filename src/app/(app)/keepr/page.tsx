@@ -18,7 +18,7 @@ import {
     Monitor, Package, Filter, LayoutGrid, List, Star, Zap,
     TrendingUp, BarChart3, RefreshCw, Info, Edit3,
     ClipboardCheck, Crown, Users, History, Bell, Tag, ChevronRight,
-    ChevronDown, Settings, Download, Cable
+    ChevronDown, Settings, Download, Cable, MoreVertical
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -189,13 +189,15 @@ const fadeUp = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transi
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
 
 // ─── Compact Device Row ───────────────────────────────────────────────────────
-function DeviceRow({ device, onCheckout, onCheckin, onShowQR, onExpand, isExpanded }: {
+function DeviceRow({ device, onCheckout, onCheckin, onShowQR, onExpand, isExpanded, onSetStatus, onAssign }: {
     device: Device;
     onCheckout: (device: Device) => void;
     onCheckin: (device: Device) => void;
     onShowQR: (device: Device) => void;
     onExpand: (device: Device) => void;
     isExpanded: boolean;
+    onSetStatus: (device: Device, status: Device['status']) => void;
+    onAssign: (device: Device) => void;
 }) {
     const typeConfig   = getTypeConfig(device.type);
     const statusConfig = getStatusConfig(device.status);
@@ -305,6 +307,47 @@ function DeviceRow({ device, onCheckout, onCheckin, onShowQR, onExpand, isExpand
                         </Button>
                     )}
                 </div>
+
+                {/* More actions menu */}
+                {!isAccessory && (
+                    <div onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <button
+                                    title="More actions"
+                                    className="flex-shrink-0 h-7 w-7 flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 transition-colors"
+                                >
+                                    <MoreVertical className="w-3.5 h-3.5" />
+                                </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-44">
+                                <DropdownMenuItem onClick={() => onAssign(device)}>
+                                    <User className="w-3.5 h-3.5 mr-2" />
+                                    {device.status === 'checked-out' ? 'Reassign…' : 'Assign to…'}
+                                </DropdownMenuItem>
+                                {device.status !== 'available' && (
+                                    <DropdownMenuItem onClick={() => onSetStatus(device, 'available')}>
+                                        <CheckCircle2 className="w-3.5 h-3.5 mr-2 text-emerald-500" />Mark Available
+                                    </DropdownMenuItem>
+                                )}
+                                {device.status !== 'maintenance' && (
+                                    <DropdownMenuItem onClick={() => onSetStatus(device, 'maintenance')}>
+                                        <Wrench className="w-3.5 h-3.5 mr-2 text-amber-500" />Mark Maintenance
+                                    </DropdownMenuItem>
+                                )}
+                                {device.status !== 'missing' && (
+                                    <DropdownMenuItem onClick={() => onSetStatus(device, 'missing')} className="text-red-600 dark:text-red-400">
+                                        <AlertTriangle className="w-3.5 h-3.5 mr-2" />Mark Missing
+                                    </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => onShowQR(device)}>
+                                    <Tag className="w-3.5 h-3.5 mr-2" />Show QR Code
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
+                )}
             </div>
 
             {/* Expandable detail panel */}
@@ -363,7 +406,7 @@ function DeviceRow({ device, onCheckout, onCheckin, onShowQR, onExpand, isExpand
 }
 
 // ─── Location Section ─────────────────────────────────────────────────────────
-function LocationSection({ location, devices, onCheckout, onCheckin, onShowQR, expandedId, onExpand, isOpen, onToggle }: {
+function LocationSection({ location, devices, onCheckout, onCheckin, onShowQR, expandedId, onExpand, isOpen, onToggle, onSetStatus, onAssign }: {
     location: string;
     devices: Device[];
     onCheckout: (device: Device) => void;
@@ -373,6 +416,8 @@ function LocationSection({ location, devices, onCheckout, onCheckin, onShowQR, e
     onExpand: (device: Device) => void;
     isOpen: boolean;
     onToggle: () => void;
+    onSetStatus: (device: Device, status: Device['status']) => void;
+    onAssign: (device: Device) => void;
 }) {
     const deviceItems = devices.filter(d => d.type !== 'accessory');
     const accessories = devices.filter(d => d.type === 'accessory');
@@ -408,6 +453,8 @@ function LocationSection({ location, devices, onCheckout, onCheckin, onShowQR, e
                                 onShowQR={onShowQR}
                                 onExpand={onExpand}
                                 isExpanded={expandedId === device.id}
+                                onSetStatus={onSetStatus}
+                                onAssign={onAssign}
                             />
                         ))}
                         {accessories.length > 0 && (
@@ -424,6 +471,8 @@ function LocationSection({ location, devices, onCheckout, onCheckin, onShowQR, e
                                 onShowQR={onShowQR}
                                 onExpand={onExpand}
                                 isExpanded={expandedId === device.id}
+                                onSetStatus={onSetStatus}
+                                onAssign={onAssign}
                             />
                         ))}
                     </div>
@@ -1248,6 +1297,87 @@ function AuditPanel({ devices, userName }: { devices: Device[]; userName: string
     );
 }
 
+// ─── Assign / Reassign Dialog ─────────────────────────────────────────────────
+function AssignDialog({ device, knownPeople, onClose, onAssign }: {
+    device: Device | null;
+    knownPeople: string[];
+    onClose: () => void;
+    onAssign: (device: Device, name: string, notes?: string) => void;
+}) {
+    const [name, setName] = useState('');
+    const [notes, setNotes] = useState('');
+
+    useEffect(() => {
+        if (device) { setName(device.checkedOutBy?.name ?? ''); setNotes(''); }
+    }, [device]);
+
+    if (!device) return null;
+
+    const matches = name.trim()
+        ? knownPeople.filter(p => p.toLowerCase().includes(name.toLowerCase()) && p.toLowerCase() !== name.toLowerCase()).slice(0, 5)
+        : knownPeople.slice(0, 6);
+
+    const submit = () => {
+        if (!name.trim()) return;
+        onAssign(device, name.trim(), notes.trim() || undefined);
+        onClose();
+    };
+
+    return (
+        <Dialog open={!!device} onOpenChange={v => !v && onClose()}>
+            <DialogContent className="max-w-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
+                            <User className="w-4 h-4 text-white" />
+                        </div>
+                        {device.status === 'checked-out' ? 'Reassign' : 'Assign'}: {device.name}
+                    </DialogTitle>
+                    <DialogDescription className="text-xs text-slate-500">
+                        Who should this device be assigned to?
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3 mt-2">
+                    <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Person *</Label>
+                        <Input
+                            value={name}
+                            onChange={e => setName(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') submit(); }}
+                            placeholder="Type a name…"
+                            className="h-9 text-sm"
+                            autoFocus
+                        />
+                        {matches.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                                {matches.map(p => (
+                                    <button
+                                        key={p}
+                                        onClick={() => setName(p)}
+                                        className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 hover:text-amber-700 transition-colors"
+                                    >
+                                        {p}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Notes (optional)</Label>
+                        <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. For regression testing" className="h-9 text-sm" />
+                    </div>
+                </div>
+                <DialogFooter className="gap-2 pt-3">
+                    <Button variant="outline" size="sm" onClick={onClose} className="h-8 text-xs">Cancel</Button>
+                    <Button size="sm" onClick={submit} disabled={!name.trim()} className="h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white border-0">
+                        <User className="w-3.5 h-3.5 mr-1" />Assign
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─── MAIN PAGE COMPONENT ──────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1265,6 +1395,7 @@ export default function KeeprPage() {
     const [openLocation, setOpenLocation] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'devices' | 'history' | 'accessories' | 'audit'>('devices');
     const [showWelcome, setShowWelcome] = useState(false);
+    const [assignTarget, setAssignTarget] = useState<Device | null>(null);
 
     // Check first-visit flag
     useEffect(() => {
@@ -1278,6 +1409,20 @@ export default function KeeprPage() {
         setShowWelcome(false);
         localStorage.setItem('keepr_welcome_dismissed', '1');
     };
+
+    // ── Keyboard shortcut: "/" focuses search ─────────────────────────────────
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement;
+            const typing = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+            if (e.key === '/' && !typing && activeTab === 'devices') {
+                e.preventDefault();
+                document.getElementById('keepr-search')?.focus();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [activeTab]);
 
     // ── Tick every 60s to refresh durations ──────────────────────────────────
     const [, setTick] = useState(0);
@@ -1381,6 +1526,49 @@ export default function KeeprPage() {
         setExpandedId(prev => prev === device.id ? null : device.id);
     }, []);
 
+    // Direct status change (maintenance / missing / available) — for quick maintaining
+    const handleSetStatus = useCallback(async (device: Device, status: Device['status'], notes?: string) => {
+        const update: Record<string, any> = {
+            status,
+            checkedOutBy: null,
+            checkedOutAt: null,
+        };
+        if (notes) update.notes = notes;
+        setDevices(prev => prev.map(d => d.id === device.id
+            ? { ...d, status, checkedOutBy: undefined, checkedOutAt: undefined, notes: notes ?? d.notes }
+            : d));
+        try {
+            await fetch(`/api/keepr/device/${device.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(update),
+            });
+        } catch {}
+    }, []);
+
+    // Assign / reassign a device to a specific person
+    const handleAssignTo = useCallback(async (device: Device, name: string, notes?: string) => {
+        const uid = name.toLowerCase().replace(/\s+/g, '_');
+        const update: Record<string, any> = {
+            status: 'checked-out',
+            checkedOutBy: { name, uid },
+            checkedOutAt: new Date().toISOString(),
+            assignedTo: name,
+            totalCheckouts: (device.totalCheckouts ?? 0) + 1,
+        };
+        if (notes) update.notes = notes;
+        setDevices(prev => prev.map(d => d.id === device.id
+            ? { ...d, status: 'checked-out', checkedOutBy: { name, uid }, checkedOutAt: new Date().toISOString(), assignedTo: name, notes: notes ?? d.notes }
+            : d));
+        try {
+            await fetch(`/api/keepr/device/${device.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(update),
+            });
+        } catch {}
+    }, []);
+
     const handleJumpToLocation = useCallback((location: string) => {
         setOpenLocation(location);
         // Scroll to the section after a brief delay for the collapsible to open
@@ -1405,6 +1593,26 @@ export default function KeeprPage() {
     const missingDevices = useMemo(() =>
         devices.filter(d => d.status === 'missing'),
     [devices]);
+
+    // Devices the current user currently holds
+    const myDevices = useMemo(() => {
+        const myUid = user?.uid;
+        const myName = user?.displayName ?? user?.email;
+        return devices.filter(d =>
+            d.status === 'checked-out' && d.checkedOutBy &&
+            (d.checkedOutBy.uid === myUid || d.checkedOutBy.name === myName)
+        );
+    }, [devices, user]);
+
+    // Known people (from current assignments / history of names) for quick assign
+    const knownPeople = useMemo(() => {
+        const set = new Set<string>();
+        for (const d of devices) {
+            if (d.checkedOutBy?.name) set.add(d.checkedOutBy.name);
+            if (d.assignedTo) set.add(d.assignedTo);
+        }
+        return Array.from(set).filter(Boolean).sort();
+    }, [devices]);
 
     // ── Filtered + grouped ───────────────────────────────────────────────────
     const filtered = useMemo(() => {
@@ -1591,9 +1799,10 @@ export default function KeeprPage() {
                             <div className="relative flex-1 min-w-0 w-full sm:max-w-xs">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                                 <Input
+                                    id="keepr-search"
                                     value={search}
                                     onChange={e => setSearch(e.target.value)}
-                                    placeholder="Search devices…"
+                                    placeholder="Search devices…   (press / )"
                                     className="pl-9 h-9 text-sm bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-700"
                                 />
                                 {search && (
@@ -1639,6 +1848,38 @@ export default function KeeprPage() {
                                 ))}
                             </div>
                         </div>
+
+                        {/* My Devices quick strip */}
+                        {myDevices.length > 0 && (
+                            <motion.div variants={fadeUp} initial="hidden" animate="show" className="bg-sky-50/80 dark:bg-sky-950/20 border border-sky-200/60 dark:border-sky-800/40 rounded-xl p-4">
+                                <div className="flex items-center gap-2 mb-2.5">
+                                    <User className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                                    <span className="text-xs font-bold text-sky-700 dark:text-sky-400">You have {myDevices.length} device{myDevices.length !== 1 ? 's' : ''} checked out</span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {myDevices.map(d => {
+                                        const overdue = getOverdueInfo(d.checkedOutAt);
+                                        return (
+                                            <div key={d.id} className="flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-sky-200/80 dark:border-sky-800/50 shadow-sm">
+                                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{d.name}</span>
+                                                {overdue.isOverdue && (
+                                                    <span className="text-[10px] font-bold text-red-500 flex items-center gap-0.5">
+                                                        <AlertTriangle className="w-3 h-3" />{overdue.duration}
+                                                    </span>
+                                                )}
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() => handleCheckin(d)}
+                                                    className="h-6 px-2.5 text-[11px] font-semibold bg-sky-600 hover:bg-sky-700 text-white border-0"
+                                                >
+                                                    Return
+                                                </Button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </motion.div>
+                        )}
 
                         {/* Location-grouped device list */}
                         {loading ? (
@@ -1697,6 +1938,8 @@ export default function KeeprPage() {
                                             onExpand={handleExpand}
                                             isOpen={openLocation === location}
                                             onToggle={() => setOpenLocation(prev => prev === location ? null : location)}
+                                            onSetStatus={handleSetStatus}
+                                            onAssign={setAssignTarget}
                                         />
                                     ))}
                                 </motion.div>
@@ -1724,6 +1967,13 @@ export default function KeeprPage() {
 
             {/* ── Dialogs ──────────────────────────────────────────────────── */}
             <AddDeviceDialog open={showAdd} onClose={() => setShowAdd(false)} onAdd={handleAddDevice} />
+
+            <AssignDialog
+                device={assignTarget}
+                knownPeople={knownPeople}
+                onClose={() => setAssignTarget(null)}
+                onAssign={handleAssignTo}
+            />
 
             {/* ── QR Code Modal ────────────────────────────────────────────── */}
             <Dialog open={!!qrDevice} onOpenChange={v => !v && setQrDevice(null)}>
