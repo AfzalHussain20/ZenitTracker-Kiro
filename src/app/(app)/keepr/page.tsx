@@ -11,6 +11,15 @@ import dynamic from 'next/dynamic';
 
 // Lazy-load QR code to avoid SSR issues
 const QRCodeSVG = dynamic(() => import('qrcode.react').then(m => ({ default: m.QRCodeSVG })), { ssr: false });
+// Lazy-load the 3D people constellation (no SSR — uses WebGL)
+const PeopleOrbit3D = dynamic(() => import('@/components/three/PeopleOrbit3D'), {
+    ssr: false,
+    loading: () => (
+        <div className="flex items-center justify-center h-full text-sm text-slate-400">
+            Loading constellation…
+        </div>
+    ),
+});
 import {
     Smartphone, Tablet, Laptop, Tv, Box, Search, Plus, ArrowLeft,
     CheckCircle2, Clock, Wrench, AlertTriangle, Shield, Activity,
@@ -18,7 +27,7 @@ import {
     Monitor, Package, Filter, LayoutGrid, List, Star, Zap,
     TrendingUp, BarChart3, RefreshCw, Info, Edit3,
     ClipboardCheck, Crown, Users, History, Bell, Tag, ChevronRight,
-    ChevronDown, Settings, Download, Cable, MoreVertical
+    ChevronDown, Settings, Download, Cable, MoreVertical, Sparkle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +41,7 @@ import {
     DropdownMenuTrigger, DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import type { OrbitPerson, OrbitDevice } from '@/components/three/PeopleOrbit3D';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const LOCATIONS = [
@@ -940,11 +950,112 @@ interface PersonSummary {
     records: PeopleHistoryRecord[];
 }
 
+// ─── 3D Orbit View wrapper (canvas + glass overlay panels) ───────────────────
+function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevice, onSelectDevice, deviceRecords }: {
+    people: OrbitPerson[];
+    selected: PersonSummary | null;
+    selectedKey: string | null;
+    onSelectPerson: (key: string | null) => void;
+    selectedDevice: OrbitDevice | null;
+    onSelectDevice: (d: OrbitDevice | null) => void;
+    deviceRecords: PeopleHistoryRecord[];
+}) {
+    return (
+        <div className="relative w-full h-[560px] rounded-2xl overflow-hidden border border-indigo-500/20 shadow-2xl bg-[#070b1a]">
+            {/* 3D canvas */}
+            <PeopleOrbit3D
+                people={people}
+                selectedKey={selectedKey}
+                onSelectPerson={onSelectPerson}
+                onSelectDevice={onSelectDevice}
+                selectedDeviceId={selectedDevice?.id ?? null}
+            />
+
+            {/* Hint (top-left) */}
+            <div className="absolute top-3 left-3 pointer-events-none">
+                <div className="px-3 py-1.5 rounded-lg bg-white/10 backdrop-blur-md border border-white/15 text-[11px] text-white/80 font-medium">
+                    🛰️ Drag to orbit · click a person · click a device
+                </div>
+            </div>
+
+            {/* Reset (top-right) */}
+            {selectedKey && (
+                <button
+                    onClick={() => { onSelectPerson(null); onSelectDevice(null); }}
+                    className="absolute top-3 right-3 px-3 py-1.5 rounded-lg bg-white/10 backdrop-blur-md border border-white/15 text-[11px] text-white/90 font-semibold hover:bg-white/20 transition-colors"
+                >
+                    ← Back to all
+                </button>
+            )}
+
+            {/* Person panel (bottom-left) */}
+            {selected && (
+                <div className="absolute bottom-3 left-3 w-64 p-4 rounded-xl bg-white/10 backdrop-blur-xl border border-white/15 shadow-xl">
+                    <div className="flex items-center gap-3">
+                        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-black', getAvatarColor(selected.name))}>
+                            {getInitials(selected.name)}
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-sm font-bold text-white truncate">{selected.name}</p>
+                            {selected.team && <p className="text-[10px] text-white/60 truncate">{selected.team}</p>}
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-3">
+                        {[
+                            { label: 'Holding', value: selected.currentlyHolding },
+                            { label: 'Sessions', value: selected.sessions },
+                            { label: 'Devices', value: selected.uniqueDevices },
+                        ].map(s => (
+                            <div key={s.label} className="text-center py-1.5 rounded-lg bg-white/5">
+                                <p className="text-base font-black text-white tabular-nums">{s.value}</p>
+                                <p className="text-[8px] uppercase tracking-wide text-white/50 font-bold">{s.label}</p>
+                            </div>
+                        ))}
+                    </div>
+                    <p className="text-[10px] text-white/50 mt-2 text-center">Click a glowing device to inspect →</p>
+                </div>
+            )}
+
+            {/* Device detail panel (bottom-right) */}
+            {selectedDevice && (
+                <div className="absolute bottom-3 right-3 w-72 p-4 rounded-xl bg-white/10 backdrop-blur-xl border border-white/15 shadow-xl">
+                    <div className="flex items-center gap-2 mb-2">
+                        <span className={cn('w-2 h-2 rounded-full', selectedDevice.active ? 'bg-sky-400 animate-pulse' : 'bg-slate-400')} />
+                        <p className="text-sm font-bold text-white truncate flex-1">{selectedDevice.name}</p>
+                        <span className="text-[9px] uppercase tracking-wide text-white/50 font-bold">{selectedDevice.type}</span>
+                    </div>
+                    {selectedDevice.active && (
+                        <p className="text-[10px] text-sky-300 font-semibold mb-2">● Currently held by {selected?.name}</p>
+                    )}
+                    <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                        {deviceRecords.length === 0 ? (
+                            <p className="text-[11px] text-white/50">No recorded sessions.</p>
+                        ) : deviceRecords.map(r => {
+                            const isOpen = !r.checkedInAt;
+                            return (
+                                <div key={r.id} className="flex items-center gap-2 text-[11px] text-white/70">
+                                    <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', isOpen ? 'bg-sky-400' : 'bg-white/30')} />
+                                    <span className="truncate">{r.checkedOutAt ? formatDate(r.checkedOutAt) : '—'}</span>
+                                    <span className="ml-auto flex-shrink-0 font-semibold text-white/90">
+                                        {isOpen ? 'in use' : formatDuration(r.durationHours)}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 function PeoplePanel({ devices }: { devices: Device[] }) {
     const [records, setRecords] = useState<PeopleHistoryRecord[]>([]);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState('');
     const [selectedKey, setSelectedKey] = useState<string | null>(null);
+    const [view, setView] = useState<'list' | 'orbit'>('list');
+    const [selectedDevice, setSelectedDevice] = useState<OrbitDevice | null>(null);
 
     useEffect(() => {
         setLoading(true);
@@ -1034,6 +1145,35 @@ function PeoplePanel({ devices }: { devices: Device[] }) {
 
     const selected = people.find(p => p.key === selectedKey) ?? null;
 
+    // Build 3D constellation data from the same per-person records
+    const orbitPeople = useMemo<OrbitPerson[]>(() => {
+        return people.map(p => {
+            const deviceMap: Record<string, OrbitDevice> = {};
+            for (const r of p.records) {
+                const id = r.deviceId || r.deviceName;
+                if (!deviceMap[id]) {
+                    deviceMap[id] = { id, name: r.deviceName, type: r.deviceType || 'other', active: false };
+                }
+                if (!r.checkedInAt) deviceMap[id].active = true;
+            }
+            return {
+                key: p.key,
+                name: p.name,
+                team: p.team,
+                currentlyHolding: p.currentlyHolding,
+                sessions: p.sessions,
+                uniqueDevices: p.uniqueDevices,
+                devices: Object.values(deviceMap),
+            };
+        });
+    }, [people]);
+
+    // Records for the device selected inside the 3D scene (for the detail panel)
+    const selectedDeviceRecords = useMemo(() => {
+        if (!selected || !selectedDevice) return [];
+        return selected.records.filter(r => (r.deviceId || r.deviceName) === selectedDevice.id);
+    }, [selected, selectedDevice]);
+
     if (loading) {
         return (
             <div className="flex items-center justify-center py-16">
@@ -1053,7 +1193,43 @@ function PeoplePanel({ devices }: { devices: Device[] }) {
     }
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
+        <div className="space-y-4">
+            {/* View toggle */}
+            <div className="flex items-center justify-between gap-3">
+                <div>
+                    <h3 className="text-sm font-bold text-slate-800 dark:text-white">People &amp; Device Tracking</h3>
+                    <p className="text-xs text-slate-400">{people.length} people · click anyone to explore their device history</p>
+                </div>
+                <div className="flex items-center gap-1 bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 rounded-lg p-1">
+                    <button
+                        onClick={() => setView('list')}
+                        className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all',
+                            view === 'list' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400')}
+                    >
+                        <List className="w-3.5 h-3.5" />List
+                    </button>
+                    <button
+                        onClick={() => setView('orbit')}
+                        className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all',
+                            view === 'orbit' ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400')}
+                    >
+                        <Sparkle className="w-3.5 h-3.5" />Constellation
+                    </button>
+                </div>
+            </div>
+
+            {view === 'orbit' ? (
+                <OrbitView
+                    people={orbitPeople}
+                    selected={selected}
+                    selectedKey={selectedKey}
+                    onSelectPerson={(key) => { setSelectedKey(key); setSelectedDevice(null); }}
+                    selectedDevice={selectedDevice}
+                    onSelectDevice={setSelectedDevice}
+                    deviceRecords={selectedDeviceRecords}
+                />
+            ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
             {/* ── People list ── */}
             <div className="space-y-3">
                 <div className="relative">
@@ -1204,6 +1380,8 @@ function PeoplePanel({ devices }: { devices: Device[] }) {
                 <div className="flex items-center justify-center py-16 text-sm text-slate-400">
                     Select a person to see their device history
                 </div>
+            )}
+            </div>
             )}
         </div>
     );
