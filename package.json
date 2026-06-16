@@ -39,6 +39,7 @@
     "@radix-ui/react-tooltip": "^1.1.2",
     "@react-three/drei": "^9.122.0",
     "@react-three/fiber": "^8.18.0",
+    "@react-three/postprocessing": "^2.19.1",
     "@tanstack/react-table": "^8.19.3",
     "@types/ws": "^8.18.1",
     "axios": "^1.7.2",
