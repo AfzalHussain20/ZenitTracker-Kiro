@@ -960,6 +960,15 @@ function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevi
     onSelectDevice: (d: OrbitDevice | null) => void;
     deviceRecords: PeopleHistoryRecord[];
 }) {
+    const [showAllFlows, setShowAllFlows] = useState(false);
+    const [hover, setHover] = useState<{ key: string; x: number; y: number } | null>(null);
+
+    const handleHover = useCallback((key: string | null, x: number, y: number) => {
+        setHover(key ? { key, x, y } : null);
+    }, []);
+
+    const hoverPerson = hover ? people.find(p => p.key === hover.key) ?? null : null;
+
     return (
         <div className="relative w-full h-[560px] rounded-2xl overflow-hidden border border-indigo-500/20 shadow-2xl bg-[#070b1a]">
             {/* 3D canvas */}
@@ -969,6 +978,8 @@ function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevi
                 onSelectPerson={onSelectPerson}
                 onSelectDevice={onSelectDevice}
                 selectedDeviceId={selectedDevice?.id ?? null}
+                showAllFlows={showAllFlows}
+                onHover={handleHover}
             />
 
             {/* Hint (top-left) */}
@@ -978,14 +989,57 @@ function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevi
                 </div>
             </div>
 
-            {/* Reset (top-right) */}
-            {selectedKey && (
-                <button
-                    onClick={() => { onSelectPerson(null); onSelectDevice(null); }}
-                    className="absolute top-3 right-3 px-3 py-1.5 rounded-lg bg-white/10 backdrop-blur-md border border-white/15 text-[11px] text-white/90 font-semibold hover:bg-white/20 transition-colors"
+            {/* Top-right controls */}
+            <div className="absolute top-3 right-3 flex items-center gap-2">
+                {!selectedKey && (
+                    <button
+                        onClick={() => setShowAllFlows(v => !v)}
+                        className={cn(
+                            'px-3 py-1.5 rounded-lg backdrop-blur-md border text-[11px] font-semibold transition-colors',
+                            showAllFlows
+                                ? 'bg-indigo-500/30 border-indigo-400/50 text-white'
+                                : 'bg-white/10 border-white/15 text-white/90 hover:bg-white/20'
+                        )}
+                    >
+                        {showAllFlows ? '◉ Flows on' : '◎ Show all flows'}
+                    </button>
+                )}
+                {selectedKey && (
+                    <button
+                        onClick={() => { onSelectPerson(null); onSelectDevice(null); }}
+                        className="px-3 py-1.5 rounded-lg bg-white/10 backdrop-blur-md border border-white/15 text-[11px] text-white/90 font-semibold hover:bg-white/20 transition-colors"
+                    >
+                        ← Back to all
+                    </button>
+                )}
+            </div>
+
+            {/* Hover preview card (follows cursor) */}
+            {hoverPerson && !selectedKey && (
+                <div
+                    className="fixed z-50 pointer-events-none w-52 p-3 rounded-xl bg-slate-900/95 backdrop-blur-xl border border-white/15 shadow-2xl"
+                    style={{ left: hover!.x + 16, top: hover!.y + 16 }}
                 >
-                    ← Back to all
-                </button>
+                    <p className="text-xs font-bold text-white truncate">{hoverPerson.name}</p>
+                    <p className="text-[10px] text-slate-400 mb-2">
+                        {hoverPerson.currentlyHolding} holding · {hoverPerson.uniqueDevices} used
+                    </p>
+                    <div className="space-y-1">
+                        {hoverPerson.devices.slice(0, 4).map(d => (
+                            <div key={d.id} className="flex items-center gap-1.5 text-[11px]">
+                                <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', d.active ? 'bg-sky-400' : 'bg-slate-600')} />
+                                <span className="text-slate-300 truncate">{d.name}</span>
+                            </div>
+                        ))}
+                        {hoverPerson.devices.length > 4 && (
+                            <p className="text-[10px] text-slate-500">+{hoverPerson.devices.length - 4} more…</p>
+                        )}
+                        {hoverPerson.devices.length === 0 && (
+                            <p className="text-[10px] text-slate-500">No devices recorded</p>
+                        )}
+                    </div>
+                    <p className="text-[9px] text-indigo-300/80 mt-2">click to explore →</p>
+                </div>
             )}
 
             {/* Person panel (bottom-left) */}

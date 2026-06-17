@@ -251,7 +251,7 @@ function PulseRing({ color, token }: { color: string; token: string }) {
 }
 
 // ─── Reactor core (decoration) ───────────────────────────────────────────────
-function Core() {
+function Core({ label, sub }: { label: string; sub: string }) {
     const inner = useRef<THREE.Mesh>(null);
     const shell = useRef<THREE.Mesh>(null);
     const ringA = useRef<THREE.Mesh>(null);
@@ -277,11 +277,32 @@ function Core() {
                 <meshBasicMaterial color="#a5b4fc" />
             </mesh>
             <pointLight color="#818cf8" intensity={2.2} distance={14} />
-            <Billboard position={[0, 2.2, 0]}>
-                <Text fontSize={0.26} color="#c7d2fe" anchorX="center" anchorY="middle" outlineWidth={0.012} outlineColor="#000000" raycast={NO_RAYCAST}>
-                    FLEET
+            <Billboard position={[0, 2.15, 0]}>
+                <Text fontSize={0.3} color="#e0e7ff" anchorX="center" anchorY="middle" outlineWidth={0.014} outlineColor="#000000" raycast={NO_RAYCAST}>
+                    {label}
+                </Text>
+                <Text position={[0, -0.32, 0]} fontSize={0.16} color="#94a3b8" anchorX="center" anchorY="middle" raycast={NO_RAYCAST}>
+                    {sub}
                 </Text>
             </Billboard>
+        </group>
+    );
+}
+
+// ─── All-flows overlay — beams from the hub to everyone holding devices ───────
+function AllFlows({ people, positions }: { people: OrbitPerson[]; positions: THREE.Vector3[] }) {
+    return (
+        <group>
+            {people.map((p, i) => p.currentlyHolding > 0 && (
+                <EnergyLine
+                    key={p.key}
+                    from={[0, 0, 0]}
+                    to={[positions[i].x, positions[i].y, positions[i].z]}
+                    color={personHex(p.name)}
+                    active
+                    speed={0.7}
+                />
+            ))}
         </group>
     );
 }
@@ -351,9 +372,10 @@ function DeviceCluster({ person, onSelectDevice, selectedDeviceId }: {
 }
 
 // ─── Person avatar token ─────────────────────────────────────────────────────
-function PersonNode({ person, position, isSelected, anySelected, onSelect, onSelectDevice, selectedDeviceId, selToken }: {
+function PersonNode({ person, position, isSelected, anySelected, onSelect, onSelectDevice, selectedDeviceId, selToken, onHover }: {
     person: OrbitPerson; position: THREE.Vector3; isSelected: boolean; anySelected: boolean;
     onSelect: () => void; onSelectDevice: (d: OrbitDevice) => void; selectedDeviceId: string | null; selToken: string;
+    onHover: (key: string | null, x: number, y: number) => void;
 }) {
     const grp = useRef<THREE.Group>(null);
     const ringRef = useRef<THREE.Mesh>(null);
@@ -392,8 +414,9 @@ function PersonNode({ person, position, isSelected, anySelected, onSelect, onSel
                     {/* clickable avatar */}
                     <mesh
                         onClick={(e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); onSelect(); }}
-                        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer'; }}
-                        onPointerOut={() => { setHovered(false); document.body.style.cursor = 'auto'; }}
+                        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer'; onHover(person.key, e.nativeEvent.clientX, e.nativeEvent.clientY); }}
+                        onPointerMove={(e) => { if (hovered) onHover(person.key, e.nativeEvent.clientX, e.nativeEvent.clientY); }}
+                        onPointerOut={() => { setHovered(false); document.body.style.cursor = 'auto'; onHover(null, 0, 0); }}
                     >
                         <circleGeometry args={[0.6, 48]} />
                         <meshBasicMaterial map={tex} transparent opacity={dim ? 0.45 : 1} depthWrite={false} toneMapped={false} />
@@ -456,9 +479,10 @@ function FocusController({ targetPos, controlsRef, selectionToken }: {
 }
 
 // ─── Scene ───────────────────────────────────────────────────────────────────
-function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDeviceId }: {
+function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDeviceId, showAllFlows, onHover }: {
     people: OrbitPerson[]; selectedKey: string | null; onSelectPerson: (key: string | null) => void;
     onSelectDevice: (d: OrbitDevice) => void; selectedDeviceId: string | null;
+    showAllFlows: boolean; onHover: (key: string | null, x: number, y: number) => void;
 }) {
     const controlsRef = useRef<any>(null);
     const introGrp = useRef<THREE.Group>(null);
@@ -473,6 +497,8 @@ function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDe
             return new THREE.Vector3(Math.cos(a) * ringRadius, y, Math.sin(a) * ringRadius);
         });
     }, [people, ringRadius]);
+
+    const totalHeld = useMemo(() => people.reduce((s, p) => s + p.currentlyHolding, 0), [people]);
 
     const selectedIdx = people.findIndex(p => p.key === selectedKey);
     const focusTarget = selectedIdx >= 0 ? positions[selectedIdx] : null;
@@ -495,7 +521,8 @@ function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDe
 
             <group ref={introGrp} scale={0.85}>
                 <OrbitTracks radius={ringRadius} />
-                <Core />
+                <Core label="DEVICE FLEET" sub={`${people.length} people · ${totalHeld} in use`} />
+                {showAllFlows && selectedKey === null && <AllFlows people={people} positions={positions} />}
                 {people.map((p, i) => (
                     <PersonNode
                         key={p.key}
@@ -507,6 +534,7 @@ function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDe
                         onSelectDevice={onSelectDevice}
                         selectedDeviceId={selectedDeviceId}
                         selToken={selectedKey ?? ''}
+                        onHover={onHover}
                     />
                 ))}
             </group>
@@ -532,12 +560,14 @@ function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDe
 }
 
 // ─── Public component ────────────────────────────────────────────────────────
-export default function PeopleOrbit3D({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDeviceId }: {
+export default function PeopleOrbit3D({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDeviceId, showAllFlows = false, onHover }: {
     people: OrbitPerson[]; selectedKey: string | null; onSelectPerson: (key: string | null) => void;
     onSelectDevice: (d: OrbitDevice) => void; selectedDeviceId: string | null;
+    showAllFlows?: boolean; onHover?: (key: string | null, x: number, y: number) => void;
 }) {
     // drag-guard: don't deselect if the pointer moved (i.e. it was a rotate, not a tap)
     const downPos = useRef<{ x: number; y: number } | null>(null);
+    const handleHover = onHover ?? (() => {});
     return (
         <Canvas
             camera={{ position: [0, 3, 16], fov: 55 }}
@@ -557,6 +587,8 @@ export default function PeopleOrbit3D({ people, selectedKey, onSelectPerson, onS
                     onSelectPerson={onSelectPerson}
                     onSelectDevice={onSelectDevice}
                     selectedDeviceId={selectedDeviceId}
+                    showAllFlows={showAllFlows}
+                    onHover={handleHover}
                 />
             </Suspense>
         </Canvas>
