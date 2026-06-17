@@ -19,7 +19,7 @@
  */
 
 import { useRef, useMemo, useState, useEffect, Suspense } from 'react';
-import { Canvas, useFrame, ThreeEvent } from '@react-three/fiber';
+import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, Billboard, Text, Stars, Line, AdaptiveDpr } from '@react-three/drei';
 import * as THREE from 'three';
 
@@ -35,6 +35,7 @@ export interface OrbitPerson {
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const easeOutCubic = (x: number) => 1 - Math.pow(1 - x, 3);
+const easeInOutCubic = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 function hashStr(s: string): number {
     let h = 0;
     for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0x7fffffff;
@@ -460,20 +461,52 @@ function OrbitTracks({ radius }: { radius: number }) {
     );
 }
 
-// ─── Camera focus — eases ORBIT TARGET only, briefly ─────────────────────────
-function FocusController({ targetPos, controlsRef, selectionToken }: {
-    targetPos: THREE.Vector3 | null; controlsRef: React.MutableRefObject<any>; selectionToken: string;
+// ─── Camera focus — real zoom dolly toward selection, then hands back control ─
+function FocusController({ targetPos, controlsRef, selectionToken, sceneRadius }: {
+    targetPos: THREE.Vector3 | null; controlsRef: React.MutableRefObject<any>; selectionToken: string; sceneRadius: number;
 }) {
+    const { camera } = useThree();
     const animating = useRef(false);
-    const dest = useRef(new THREE.Vector3(0, 0, 0));
+    const startT = useRef(0);
+    const fromTarget = useRef(new THREE.Vector3());
+    const toTarget = useRef(new THREE.Vector3());
+    const fromCam = useRef(new THREE.Vector3());
+    const toCam = useRef(new THREE.Vector3());
+    const DURATION = 0.9;
+
     useEffect(() => {
-        dest.current.copy(targetPos ?? new THREE.Vector3(0, 0, 0));
+        const controls = controlsRef.current;
+        if (!controls) return;
+        fromTarget.current.copy(controls.target);
+        fromCam.current.copy(camera.position);
+
+        // keep the user's current viewing direction, just change distance
+        const dir = new THREE.Vector3().subVectors(camera.position, controls.target);
+        if (dir.lengthSq() < 0.0001) dir.set(0, 0.4, 1);
+        dir.normalize();
+
+        if (targetPos) {
+            toTarget.current.copy(targetPos);
+            const focusDist = 7; // close enough to read the device tiles
+            toCam.current.copy(targetPos).add(dir.clone().multiplyScalar(focusDist));
+        } else {
+            toTarget.current.set(0, 0, 0);
+            // pull back to frame the whole constellation
+            toCam.current.copy(dir.multiplyScalar(sceneRadius * 2.4 + 6));
+        }
+
         animating.current = true;
-        const id = setTimeout(() => { animating.current = false; }, 950);
-        return () => clearTimeout(id);
+        startT.current = performance.now() / 1000;
     }, [selectionToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
     useFrame(() => {
-        if (animating.current && controlsRef.current) controlsRef.current.target.lerp(dest.current, 0.1);
+        if (!animating.current || !controlsRef.current) return;
+        let p = (performance.now() / 1000 - startT.current) / DURATION;
+        if (p >= 1) { p = 1; animating.current = false; }
+        const e = easeInOutCubic(p);
+        controlsRef.current.target.lerpVectors(fromTarget.current, toTarget.current, e);
+        camera.position.lerpVectors(fromCam.current, toCam.current, e);
+        controlsRef.current.update();
     });
     return null;
 }
@@ -539,20 +572,22 @@ function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDe
                 ))}
             </group>
 
-            <FocusController targetPos={focusTarget} controlsRef={controlsRef} selectionToken={selectedKey ?? '__none__'} />
+            <FocusController targetPos={focusTarget} controlsRef={controlsRef} selectionToken={selectedKey ?? '__none__'} sceneRadius={ringRadius} />
 
             <OrbitControls
                 ref={controlsRef}
                 makeDefault
                 enablePan={false}
-                minDistance={5}
-                maxDistance={36}
+                minDistance={4}
+                maxDistance={ringRadius * 3 + 8}
                 autoRotate={selectedKey === null}
                 autoRotateSpeed={0.4}
                 enableDamping
                 dampingFactor={0.09}
                 rotateSpeed={0.85}
                 zoomSpeed={0.9}
+                minPolarAngle={Math.PI * 0.2}
+                maxPolarAngle={Math.PI * 0.46}
             />
             <AdaptiveDpr pixelated={false} />
         </>
