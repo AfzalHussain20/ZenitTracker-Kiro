@@ -1312,7 +1312,7 @@ function PeoplePanel({ devices }: { devices: Device[] }) {
             for (const r of p.records) {
                 const id = r.deviceId || r.deviceName;
                 if (!deviceMap[id]) {
-                    deviceMap[id] = { id, name: r.deviceName, type: r.deviceType || 'other', active: false };
+                    deviceMap[id] = { id, name: r.deviceName.replace(/\s*\([^)]*\)\s*/g, ' ').trim(), type: r.deviceType || 'other', active: false };
                 }
                 if (!r.checkedInAt) deviceMap[id].active = true;
             }

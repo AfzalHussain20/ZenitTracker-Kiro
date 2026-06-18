@@ -166,28 +166,31 @@ function deviceTileTexture(device: OrbitDevice): THREE.Texture {
     const c = document.createElement('canvas'); c.width = W; c.height = H;
     const ctx = c.getContext('2d')!;
     // panel
-    rrect(ctx, 22, 26, 212, 204, 26);
+    rrect(ctx, 22, 22, 212, 212, 26);
     ctx.fillStyle = 'rgba(10,15,28,0.92)'; ctx.fill();
     ctx.strokeStyle = hex; ctx.globalAlpha = device.active ? 0.95 : 0.55; ctx.lineWidth = 5; ctx.stroke(); ctx.globalAlpha = 1;
-    // glyph
-    drawDeviceGlyph(ctx, device.type, 128, 104, hex);
-    // name (wrap up to 2 lines)
-    ctx.fillStyle = '#ffffff'; ctx.font = '600 24px Inter, system-ui, sans-serif';
+    // glyph (upper area)
+    drawDeviceGlyph(ctx, device.type, 128, 90, hex);
+    // name — strip any "(owner)" suffix, wrap to max 2 lines
+    const clean = device.name.replace(/\s*\([^)]*\)\s*/g, ' ').trim() || device.name;
+    ctx.fillStyle = '#ffffff'; ctx.font = '600 23px Inter, system-ui, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const words = device.name.split(' '); const lines: string[] = []; let cur = '';
+    const words = clean.split(' '); const lines: string[] = []; let cur = '';
     for (const w of words) {
         const test = cur ? cur + ' ' + w : w;
-        if (ctx.measureText(test).width > 188 && cur) { lines.push(cur); cur = w; } else cur = test;
+        if (ctx.measureText(test).width > 184 && cur) { lines.push(cur); cur = w; } else cur = test;
     }
     if (cur) lines.push(cur);
     const shown = lines.slice(0, 2);
-    if (lines.length > 2) shown[1] = shown[1].slice(0, 12) + '…';
-    shown.forEach((ln, i) => ctx.fillText(ln, 128, 176 + i * 26));
-    // status pill
+    if (lines.length > 2) shown[1] = shown[1].slice(0, 11) + '…';
+    // keep names clear of the pill row
+    const nameY = shown.length === 1 ? 156 : 148;
+    shown.forEach((ln, i) => ctx.fillText(ln, 128, nameY + i * 26));
+    // status pill pinned to the bottom
     if (device.active) {
-        rrect(ctx, 92, 196, 72, 26, 13); ctx.fillStyle = 'rgba(56,189,248,0.25)'; ctx.fill();
-        ctx.fillStyle = '#7dd3fc'; ctx.font = '700 14px Inter, system-ui, sans-serif';
-        ctx.fillText('IN USE', 128, 210);
+        rrect(ctx, 90, 200, 76, 24, 12); ctx.fillStyle = 'rgba(56,189,248,0.30)'; ctx.fill();
+        ctx.fillStyle = '#7dd3fc'; ctx.font = '700 13px Inter, system-ui, sans-serif';
+        ctx.fillText('IN USE', 128, 213);
     }
     const t = new THREE.CanvasTexture(c); t.anisotropy = 4; t.needsUpdate = true;
     _texCache.set(key, t); return t;
