@@ -962,12 +962,50 @@ function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevi
 }) {
     const [showAllFlows, setShowAllFlows] = useState(false);
     const [hover, setHover] = useState<{ key: string; x: number; y: number } | null>(null);
+    const [query, setQuery] = useState('');
 
     const handleHover = useCallback((key: string | null, x: number, y: number) => {
         setHover(key ? { key, x, y } : null);
     }, []);
 
     const hoverPerson = hover ? people.find(p => p.key === hover.key) ?? null : null;
+
+    const searchResults = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        if (!q) return [];
+        return people.filter(p => p.name.toLowerCase().includes(q)).slice(0, 6);
+    }, [people, query]);
+
+    const flyTo = useCallback((key: string) => {
+        onSelectPerson(key); onSelectDevice(null); setQuery('');
+    }, [onSelectPerson, onSelectDevice]);
+
+    // keyboard: Esc to exit, ←/→ to cycle people
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            const t = e.target as HTMLElement;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            if (e.key === 'Escape') { onSelectPerson(null); onSelectDevice(null); }
+            else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && people.length) {
+                const idx = people.findIndex(p => p.key === selectedKey);
+                const next = e.key === 'ArrowRight'
+                    ? (idx + 1) % people.length
+                    : (idx - 1 + people.length) % people.length;
+                onSelectPerson(people[next].key); onSelectDevice(null);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [people, selectedKey, onSelectPerson, onSelectDevice]);
+
+    const DEVICE_LEGEND = [
+        { label: 'Phone', color: '#38bdf8' },
+        { label: 'Tablet', color: '#a78bfa' },
+        { label: 'Laptop', color: '#cbd5e1' },
+        { label: 'TV / STB', color: '#fb7185' },
+        { label: 'Monitor', color: '#2dd4bf' },
+        { label: 'Accessory', color: '#fbbf24' },
+    ];
 
     return (
         <div className="relative w-full h-[560px] rounded-2xl overflow-hidden border border-indigo-500/20 shadow-2xl bg-[#070b1a]">
@@ -987,6 +1025,36 @@ function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevi
                 <div className="px-3 py-1.5 rounded-lg bg-white/10 backdrop-blur-md border border-white/15 text-[11px] text-white/80 font-medium">
                     🛰️ Drag to orbit · click a person · click a device
                 </div>
+            </div>
+
+            {/* Search-to-fly (top center) */}
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 w-56">
+                <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50 pointer-events-none" />
+                    <input
+                        value={query}
+                        onChange={e => setQuery(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && searchResults[0]) flyTo(searchResults[0].key); }}
+                        placeholder="Search a person…"
+                        className="w-full h-8 pl-8 pr-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/15 text-[12px] text-white placeholder-white/40 focus:outline-none focus:border-indigo-400/60"
+                    />
+                </div>
+                {searchResults.length > 0 && (
+                    <div className="mt-1.5 rounded-lg bg-slate-900/95 backdrop-blur-xl border border-white/15 overflow-hidden shadow-2xl">
+                        {searchResults.map(p => (
+                            <button
+                                key={p.key}
+                                onClick={() => flyTo(p.key)}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/10 transition-colors"
+                            >
+                                <span className="text-[12px] font-semibold text-white truncate flex-1">{p.name}</span>
+                                {p.currentlyHolding > 0 && (
+                                    <span className="text-[9px] font-bold text-sky-300">{p.currentlyHolding} held</span>
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {/* Top-right controls */}
@@ -1099,6 +1167,30 @@ function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevi
                     </div>
                 </div>
             )}
+
+            {/* Device-type legend (bottom-left, hidden while a person panel shows there) */}
+            {!selected && (
+                <div className="absolute bottom-3 left-3 px-3 py-2 rounded-xl bg-white/8 backdrop-blur-md border border-white/12">
+                    <p className="text-[9px] uppercase tracking-wider text-white/50 font-bold mb-1.5">Device types</p>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                        {DEVICE_LEGEND.map(d => (
+                            <div key={d.label} className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: d.color }} />
+                                <span className="text-[10px] text-white/70">{d.label}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Cinematic HUD frame (vignette + corner brackets) */}
+            <div className="absolute inset-0 pointer-events-none rounded-2xl" style={{ boxShadow: 'inset 0 0 140px 24px rgba(2,4,12,0.72)' }} />
+            <div className="absolute inset-0 pointer-events-none">
+                <span className="absolute top-2 left-2 w-5 h-5 border-t-2 border-l-2 border-indigo-400/40 rounded-tl-lg" />
+                <span className="absolute top-2 right-2 w-5 h-5 border-t-2 border-r-2 border-indigo-400/40 rounded-tr-lg" />
+                <span className="absolute bottom-2 left-2 w-5 h-5 border-b-2 border-l-2 border-indigo-400/40 rounded-bl-lg" />
+                <span className="absolute bottom-2 right-2 w-5 h-5 border-b-2 border-r-2 border-indigo-400/40 rounded-br-lg" />
+            </div>
         </div>
     );
 }

@@ -193,6 +193,28 @@ function deviceTileTexture(device: OrbitDevice): THREE.Texture {
     _texCache.set(key, t); return t;
 }
 
+// crisp, readable name plate (dark rounded panel + name + meta)
+function nameplateTexture(name: string, meta: string): THREE.Texture {
+    const key = `n:${name}|${meta}`;
+    const hit = _texCache.get(key); if (hit) return hit;
+    const W = 360, H = 120;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d')!;
+    rrect(ctx, 6, 10, W - 12, H - 22, 22);
+    ctx.fillStyle = 'rgba(8,12,24,0.82)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(148,163,184,0.28)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff'; ctx.font = '700 34px Inter, system-ui, sans-serif';
+    let nm = name;
+    while (ctx.measureText(nm).width > W - 44 && nm.length > 3) nm = nm.slice(0, -2);
+    if (nm !== name) nm += '…';
+    ctx.fillText(nm, W / 2, 46);
+    ctx.fillStyle = '#94a3b8'; ctx.font = '500 22px Inter, system-ui, sans-serif';
+    ctx.fillText(meta, W / 2, 86);
+    const t = new THREE.CanvasTexture(c); t.anisotropy = 4; t.needsUpdate = true;
+    _texCache.set(key, t); return t;
+}
+
 // soft round glow sprite (decoration only — never raycast)
 let _glowTex: THREE.Texture | null = null;
 function glowTexture(): THREE.Texture {
@@ -383,6 +405,10 @@ function PersonNode({ person, position, isSelected, anySelected, onSelect, onSel
     const [hovered, setHovered] = useState(false);
     const hex = useMemo(() => personHex(person.name), [person.name]);
     const tex = useMemo(() => personAvatarTexture(person.name), [person.name]);
+    const plate = useMemo(
+        () => nameplateTexture(person.name, `${person.currentlyHolding} held · ${person.uniqueDevices} used`),
+        [person.name, person.currentlyHolding, person.uniqueDevices]
+    );
     const baseSize = 1.05 + Math.min(person.currentlyHolding, 6) * 0.06;
     const dim = anySelected && !isSelected;
 
@@ -425,14 +451,12 @@ function PersonNode({ person, position, isSelected, anySelected, onSelect, onSel
                 </group>
             </Billboard>
 
-            {/* name + meta */}
-            <Billboard position={[0, baseSize * 0.72 + 0.25, 0]}>
-                <Text fontSize={isSelected ? 0.3 : 0.24} color={dim ? '#475569' : '#ffffff'} anchorX="center" anchorY="bottom" outlineWidth={0.016} outlineColor="#000000" raycast={NO_RAYCAST}>
-                    {person.name}
-                </Text>
-                <Text position={[0, -0.04, 0]} fontSize={0.14} color={dim ? '#334155' : '#94a3b8'} anchorX="center" anchorY="top" raycast={NO_RAYCAST}>
-                    {`${person.currentlyHolding} held · ${person.uniqueDevices} used`}
-                </Text>
+            {/* name + meta plate (crisp, always legible) */}
+            <Billboard position={[0, baseSize * 0.72 + 0.4, 0]}>
+                <mesh raycast={NO_RAYCAST} scale={[1.6, 0.53, 1]}>
+                    <planeGeometry args={[1, 1]} />
+                    <meshBasicMaterial map={plate} transparent depthWrite={false} toneMapped={false} opacity={dim ? 0.45 : 1} />
+                </mesh>
             </Billboard>
 
             {isSelected && (
@@ -512,14 +536,15 @@ function FocusController({ targetPos, controlsRef, selectionToken, sceneRadius }
 }
 
 // ─── Scene ───────────────────────────────────────────────────────────────────
-function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDeviceId, showAllFlows, onHover }: {
+function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDeviceId, showAllFlows, onHover, paused, reducedMotion }: {
     people: OrbitPerson[]; selectedKey: string | null; onSelectPerson: (key: string | null) => void;
     onSelectDevice: (d: OrbitDevice) => void; selectedDeviceId: string | null;
     showAllFlows: boolean; onHover: (key: string | null, x: number, y: number) => void;
+    paused: boolean; reducedMotion: boolean;
 }) {
     const controlsRef = useRef<any>(null);
     const introGrp = useRef<THREE.Group>(null);
-    const intro = useRef(0);
+    const intro = useRef(reducedMotion ? 1 : 0);
 
     const ringRadius = useMemo(() => 4.8 + Math.min(people.length, 14) * 0.42, [people.length]);
     const positions = useMemo(() => {
@@ -580,7 +605,7 @@ function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDe
                 enablePan={false}
                 minDistance={4}
                 maxDistance={ringRadius * 3 + 8}
-                autoRotate={selectedKey === null}
+                autoRotate={selectedKey === null && !paused && !reducedMotion}
                 autoRotateSpeed={0.4}
                 enableDamping
                 dampingFactor={0.09}
@@ -603,12 +628,34 @@ export default function PeopleOrbit3D({ people, selectedKey, onSelectPerson, onS
     // drag-guard: don't deselect if the pointer moved (i.e. it was a rotate, not a tap)
     const downPos = useRef<{ x: number; y: number } | null>(null);
     const handleHover = onHover ?? (() => {});
+    const [paused, setPaused] = useState(false);
+
+    const reducedMotion = useMemo(
+        () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+        []
+    );
+    const webglOk = useMemo(() => {
+        if (typeof document === 'undefined') return true;
+        try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); }
+        catch { return false; }
+    }, []);
+
+    if (!webglOk) {
+        return (
+            <div className="flex h-full items-center justify-center text-center px-6">
+                <p className="text-sm text-slate-400">3D view needs WebGL, which is unavailable here. Switch to the <span className="text-white font-semibold">List</span> view.</p>
+            </div>
+        );
+    }
+
     return (
         <Canvas
             camera={{ position: [0, 3, 16], fov: 55 }}
             dpr={[1, 2]}
             gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
             onPointerDown={(e) => { downPos.current = { x: e.clientX, y: e.clientY }; }}
+            onPointerEnter={() => setPaused(true)}
+            onPointerLeave={() => setPaused(false)}
             onPointerMissed={(e) => {
                 const d = downPos.current;
                 const moved = d ? Math.hypot(e.clientX - d.x, e.clientY - d.y) : 0;
@@ -624,6 +671,8 @@ export default function PeopleOrbit3D({ people, selectedKey, onSelectPerson, onS
                     selectedDeviceId={selectedDeviceId}
                     showAllFlows={showAllFlows}
                     onHover={handleHover}
+                    paused={paused}
+                    reducedMotion={reducedMotion}
                 />
             </Suspense>
         </Canvas>
