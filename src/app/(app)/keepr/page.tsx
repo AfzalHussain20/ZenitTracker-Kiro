@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { collection, query, onSnapshot, updateDoc, doc, setDoc, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebaseConfig';
@@ -953,7 +953,7 @@ interface PersonSummary {
 }
 
 // ─── 3D Orbit View wrapper (canvas + glass overlay panels) ───────────────────
-function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevice, onSelectDevice, deviceRecords }: {
+function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevice, onSelectDevice, deviceRecords, currentUserKey }: {
     people: OrbitPerson[];
     selected: PersonSummary | null;
     selectedKey: string | null;
@@ -961,11 +961,21 @@ function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevi
     selectedDevice: OrbitDevice | null;
     onSelectDevice: (d: OrbitDevice | null) => void;
     deviceRecords: PeopleHistoryRecord[];
+    currentUserKey: string | null;
 }) {
     const [showAllFlows, setShowAllFlows] = useState(false);
     const [hover, setHover] = useState<{ key: string; x: number; y: number } | null>(null);
     const [query, setQuery] = useState('');
     const [launching, setLaunching] = useState(true);
+    const [armArrival, setArmArrival] = useState(false);
+    const homedRef = useRef(false);
+
+    // when arrival fly-in completes, home in on the current user (their own planet)
+    const handleArrived = useCallback(() => {
+        if (homedRef.current) return;
+        homedRef.current = true;
+        if (currentUserKey) { onSelectPerson(currentUserKey); onSelectDevice(null); }
+    }, [currentUserKey, onSelectPerson, onSelectDevice]);
 
     const handleHover = useCallback((key: string | null, x: number, y: number) => {
         setHover(key ? { key, x, y } : null);
@@ -1021,10 +1031,17 @@ function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevi
                 selectedDeviceId={selectedDevice?.id ?? null}
                 showAllFlows={showAllFlows}
                 onHover={handleHover}
+                armArrival={armArrival}
+                onArrived={handleArrived}
             />
 
             {/* Cinematic rocket launch intro (plays on enter, replayable) */}
-            {launching && <RocketLaunch3D onComplete={() => setLaunching(false)} />}
+            {launching && (
+                <RocketLaunch3D
+                    onWarp={() => setArmArrival(true)}
+                    onComplete={() => setLaunching(false)}
+                />
+            )}
 
             {/* Hint (top-left) */}
             <div className="absolute top-3 left-3 pointer-events-none">
@@ -1067,7 +1084,7 @@ function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevi
             <div className="absolute top-3 right-3 flex items-center gap-2">
                 {!selectedKey && !launching && (
                     <button
-                        onClick={() => setLaunching(true)}
+                        onClick={() => { homedRef.current = false; setArmArrival(false); setLaunching(true); }}
                         className="px-3 py-1.5 rounded-lg bg-white/10 backdrop-blur-md border border-white/15 text-[11px] text-white/90 font-semibold hover:bg-white/20 transition-colors"
                     >
                         🚀 Replay
@@ -1209,7 +1226,7 @@ function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevi
     );
 }
 
-function PeoplePanel({ devices }: { devices: Device[] }) {
+function PeoplePanel({ devices, currentUser }: { devices: Device[]; currentUser: { name: string; uid: string } }) {
     const [records, setRecords] = useState<PeopleHistoryRecord[]>([]);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState('');
@@ -1285,12 +1302,32 @@ function PeoplePanel({ devices }: { devices: Device[] }) {
             p.records.sort((a, b) => (b.checkedOutAt ?? '').localeCompare(a.checkedOutAt ?? ''));
         }
 
+        const meName = (currentUser.name || '').toLowerCase();
+        const meUid = currentUser.uid;
+        const isMe = (p: PersonSummary) =>
+            (!!meUid && p.key === meUid) ||
+            (!!meName && p.name.toLowerCase() === meName) ||
+            p.records.some(r => !!meUid && r.accountId === meUid);
+
         return Object.values(map).sort((a, b) => {
-            // People currently holding devices first, then by recent activity
+            // current user first (their own planet), then holders, then recent
+            const am = isMe(a), bm = isMe(b);
+            if (am !== bm) return am ? -1 : 1;
             if (b.currentlyHolding !== a.currentlyHolding) return b.currentlyHolding - a.currentlyHolding;
             return (b.lastActivity ?? '').localeCompare(a.lastActivity ?? '');
         });
-    }, [records, devices]);
+    }, [records, devices, currentUser]);
+
+    // the current user's planet (their alias) — used to auto-home in orbit view
+    const currentUserKey = useMemo(() => {
+        const meName = (currentUser.name || '').toLowerCase();
+        const meUid = currentUser.uid;
+        const me = people.find(p =>
+            (!!meUid && p.key === meUid) ||
+            (!!meName && p.name.toLowerCase() === meName)
+        );
+        return me?.key ?? people[0]?.key ?? null;
+    }, [people, currentUser]);
 
     const filteredPeople = useMemo(() => {
         const q = search.toLowerCase().trim();
@@ -1387,6 +1424,7 @@ function PeoplePanel({ devices }: { devices: Device[] }) {
                     selectedDevice={selectedDevice}
                     onSelectDevice={setSelectedDevice}
                     deviceRecords={selectedDeviceRecords}
+                    currentUserKey={currentUserKey}
                 />
             ) : (
             <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
@@ -2667,7 +2705,7 @@ export default function KeeprPage() {
                 {activeTab === 'audit' && <AuditPanel devices={devices} userName={user?.displayName ?? user?.email ?? 'Unknown'} />}
 
                 {/* ── People Tab ───────────────────────────────────────────── */}
-                {activeTab === 'people' && <PeoplePanel devices={devices} />}
+                {activeTab === 'people' && <PeoplePanel devices={devices} currentUser={{ name: user?.displayName ?? user?.email ?? '', uid: user?.uid ?? '' }} />}
 
                 {/* ── Accessories Tab ──────────────────────────────────────── */}
                 {activeTab === 'accessories' && <AccessoriesPanel devices={devices} />}

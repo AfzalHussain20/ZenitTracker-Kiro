@@ -491,8 +491,9 @@ function OrbitTracks({ radius }: { radius: number }) {
 }
 
 // ─── Camera focus — real zoom dolly toward selection, then hands back control ─
-function FocusController({ targetPos, controlsRef, selectionToken, sceneRadius }: {
+function FocusController({ targetPos, controlsRef, selectionToken, sceneRadius, arrivedRef }: {
     targetPos: THREE.Vector3 | null; controlsRef: React.MutableRefObject<any>; selectionToken: string; sceneRadius: number;
+    arrivedRef: React.MutableRefObject<boolean>;
 }) {
     const { camera } = useThree();
     const animating = useRef(false);
@@ -505,7 +506,7 @@ function FocusController({ targetPos, controlsRef, selectionToken, sceneRadius }
 
     useEffect(() => {
         const controls = controlsRef.current;
-        if (!controls) return;
+        if (!controls || !arrivedRef.current) return; // wait until the arrival fly-in finishes
         fromTarget.current.copy(controls.target);
         fromCam.current.copy(camera.position);
 
@@ -540,16 +541,51 @@ function FocusController({ targetPos, controlsRef, selectionToken, sceneRadius }
     return null;
 }
 
+// ─── Arrival fly-in — holds far until armed, then warps in and settles ───────
+function ArrivalController({ armed, controlsRef, sceneRadius, arrivedRef, onArrived }: {
+    armed: boolean; controlsRef: React.MutableRefObject<any>; sceneRadius: number;
+    arrivedRef: React.MutableRefObject<boolean>; onArrived: () => void;
+}) {
+    const { camera } = useThree();
+    const tRef = useRef(0);
+    const started = useRef(false);
+    const DUR = 1.7;
+    useFrame((_, dt) => {
+        if (arrivedRef.current) return;
+        const far = sceneRadius * 2.4 + 6;
+        if (!armed) {
+            // hold the camera way out, looking at the hub, perfectly still
+            camera.position.set(0, far * 0.22, far * 3);
+            if (controlsRef.current) { controlsRef.current.target.set(0, 0, 0); controlsRef.current.update(); }
+            return;
+        }
+        if (!started.current) { started.current = true; tRef.current = 0; }
+        tRef.current += dt;
+        const p = Math.min(tRef.current / DUR, 1);
+        const e = easeOutCubic(p);
+        const startDist = far * 3;
+        const dist = startDist + (far - startDist) * e;
+        camera.position.set(Math.sin(-0.2) * dist * 0.12, far * 0.16 + (1 - e) * far * 0.45, dist);
+        if (controlsRef.current) { controlsRef.current.target.set(0, 0, 0); controlsRef.current.update(); }
+        if (p >= 1 && !arrivedRef.current) { arrivedRef.current = true; onArrived(); }
+    });
+    return null;
+}
+
 // ─── Scene ───────────────────────────────────────────────────────────────────
-function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDeviceId, showAllFlows, onHover, paused, reducedMotion }: {
+function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDeviceId, showAllFlows, onHover, paused, reducedMotion, armArrival, onArrived }: {
     people: OrbitPerson[]; selectedKey: string | null; onSelectPerson: (key: string | null) => void;
     onSelectDevice: (d: OrbitDevice) => void; selectedDeviceId: string | null;
     showAllFlows: boolean; onHover: (key: string | null, x: number, y: number) => void;
-    paused: boolean; reducedMotion: boolean;
+    paused: boolean; reducedMotion: boolean; armArrival: boolean; onArrived: () => void;
 }) {
     const controlsRef = useRef<any>(null);
     const introGrp = useRef<THREE.Group>(null);
     const intro = useRef(reducedMotion ? 1 : 0);
+    const arrivedRef = useRef(reducedMotion);
+    const [arrived, setArrived] = useState(reducedMotion);
+    const handleArrived = () => { setArrived(true); onArrived(); };
+    useEffect(() => { if (reducedMotion) { arrivedRef.current = true; onArrived(); } }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const ringRadius = useMemo(() => 4.8 + Math.min(people.length, 14) * 0.42, [people.length]);
     const positions = useMemo(() => {
@@ -602,15 +638,17 @@ function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDe
                 ))}
             </group>
 
-            <FocusController targetPos={focusTarget} controlsRef={controlsRef} selectionToken={selectedKey ?? '__none__'} sceneRadius={ringRadius} />
+            <FocusController targetPos={focusTarget} controlsRef={controlsRef} selectionToken={selectedKey ?? '__none__'} sceneRadius={ringRadius} arrivedRef={arrivedRef} />
+            <ArrivalController armed={armArrival} controlsRef={controlsRef} sceneRadius={ringRadius} arrivedRef={arrivedRef} onArrived={handleArrived} />
 
             <OrbitControls
                 ref={controlsRef}
                 makeDefault
                 enablePan={false}
+                enabled={arrived}
                 minDistance={4}
                 maxDistance={ringRadius * 3 + 8}
-                autoRotate={selectedKey === null && !paused && !reducedMotion}
+                autoRotate={arrived && selectedKey === null && !paused && !reducedMotion}
                 autoRotateSpeed={0.4}
                 enableDamping
                 dampingFactor={0.09}
@@ -625,14 +663,16 @@ function Scene({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDe
 }
 
 // ─── Public component ────────────────────────────────────────────────────────
-export default function PeopleOrbit3D({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDeviceId, showAllFlows = false, onHover }: {
+export default function PeopleOrbit3D({ people, selectedKey, onSelectPerson, onSelectDevice, selectedDeviceId, showAllFlows = false, onHover, armArrival = true, onArrived }: {
     people: OrbitPerson[]; selectedKey: string | null; onSelectPerson: (key: string | null) => void;
     onSelectDevice: (d: OrbitDevice) => void; selectedDeviceId: string | null;
     showAllFlows?: boolean; onHover?: (key: string | null, x: number, y: number) => void;
+    armArrival?: boolean; onArrived?: () => void;
 }) {
     // drag-guard: don't deselect if the pointer moved (i.e. it was a rotate, not a tap)
     const downPos = useRef<{ x: number; y: number } | null>(null);
     const handleHover = onHover ?? (() => {});
+    const handleArrived = onArrived ?? (() => {});
     const [paused, setPaused] = useState(false);
 
     const reducedMotion = useMemo(
@@ -678,6 +718,8 @@ export default function PeopleOrbit3D({ people, selectedKey, onSelectPerson, onS
                     onHover={handleHover}
                     paused={paused}
                     reducedMotion={reducedMotion}
+                    armArrival={armArrival}
+                    onArrived={handleArrived}
                 />
             </Suspense>
         </Canvas>

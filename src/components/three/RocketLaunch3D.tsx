@@ -377,15 +377,60 @@ function Pad({ sim }: { sim: React.MutableRefObject<Sim> }) {
     );
 }
 
+// ─── warp streaks (punch to hyperspace at the end) ──────────────────────────
+function WarpStreaks({ sim }: { sim: React.MutableRefObject<Sim> }) {
+    const N = 260;
+    const grp = useRef<THREE.Group>(null);
+    const ref = useRef<THREE.Points>(null);
+    const { camera } = useThree();
+    const tex = useMemo(() => softTex(), []);
+    const d = useMemo(() => {
+        const pos = new Float32Array(N * 3);
+        for (let i = 0; i < N; i++) {
+            pos[i * 3] = (Math.random() - 0.5) * 24;
+            pos[i * 3 + 1] = (Math.random() - 0.5) * 24;
+            pos[i * 3 + 2] = -10 - Math.random() * 45;
+        }
+        return pos;
+    }, []);
+    useFrame((_, dt) => {
+        const w = sim.current.warp;
+        if (!grp.current || !ref.current) return;
+        // keep the streak field wrapped around the camera
+        grp.current.position.copy(camera.position);
+        grp.current.quaternion.copy(camera.quaternion);
+        ref.current.visible = w > 0.01;
+        if (w <= 0.01) return;
+        const arr = ref.current.geometry.attributes.position.array as Float32Array;
+        for (let i = 0; i < N; i++) {
+            arr[i * 3 + 2] += dt * (30 + 170 * w); // rush past the viewer
+            if (arr[i * 3 + 2] > 8) { arr[i * 3 + 2] = -55; arr[i * 3] = (Math.random() - 0.5) * 24; arr[i * 3 + 1] = (Math.random() - 0.5) * 24; }
+        }
+        ref.current.geometry.attributes.position.needsUpdate = true;
+        (ref.current.material as THREE.PointsMaterial).opacity = 0.75 * w;
+        (ref.current.material as THREE.PointsMaterial).size = 0.3 + w * 1.4;
+    });
+    return (
+        <group ref={grp}>
+            <points ref={ref} visible={false}>
+                <bufferGeometry><bufferAttribute attach="attributes-position" count={N} array={d} itemSize={3} /></bufferGeometry>
+                <pointsMaterial map={tex} color="#cfe8ff" size={0.4} transparent opacity={0} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+            </points>
+        </group>
+    );
+}
+
 // ─── sequence controller (drives sim + camera) ───────────────────────────────
-function Sequence({ sim, onPhase, onIgnite, onDone, skipRef }: {
-    sim: React.MutableRefObject<Sim>; onPhase: (l: string) => void; onIgnite: () => void; onDone: () => void; skipRef: React.MutableRefObject<boolean>;
+function Sequence({ sim, onPhase, onIgnite, onWarp, onEndFlash, onDone, skipRef }: {
+    sim: React.MutableRefObject<Sim>; onPhase: (l: string) => void; onIgnite: () => void; onWarp: () => void; onEndFlash: () => void; onDone: () => void; skipRef: React.MutableRefObject<boolean>;
 }) {
     const { camera } = useThree();
     const rocket = useRef<THREE.Group>(null);
     const start = useRef(-1);
     const lastPhase = useRef('');
     const ignited = useRef(false);
+    const warped = useRef(false);
+    const endFlashed = useRef(false);
     const done = useRef(false);
 
     useFrame((state) => {
@@ -404,6 +449,8 @@ function Sequence({ sim, onPhase, onIgnite, onDone, skipRef }: {
         if (label !== lastPhase.current) { lastPhase.current = label; onPhase(label); }
 
         if (t >= T_IGNITE && !ignited.current) { ignited.current = true; onIgnite(); }
+        if (t >= T_WARP && !warped.current) { warped.current = true; onWarp(); }
+        if (t >= T_END - 0.4 && !endFlashed.current) { endFlashed.current = true; onEndFlash(); }
 
         // engine power
         sim.current.power = t < T_IGNITE ? 0 : Math.min((t - T_IGNITE) / 0.55, 1);
@@ -457,15 +504,17 @@ function Sequence({ sim, onPhase, onIgnite, onDone, skipRef }: {
             <Pad sim={sim} />
             <Smoke sim={sim} />
             <Sparks sim={sim} />
+            <WarpStreaks sim={sim} />
         </>
     );
 }
 
 // ─── public component ────────────────────────────────────────────────────────
-export default function RocketLaunch3D({ onComplete }: { onComplete: () => void }) {
+export default function RocketLaunch3D({ onComplete, onWarp }: { onComplete: () => void; onWarp?: () => void }) {
     const sim = useRef<Sim>({ power: 0, clearance: 0, rocketY: 0, warp: 0, t: 0 });
     const [phase, setPhase] = useState('');
     const [flash, setFlash] = useState(false);
+    const [endFlash, setEndFlash] = useState(false);
     const [fading, setFading] = useState(false);
     const skipRef = useRef(false);
     const doneRef = useRef(false);
@@ -491,7 +540,15 @@ export default function RocketLaunch3D({ onComplete }: { onComplete: () => void 
                 <SunRays />
                 <Stars radius={90} depth={60} count={2600} factor={4} saturation={0} fade speed={1.5} />
                 <Suspense fallback={null}>
-                    <Sequence sim={sim} onPhase={setPhase} onIgnite={ignite} onDone={finish} skipRef={skipRef} />
+                    <Sequence
+                        sim={sim}
+                        onPhase={setPhase}
+                        onIgnite={ignite}
+                        onWarp={() => onWarp?.()}
+                        onEndFlash={() => setEndFlash(true)}
+                        onDone={finish}
+                        skipRef={skipRef}
+                    />
                 </Suspense>
             </Canvas>
 
@@ -503,6 +560,11 @@ export default function RocketLaunch3D({ onComplete }: { onComplete: () => void 
             <div className="absolute inset-0 pointer-events-none opacity-[0.06]" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22%3E%3Cfilter id=%22n%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%222%22/%3E%3C/filter%3E%3Crect width=%22120%22 height=%22120%22 filter=%22url(%23n)%22/%3E%3C/svg%3E")' }} />
             {/* ignition flash */}
             <div className={`absolute inset-0 pointer-events-none bg-white transition-opacity duration-300 ${flash ? 'opacity-80' : 'opacity-0'}`} />
+            {/* end flash — blue-white wash that rides the cut into the constellation */}
+            <div
+                className={`absolute inset-0 pointer-events-none transition-opacity duration-500 ${endFlash ? 'opacity-100' : 'opacity-0'}`}
+                style={{ background: 'radial-gradient(circle at 50% 45%, rgba(224,242,255,0.98), rgba(99,102,241,0.85) 55%, rgba(8,12,28,0.95))' }}
+            />
             {/* letterbox bars */}
             <div className="absolute top-0 left-0 right-0 h-[8%] bg-black" />
             <div className="absolute bottom-0 left-0 right-0 h-[8%] bg-black" />
