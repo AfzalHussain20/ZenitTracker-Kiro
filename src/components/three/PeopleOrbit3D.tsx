@@ -451,13 +451,15 @@ function PersonNode({ person, position, isSelected, anySelected, onSelect, onSel
                 </group>
             </Billboard>
 
-            {/* name + meta plate (crisp, always legible) */}
-            <Billboard position={[0, baseSize * 0.72 + 0.4, 0]}>
-                <mesh raycast={NO_RAYCAST} scale={[1.6, 0.53, 1]}>
-                    <planeGeometry args={[1, 1]} />
-                    <meshBasicMaterial map={plate} transparent depthWrite={false} toneMapped={false} opacity={dim ? 0.45 : 1} />
-                </mesh>
-            </Billboard>
+            {/* name + meta plate — hidden when selected (panel names them) or while another person is focused */}
+            {!isSelected && (!anySelected || hovered) && (
+                <Billboard position={[0, baseSize * 0.72 + 0.4, 0]}>
+                    <mesh raycast={NO_RAYCAST} scale={[1.6, 0.53, 1]} renderOrder={3}>
+                        <planeGeometry args={[1, 1]} />
+                        <meshBasicMaterial map={plate} transparent depthWrite={false} depthTest={false} toneMapped={false} opacity={dim ? 0.5 : 1} />
+                    </mesh>
+                </Billboard>
+            )}
 
             {isSelected && (
                 <>

@@ -20,6 +20,8 @@ const PeopleOrbit3D = dynamic(() => import('@/components/three/PeopleOrbit3D'), 
         </div>
     ),
 });
+// Lazy-load the cinematic rocket launch intro
+const RocketLaunch3D = dynamic(() => import('@/components/three/RocketLaunch3D'), { ssr: false });
 import {
     Smartphone, Tablet, Laptop, Tv, Box, Search, Plus, ArrowLeft,
     CheckCircle2, Clock, Wrench, AlertTriangle, Shield, Activity,
@@ -963,6 +965,7 @@ function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevi
     const [showAllFlows, setShowAllFlows] = useState(false);
     const [hover, setHover] = useState<{ key: string; x: number; y: number } | null>(null);
     const [query, setQuery] = useState('');
+    const [launching, setLaunching] = useState(true);
 
     const handleHover = useCallback((key: string | null, x: number, y: number) => {
         setHover(key ? { key, x, y } : null);
@@ -1020,6 +1023,9 @@ function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevi
                 onHover={handleHover}
             />
 
+            {/* Cinematic rocket launch intro (plays on enter, replayable) */}
+            {launching && <RocketLaunch3D onComplete={() => setLaunching(false)} />}
+
             {/* Hint (top-left) */}
             <div className="absolute top-3 left-3 pointer-events-none">
                 <div className="px-3 py-1.5 rounded-lg bg-white/10 backdrop-blur-md border border-white/15 text-[11px] text-white/80 font-medium">
@@ -1059,6 +1065,14 @@ function OrbitView({ people, selected, selectedKey, onSelectPerson, selectedDevi
 
             {/* Top-right controls */}
             <div className="absolute top-3 right-3 flex items-center gap-2">
+                {!selectedKey && !launching && (
+                    <button
+                        onClick={() => setLaunching(true)}
+                        className="px-3 py-1.5 rounded-lg bg-white/10 backdrop-blur-md border border-white/15 text-[11px] text-white/90 font-semibold hover:bg-white/20 transition-colors"
+                    >
+                        🚀 Replay
+                    </button>
+                )}
                 {!selectedKey && (
                     <button
                         onClick={() => setShowAllFlows(v => !v)}
