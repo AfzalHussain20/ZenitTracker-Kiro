@@ -1,65 +1,105 @@
 "use client";
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ZenitMark, ZenitLogo } from '@/components/brand/zenit-logo';
+import { CURRENCIES, fmtPrice, annualPrice, type CurrencyCode } from '@/lib/pricing';
 import {
-    CheckCircle2, Smartphone, BarChart3, ClipboardCheck,
-    Bug, Users, Zap, ArrowRight, Shield, Globe
+    CheckCircle2, Smartphone, BarChart3, ClipboardCheck, Bug, Users, Zap,
+    ArrowRight, Globe, ShieldCheck, Workflow, Star, ChevronDown,
 } from 'lucide-react';
 
+// ─── Branded splash (Z draws itself, then reveals the page) ──────────────────
+function Splash({ onDone }: { onDone: () => void }) {
+    useEffect(() => { const t = setTimeout(onDone, 2100); return () => clearTimeout(t); }, [onDone]);
+    return (
+        <motion.div
+            initial={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.6 }}
+            className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#05070f]"
+        >
+            <ZenitMark animate className="w-24 h-24" />
+            <motion.p
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.5, duration: 0.5 }}
+                className="mt-5 text-sm tracking-[0.4em] text-white/50 font-semibold uppercase"
+            >
+                Zenit Tracker
+            </motion.p>
+        </motion.div>
+    );
+}
+
 const FEATURES = [
-    { icon: ClipboardCheck, title: 'Test Management', desc: 'Plan, execute, and track test suites with step-by-step run execution.' },
-    { icon: Bug, title: 'Bug Tracking', desc: 'Track bugs with Jira sync, priority analytics, and KPI dashboards.' },
-    { icon: Smartphone, title: 'Device Fleet (Keepr)', desc: 'Track who has what device, weekly audits, QR checkout, real-time sync.' },
-    { icon: BarChart3, title: 'QA Analytics', desc: 'KPIs, pass rates, team performance, and trend visualization.' },
-    { icon: Users, title: 'Team Management', desc: 'Roles, worklog tracking, and capacity planning for your QA org.' },
-    { icon: Zap, title: 'Automation Runner', desc: 'Run and monitor automated test suites with live execution telemetry.' },
+    { icon: ClipboardCheck, title: 'Test Management', desc: 'Plan, execute, and track suites with step-by-step run execution and live pass-rates.', span: 'lg:col-span-2' },
+    { icon: Smartphone, title: 'Device Fleet — Keepr', desc: 'Know which phone every bug came from. QR checkout, weekly audits, real-time sync.', span: '' },
+    { icon: Bug, title: 'Bug Tracking', desc: 'Jira sync, priority analytics, KPI dashboards.', span: '' },
+    { icon: BarChart3, title: 'QA Analytics', desc: 'Pass rates, coverage, team performance and trend visualization in 3D.', span: 'lg:col-span-2' },
+    { icon: Users, title: 'Team & Worklog', desc: 'Roles, capacity, and time tracking.', span: '' },
+    { icon: Zap, title: 'Automation Runner', desc: 'Run and monitor automated suites with live telemetry.', span: '' },
 ];
 
-const PRICING = [
-    { name: 'Free', price: '₹0', period: '/forever', features: ['3 users', '5 test plans', '10 devices', 'Basic analytics'], cta: 'Start Free', popular: false },
-    { name: 'Pro', price: '₹999', period: '/user/month', features: ['Unlimited users', 'Unlimited plans', 'Unlimited devices', 'Jira integration', 'Priority support'], cta: 'Start Trial', popular: true },
-    { name: 'Enterprise', price: '₹2,499', period: '/user/month', features: ['Everything in Pro', 'SSO / SAML', 'API access', 'Custom integrations', 'Dedicated support'], cta: 'Contact Sales', popular: false },
+const FAQS = [
+    { q: 'How is Zenit different from TestRail or Zephyr?', a: 'Those tools only do test management. Zenit unifies test management, bug tracking, device fleet management, automation, and analytics in one platform — at a fraction of the price.' },
+    { q: 'Can I import my existing test cases?', a: 'Yes. Create a plan, add cases manually or in bulk, and start running. Spreadsheet import is on the roadmap.' },
+    { q: 'Is there a free plan?', a: 'Yes — 3 users, 5 test plans, and basic device tracking, free forever. Upgrade when your team grows.' },
+    { q: 'Do you integrate with Jira?', a: 'Yes. Bug analytics and KPI dashboards sync directly with your Jira project on the Pro and Enterprise plans.' },
 ];
 
 export default function RootPage() {
     const { user, loading } = useAuth();
     const router = useRouter();
+    const [splash, setSplash] = useState(true);
+    const [cur, setCur] = useState<CurrencyCode>('INR');
+    const [cycle, setCycle] = useState<'monthly' | 'annual'>('monthly');
+    const [openFaq, setOpenFaq] = useState<number | null>(0);
 
-    // Redirect authenticated users straight to dashboard
+    // redirect logged-in users to the app
+    useEffect(() => { if (!loading && user) router.push('/dashboard'); }, [user, loading, router]);
+
+    // detect currency from visitor geography
     useEffect(() => {
-        if (!loading && user) router.push('/dashboard');
-    }, [user, loading, router]);
+        fetch('/api/geo').then(r => r.json()).then(d => { if (d?.currency) setCur(d.currency); }).catch(() => {});
+    }, []);
 
-    // While checking auth, show nothing (brief)
     if (loading || user) return null;
 
-    // Landing page for unauthenticated visitors
-    const fade = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.5 } } };
+    const cfg = CURRENCIES[cur];
+    const proPrice = cycle === 'annual' ? annualPrice(cfg.pro) : cfg.pro;
+    const entPrice = cycle === 'annual' ? annualPrice(cfg.enterprise) : cfg.enterprise;
+    const per = cycle === 'annual' ? '/yr per user' : '/mo per user';
+
+    const fade = { hidden: { opacity: 0, y: 24 }, show: { opacity: 1, y: 0, transition: { duration: 0.6 } } };
     const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.08 } } };
 
     return (
-        <div className="min-h-screen bg-slate-950 text-white">
+        <div className="min-h-screen bg-[#05070f] text-white overflow-x-hidden selection:bg-[#007BFF]/30">
+            <AnimatePresence>{splash && <Splash onDone={() => setSplash(false)} />}</AnimatePresence>
+
+            {/* Aurora background */}
+            <div className="fixed inset-0 pointer-events-none">
+                <div className="absolute -top-40 left-1/4 w-[40rem] h-[40rem] bg-[#007BFF]/10 rounded-full blur-[120px]" />
+                <div className="absolute top-1/3 -right-40 w-[36rem] h-[36rem] bg-[#00C6FF]/8 rounded-full blur-[120px]" />
+                <div className="absolute bottom-0 left-1/3 w-[32rem] h-[32rem] bg-violet-600/8 rounded-full blur-[120px]" />
+                <div className="absolute inset-0 opacity-[0.025]" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '64px 64px' }} />
+            </div>
+
             {/* Nav */}
-            <nav className="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 backdrop-blur-xl border-b border-white/10">
-                <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
-                            <Shield className="w-4 h-4 text-white" />
-                        </div>
-                        <span className="font-black text-lg tracking-tight">Zenit</span>
+            <nav className="fixed top-0 inset-x-0 z-50 border-b border-white/5 bg-[#05070f]/70 backdrop-blur-xl">
+                <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+                    <ZenitLogo />
+                    <div className="hidden md:flex items-center gap-7 text-sm text-white/60">
+                        <a href="#features" className="hover:text-white transition-colors">Features</a>
+                        <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
+                        <a href="#faq" className="hover:text-white transition-colors">FAQ</a>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Link href="/login">
-                            <Button variant="ghost" className="text-sm text-white/70 hover:text-white">Log in</Button>
-                        </Link>
+                        <Link href="/login"><Button variant="ghost" className="text-sm text-white/70 hover:text-white">Log in</Button></Link>
                         <Link href="/signup">
-                            <Button className="text-sm bg-indigo-600 hover:bg-indigo-700 text-white border-0 shadow-lg shadow-indigo-600/25">
-                                Start Free <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                            <Button className="text-sm bg-gradient-to-r from-[#007BFF] to-[#00C6FF] hover:opacity-90 text-white border-0 shadow-lg shadow-[#007BFF]/25">
+                                Get Started <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                             </Button>
                         </Link>
                     </div>
@@ -67,101 +107,239 @@ export default function RootPage() {
             </nav>
 
             {/* Hero */}
-            <section className="pt-32 pb-20 px-6 text-center relative overflow-hidden">
-                <div className="absolute inset-0 pointer-events-none">
-                    <div className="absolute top-20 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl" />
-                    <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-violet-600/10 rounded-full blur-3xl" />
-                </div>
-                <motion.div initial="hidden" animate="show" variants={stagger} className="relative max-w-4xl mx-auto">
-                    <motion.div variants={fade} className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300 font-semibold mb-6">
-                        <Globe className="w-3.5 h-3.5" />Built for QA teams in India &amp; beyond
+            <section className="relative pt-36 pb-24 px-6 text-center">
+                <motion.div initial="hidden" animate={splash ? 'hidden' : 'show'} variants={stagger} className="max-w-4xl mx-auto">
+                    <motion.div variants={fade} className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-[#5cc8ff] font-semibold mb-8">
+                        <Globe className="w-3.5 h-3.5" />The all-in-one QA platform
                     </motion.div>
-                    <motion.h1 variants={fade} className="text-5xl md:text-6xl font-black tracking-tight leading-tight mb-6">
-                        The QA Platform<br />
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">That Does Everything</span>
+                    <motion.div variants={fade} className="flex justify-center mb-6">
+                        <ZenitMark className="w-16 h-16" />
+                    </motion.div>
+                    <motion.h1 variants={fade} className="text-5xl md:text-7xl font-black tracking-tight leading-[1.05] mb-6">
+                        Ship quality<br />
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#007BFF] via-[#00C6FF] to-violet-400">at the speed of trust.</span>
                     </motion.h1>
-                    <motion.p variants={fade} className="text-lg text-slate-400 max-w-2xl mx-auto mb-8 leading-relaxed">
-                        Test management, bug tracking, device fleet control, automation, and analytics — unified in one platform. Built by QA engineers, for QA teams.
+                    <motion.p variants={fade} className="text-lg text-white/50 max-w-2xl mx-auto mb-10 leading-relaxed">
+                        Test management, bug tracking, device fleet control, automation and analytics — unified in one beautiful platform. Built by QA engineers, for QA teams.
                     </motion.p>
                     <motion.div variants={fade} className="flex items-center justify-center gap-4 flex-wrap">
                         <Link href="/signup">
-                            <Button size="lg" className="h-12 px-8 text-sm font-bold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white border-0 shadow-xl shadow-indigo-600/30">
-                                Get Started Free
+                            <Button size="lg" className="h-12 px-8 text-sm font-bold bg-gradient-to-r from-[#007BFF] to-[#00C6FF] hover:opacity-90 text-white border-0 shadow-xl shadow-[#007BFF]/30">
+                                Start Free — No Credit Card
                             </Button>
                         </Link>
                         <a href="#pricing">
-                            <Button size="lg" className="h-12 px-8 text-sm font-bold bg-white/10 hover:bg-white/20 text-white border border-white/20 shadow-none">
-                                See Pricing
+                            <Button size="lg" className="h-12 px-8 text-sm font-bold bg-white/5 hover:bg-white/10 text-white border border-white/15">
+                                View Pricing
                             </Button>
                         </a>
                     </motion.div>
-                    <motion.p variants={fade} className="text-xs text-slate-500 mt-4">Free 90-day pilot for the first cohort of teams. We&apos;re looking for feedback, not credit cards.</motion.p>
+                    <motion.div variants={fade} className="flex items-center justify-center gap-6 mt-8 text-xs text-white/40">
+                        <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />Free forever plan</span>
+                        <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />Setup in 5 minutes</span>
+                        <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />Cancel anytime</span>
+                    </motion.div>
+                </motion.div>
+
+                {/* App preview mockup */}
+                <motion.div
+                    initial={{ opacity: 0, y: 60, rotateX: 12 }}
+                    animate={splash ? {} : { opacity: 1, y: 0, rotateX: 0 }}
+                    transition={{ delay: 0.4, duration: 0.8 }}
+                    className="max-w-5xl mx-auto mt-16 [perspective:1000px]"
+                >
+                    <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-transparent backdrop-blur-sm shadow-2xl overflow-hidden">
+                        <div className="flex items-center gap-2 px-4 h-9 border-b border-white/10 bg-white/[0.03]">
+                            <span className="w-3 h-3 rounded-full bg-red-400/70" />
+                            <span className="w-3 h-3 rounded-full bg-amber-400/70" />
+                            <span className="w-3 h-3 rounded-full bg-emerald-400/70" />
+                            <span className="ml-3 text-[11px] text-white/30">app.zenittracker.com/dashboard</span>
+                        </div>
+                        <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {[
+                                { label: 'Pass Rate', value: '98.2%', color: 'from-emerald-500/20 to-emerald-500/5', accent: 'text-emerald-400' },
+                                { label: 'Active Runs', value: '3', color: 'from-[#007BFF]/20 to-[#007BFF]/5', accent: 'text-[#5cc8ff]' },
+                                { label: 'Devices Tracked', value: '35', color: 'from-violet-500/20 to-violet-500/5', accent: 'text-violet-400' },
+                            ].map((c, i) => (
+                                <div key={i} className={`rounded-xl border border-white/10 bg-gradient-to-br ${c.color} p-4 text-left`}>
+                                    <p className="text-[10px] uppercase tracking-wider text-white/40 font-bold">{c.label}</p>
+                                    <p className={`text-3xl font-black mt-1 ${c.accent}`}>{c.value}</p>
+                                </div>
+                            ))}
+                            <div className="md:col-span-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 flex items-end gap-2 h-28">
+                                {[40, 65, 50, 80, 70, 95, 60, 88, 72, 90].map((h, i) => (
+                                    <div key={i} className="flex-1 rounded-t bg-gradient-to-t from-[#007BFF] to-[#00C6FF]" style={{ height: `${h}%`, opacity: 0.5 + (i / 20) }} />
+                                ))}
+                            </div>
+                        </div>
+                    </div>
                 </motion.div>
             </section>
 
-            {/* Features */}
-            <section className="py-20 px-6">
+            {/* Trust band */}
+            <section className="py-10 px-6 border-y border-white/5">
+                <p className="text-center text-xs uppercase tracking-[0.3em] text-white/30 mb-6">Replaces the tools you&apos;re already paying for</p>
+                <div className="flex items-center justify-center gap-8 md:gap-14 flex-wrap text-white/30 text-sm font-semibold">
+                    <span>TestRail</span><span>+</span><span>Zephyr</span><span>+</span><span>Spreadsheets</span><span>+</span><span>Device Drawer</span><span>=</span>
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#007BFF] to-[#00C6FF] font-black">Zenit</span>
+                </div>
+            </section>
+
+            {/* Features — bento */}
+            <section id="features" className="py-24 px-6">
                 <div className="max-w-6xl mx-auto">
                     <motion.div initial="hidden" whileInView="show" viewport={{ once: true }} variants={stagger}>
-                        <motion.h2 variants={fade} className="text-3xl font-black text-center mb-4">Everything Your QA Team Needs</motion.h2>
-                        <motion.p variants={fade} className="text-center text-slate-400 mb-12 max-w-xl mx-auto">Replace 5 separate tools with one integrated platform.</motion.p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <motion.h2 variants={fade} className="text-4xl font-black text-center mb-3">Everything your QA team needs</motion.h2>
+                        <motion.p variants={fade} className="text-center text-white/40 mb-14 max-w-xl mx-auto">One platform. Zero context-switching.</motion.p>
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                             {FEATURES.map((f, i) => (
-                                <motion.div key={i} variants={fade} className="p-6 rounded-2xl bg-white/5 border border-white/10 hover:border-indigo-500/30 hover:bg-indigo-500/5 transition-all">
-                                    <f.icon className="w-8 h-8 text-indigo-400 mb-4" />
+                                <motion.div key={i} variants={fade} className={`group p-6 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-[#007BFF]/40 hover:bg-[#007BFF]/[0.04] transition-all ${f.span}`}>
+                                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#007BFF]/20 to-[#00C6FF]/10 border border-white/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                                        <f.icon className="w-5 h-5 text-[#5cc8ff]" />
+                                    </div>
                                     <h3 className="font-bold text-lg mb-2">{f.title}</h3>
-                                    <p className="text-sm text-slate-400 leading-relaxed">{f.desc}</p>
+                                    <p className="text-sm text-white/45 leading-relaxed">{f.desc}</p>
                                 </motion.div>
                             ))}
                         </div>
                     </motion.div>
+                </div>
+            </section>
+
+            {/* Stats */}
+            <section className="py-16 px-6 border-y border-white/5 bg-white/[0.02]">
+                <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+                    {[
+                        { v: '5-in-1', l: 'Tools unified' },
+                        { v: '5 min', l: 'To first test run' },
+                        { v: '3×', l: 'Cheaper than TestRail' },
+                        { v: '100%', l: 'Web-based, no install' },
+                    ].map((s, i) => (
+                        <div key={i}>
+                            <p className="text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[#007BFF] to-[#00C6FF]">{s.v}</p>
+                            <p className="text-xs text-white/40 mt-1.5">{s.l}</p>
+                        </div>
+                    ))}
                 </div>
             </section>
 
             {/* Pricing */}
-            <section id="pricing" className="py-20 px-6 bg-slate-900/50">
+            <section id="pricing" className="py-24 px-6">
                 <div className="max-w-5xl mx-auto">
-                    <motion.div initial="hidden" whileInView="show" viewport={{ once: true }} variants={stagger}>
-                        <motion.h2 variants={fade} className="text-3xl font-black text-center mb-4">Simple, Transparent Pricing</motion.h2>
-                        <motion.p variants={fade} className="text-center text-slate-400 mb-12">Start free. Upgrade when you need more.</motion.p>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {PRICING.map((p, i) => (
-                                <motion.div key={i} variants={fade} className={`p-6 rounded-2xl border ${p.popular ? 'border-indigo-500/50 bg-indigo-500/10 ring-1 ring-indigo-500/20' : 'border-white/10 bg-white/5'}`}>
-                                    {p.popular && <p className="text-[10px] uppercase tracking-wider font-bold text-indigo-400 mb-3">Most Popular</p>}
-                                    <h3 className="text-xl font-bold mb-1">{p.name}</h3>
-                                    <div className="flex items-baseline gap-1 mb-4">
-                                        <span className="text-3xl font-black">{p.price}</span>
-                                        <span className="text-sm text-slate-400">{p.period}</span>
-                                    </div>
-                                    <ul className="space-y-2.5 mb-6">
-                                        {p.features.map((f, j) => (
-                                            <li key={j} className="flex items-center gap-2 text-sm text-slate-300">
-                                                <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />{f}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                    <Link href="/signup">
-                                        <Button className={`w-full h-10 text-sm font-bold ${p.popular ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-white/10 hover:bg-white/15 text-white'} border-0`}>
-                                            {p.cta}
-                                        </Button>
-                                    </Link>
-                                </motion.div>
-                            ))}
+                    <h2 className="text-4xl font-black text-center mb-3">Simple, fair pricing</h2>
+                    <p className="text-center text-white/40 mb-3">
+                        Showing prices in <span className="text-white font-semibold">{cfg.code}</span>
+                        <span className="text-white/30"> · auto-detected for your region</span>
+                    </p>
+                    {/* cycle toggle */}
+                    <div className="flex justify-center mb-12">
+                        <div className="inline-flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl p-1">
+                            <button onClick={() => setCycle('monthly')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${cycle === 'monthly' ? 'bg-white/10 text-white' : 'text-white/50'}`}>Monthly</button>
+                            <button onClick={() => setCycle('annual')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${cycle === 'annual' ? 'bg-white/10 text-white' : 'text-white/50'}`}>Annual <span className="text-emerald-400">−17%</span></button>
                         </div>
-                    </motion.div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                        {/* Free */}
+                        <div className="p-7 rounded-2xl border border-white/10 bg-white/[0.03]">
+                            <h3 className="text-lg font-bold mb-1">Free</h3>
+                            <div className="text-3xl font-black mb-1">{fmtPrice(0, cfg)}</div>
+                            <p className="text-xs text-white/40 mb-6">Forever, for individuals</p>
+                            <ul className="space-y-2.5 mb-7">
+                                {['3 users', '5 test plans', '10 devices', 'Basic analytics'].map((f, i) => (
+                                    <li key={i} className="flex items-center gap-2 text-sm text-white/60"><CheckCircle2 className="w-4 h-4 text-emerald-500" />{f}</li>
+                                ))}
+                            </ul>
+                            <Link href="/signup"><Button className="w-full bg-white/10 hover:bg-white/15 text-white border-0">Start Free</Button></Link>
+                        </div>
+
+                        {/* Pro */}
+                        <div className="relative p-7 rounded-2xl border border-[#007BFF]/40 bg-gradient-to-b from-[#007BFF]/10 to-transparent ring-1 ring-[#007BFF]/20">
+                            <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-gradient-to-r from-[#007BFF] to-[#00C6FF] text-white">Most Popular</span>
+                            <h3 className="text-lg font-bold mb-1">Pro</h3>
+                            <div className="flex items-baseline gap-1 mb-1">
+                                <span className="text-3xl font-black">{fmtPrice(proPrice, cfg)}</span>
+                                <span className="text-sm text-white/40">{per}</span>
+                            </div>
+                            <p className="text-xs text-white/40 mb-6">For growing QA teams</p>
+                            <ul className="space-y-2.5 mb-7">
+                                {['Unlimited users', 'Unlimited plans', 'Unlimited devices', 'Jira integration', 'Advanced analytics', 'Priority support'].map((f, i) => (
+                                    <li key={i} className="flex items-center gap-2 text-sm text-white/70"><CheckCircle2 className="w-4 h-4 text-[#5cc8ff]" />{f}</li>
+                                ))}
+                            </ul>
+                            <Link href="/signup"><Button className="w-full bg-gradient-to-r from-[#007BFF] to-[#00C6FF] hover:opacity-90 text-white border-0">Start Trial</Button></Link>
+                        </div>
+
+                        {/* Enterprise */}
+                        <div className="p-7 rounded-2xl border border-white/10 bg-white/[0.03]">
+                            <h3 className="text-lg font-bold mb-1">Enterprise</h3>
+                            <div className="flex items-baseline gap-1 mb-1">
+                                <span className="text-3xl font-black">{fmtPrice(entPrice, cfg)}</span>
+                                <span className="text-sm text-white/40">{per}</span>
+                            </div>
+                            <p className="text-xs text-white/40 mb-6">For large QA departments</p>
+                            <ul className="space-y-2.5 mb-7">
+                                {['Everything in Pro', 'SSO / SAML', 'API access', 'Custom integrations', 'Dedicated support'].map((f, i) => (
+                                    <li key={i} className="flex items-center gap-2 text-sm text-white/60"><CheckCircle2 className="w-4 h-4 text-violet-400" />{f}</li>
+                                ))}
+                            </ul>
+                            <Link href="/signup"><Button className="w-full bg-white/10 hover:bg-white/15 text-white border-0">Get Started</Button></Link>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* FAQ */}
+            <section id="faq" className="py-24 px-6">
+                <div className="max-w-3xl mx-auto">
+                    <h2 className="text-4xl font-black text-center mb-12">Questions, answered</h2>
+                    <div className="space-y-3">
+                        {FAQS.map((f, i) => (
+                            <div key={i} className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
+                                <button onClick={() => setOpenFaq(openFaq === i ? null : i)} className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left">
+                                    <span className="font-semibold text-sm">{f.q}</span>
+                                    <ChevronDown className={`w-4 h-4 text-white/40 transition-transform flex-shrink-0 ${openFaq === i ? 'rotate-180' : ''}`} />
+                                </button>
+                                <AnimatePresence>
+                                    {openFaq === i && (
+                                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                                            <p className="px-5 pb-4 text-sm text-white/50 leading-relaxed">{f.a}</p>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </section>
+
+            {/* Final CTA */}
+            <section className="py-24 px-6">
+                <div className="max-w-4xl mx-auto rounded-3xl border border-white/10 bg-gradient-to-br from-[#007BFF]/15 via-[#00C6FF]/8 to-transparent p-12 md:p-16 text-center relative overflow-hidden">
+                    <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-80 h-80 bg-[#007BFF]/20 rounded-full blur-[100px]" />
+                    <div className="relative">
+                        <ZenitMark className="w-14 h-14 mx-auto mb-6" />
+                        <h2 className="text-4xl font-black mb-4">Bring your QA into one place.</h2>
+                        <p className="text-white/50 mb-8 max-w-lg mx-auto">Start free in minutes. No credit card, no migration headache.</p>
+                        <Link href="/signup">
+                            <Button size="lg" className="h-12 px-10 text-sm font-bold bg-gradient-to-r from-[#007BFF] to-[#00C6FF] hover:opacity-90 text-white border-0 shadow-xl shadow-[#007BFF]/30">
+                                Get Started Free <ArrowRight className="w-4 h-4 ml-2" />
+                            </Button>
+                        </Link>
+                    </div>
                 </div>
             </section>
 
             {/* Footer */}
             <footer className="py-12 px-6 border-t border-white/10">
                 <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-md bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
-                            <Shield className="w-3 h-3 text-white" />
-                        </div>
-                        <span className="font-bold text-sm">Zenit Tracker</span>
+                    <ZenitLogo markClassName="w-6 h-6" />
+                    <div className="flex items-center gap-6 text-xs text-white/40">
+                        <a href="#features" className="hover:text-white">Features</a>
+                        <a href="#pricing" className="hover:text-white">Pricing</a>
+                        <Link href="/login" className="hover:text-white">Log in</Link>
                     </div>
-                    <p className="text-xs text-slate-500">&copy; {new Date().getFullYear()} Zenit Antigravity. All rights reserved.</p>
+                    <p className="text-xs text-white/30">&copy; {new Date().getFullYear()} Zenit Antigravity</p>
                 </div>
             </footer>
         </div>

@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Loader2, Shield, CreditCard, ArrowLeft } from 'lucide-react';
-import { PLAN_PRICING, type PlanTier } from '@/types/organization';
+import { type PlanTier } from '@/types/organization';
+import { CURRENCIES, fmtPrice, annualPrice, type CurrencyCode } from '@/lib/pricing';
 import Link from 'next/link';
 
 const PLAN_FEATURES: Record<string, string[]> = {
@@ -21,11 +22,18 @@ function CheckoutInner() {
     const { user, orgId } = useAuth();
     const plan = (params.get('plan') as PlanTier) || 'pro';
     const [cycle, setCycle] = useState<'monthly' | 'annual'>('monthly');
+    const [cur, setCur] = useState<CurrencyCode>('INR');
     const [processing, setProcessing] = useState(false);
     const [done, setDone] = useState(false);
 
-    const pricing = PLAN_PRICING[plan] ?? PLAN_PRICING.pro;
-    const price = cycle === 'annual' ? pricing.annual : pricing.monthly;
+    useEffect(() => {
+        fetch('/api/geo').then(r => r.json()).then(d => { if (d?.currency) setCur(d.currency); }).catch(() => {});
+    }, []);
+
+    const cfg = CURRENCIES[cur];
+    const planLabelStr = plan === 'enterprise' ? 'Enterprise' : 'Pro';
+    const monthly = plan === 'enterprise' ? cfg.enterprise : cfg.pro;
+    const price = cycle === 'annual' ? annualPrice(monthly) : monthly;
     const features = PLAN_FEATURES[plan] ?? PLAN_FEATURES.pro;
 
     const activate = async (paymentRef?: string) => {
@@ -53,9 +61,9 @@ function CheckoutInner() {
             const rzp = new (window as any).Razorpay({
                 key: rzpKey,
                 amount: price * 100,
-                currency: 'INR',
+                currency: cfg.code,
                 name: 'Zenit Tracker',
-                description: `${pricing.label} plan (${cycle})`,
+                description: `${planLabelStr} plan (${cycle})`,
                 prefill: { email: user?.email ?? '', name: user?.displayName ?? '' },
                 handler: (resp: any) => activate(resp.razorpay_payment_id),
                 theme: { color: '#6366f1' },
@@ -87,7 +95,7 @@ function CheckoutInner() {
                             <div className="w-16 h-16 mx-auto rounded-full bg-emerald-500/20 flex items-center justify-center">
                                 <CheckCircle2 className="w-8 h-8 text-emerald-500" />
                             </div>
-                            <h2 className="text-xl font-bold text-white">You&apos;re on {pricing.label}!</h2>
+                            <h2 className="text-xl font-bold text-white">You&apos;re on {planLabelStr}!</h2>
                             <p className="text-sm text-slate-400">All premium features unlocked. Taking you to your dashboard…</p>
                         </CardContent>
                     </Card>
@@ -107,7 +115,7 @@ function CheckoutInner() {
                         </Link>
                         <div>
                             <p className="text-xs uppercase tracking-wider text-indigo-400 font-bold">Selected Plan</p>
-                            <h1 className="text-3xl font-black text-white mt-1">{pricing.label}</h1>
+                            <h1 className="text-3xl font-black text-white mt-1">{planLabelStr}</h1>
                         </div>
 
                         {/* Billing cycle toggle */}
@@ -119,7 +127,7 @@ function CheckoutInner() {
                         </div>
 
                         <div className="flex items-baseline gap-1">
-                            <span className="text-4xl font-black text-white">₹{price.toLocaleString('en-IN')}</span>
+                            <span className="text-4xl font-black text-white">{fmtPrice(price, cfg)}</span>
                             <span className="text-sm text-slate-400">/{cycle === 'annual' ? 'year' : 'month'} per user</span>
                         </div>
 
@@ -143,12 +151,12 @@ function CheckoutInner() {
 
                         <div className="space-y-3 text-sm">
                             <div className="flex justify-between text-slate-300">
-                                <span>{pricing.label} ({cycle})</span>
-                                <span>₹{price.toLocaleString('en-IN')}</span>
+                                <span>{planLabelStr} ({cycle})</span>
+                                <span>{fmtPrice(price, cfg)}</span>
                             </div>
                             <div className="border-t border-white/10 pt-3 flex justify-between font-bold text-white">
                                 <span>Total due today</span>
-                                <span>₹{price.toLocaleString('en-IN')}</span>
+                                <span>{fmtPrice(price, cfg)}</span>
                             </div>
                         </div>
 
@@ -158,7 +166,7 @@ function CheckoutInner() {
                             className="w-full h-12 text-sm font-bold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white border-0 shadow-lg"
                         >
                             {processing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Shield className="w-4 h-4 mr-2" />}
-                            {processing ? 'Activating…' : `Pay ₹${price.toLocaleString('en-IN')} & Activate`}
+                            {processing ? 'Activating…' : `Pay ${fmtPrice(price, cfg)} & Activate`}
                         </Button>
 
                         <p className="text-[11px] text-slate-500 text-center leading-relaxed">
