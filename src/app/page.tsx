@@ -7,30 +7,14 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ZenitMark, ZenitLogo } from '@/components/brand/zenit-logo';
-import { CURRENCIES, fmtPrice, annualPrice, type CurrencyCode } from '@/lib/pricing';
+import ZenitSplashAnimation from '@/components/zenit-splash-animation';
+import { CURRENCIES, fmtPrice, annualPrice, currencyForCountry, type CurrencyCode } from '@/lib/pricing';
 import {
     CheckCircle2, Smartphone, BarChart3, ClipboardCheck, Bug, Users, Zap,
     ArrowRight, Globe, ShieldCheck, Workflow, Star, ChevronDown,
 } from 'lucide-react';
 
-// ─── Branded splash (Z draws itself, then reveals the page) ──────────────────
-function Splash({ onDone }: { onDone: () => void }) {
-    useEffect(() => { const t = setTimeout(onDone, 2100); return () => clearTimeout(t); }, [onDone]);
-    return (
-        <motion.div
-            initial={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.6 }}
-            className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#05070f]"
-        >
-            <ZenitMark animate className="w-24 h-24" />
-            <motion.p
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.5, duration: 0.5 }}
-                className="mt-5 text-sm tracking-[0.4em] text-white/50 font-semibold uppercase"
-            >
-                Zenit Tracker
-            </motion.p>
-        </motion.div>
-    );
-}
+// ─── Branded splash uses the exact in-app ZenitSplashAnimation component ─────
 
 const FEATURES = [
     { icon: ClipboardCheck, title: 'Test Management', desc: 'Plan, execute, and track suites with step-by-step run execution and live pass-rates.', span: 'lg:col-span-2' },
@@ -59,9 +43,27 @@ export default function RootPage() {
     // redirect logged-in users to the app
     useEffect(() => { if (!loading && user) router.push('/dashboard'); }, [user, loading, router]);
 
-    // detect currency from visitor geography
+    // reveal the page after the in-app splash finishes (matches ZenitSplashAnimation's 3.5s)
+    useEffect(() => { const t = setTimeout(() => setSplash(false), 3600); return () => clearTimeout(t); }, []);
+
+    // detect currency from visitor geography (works behind a VPN)
     useEffect(() => {
-        fetch('/api/geo').then(r => r.json()).then(d => { if (d?.currency) setCur(d.currency); }).catch(() => {});
+        let cancelled = false;
+        (async () => {
+            // 1) Vercel edge header (server-side) — accurate on production
+            try {
+                const r = await fetch('/api/geo', { cache: 'no-store' });
+                const d = await r.json();
+                if (!cancelled && d?.country && d?.currency) { setCur(d.currency); return; }
+            } catch { /* ignore */ }
+            // 2) Client-side IP lookup fallback — reads the browser's egress (VPN) IP
+            try {
+                const r2 = await fetch('https://ipapi.co/json/', { cache: 'no-store' });
+                const d2 = await r2.json();
+                if (!cancelled && d2?.country_code) setCur(currencyForCountry(d2.country_code));
+            } catch { /* ignore */ }
+        })();
+        return () => { cancelled = true; };
     }, []);
 
     if (loading || user) return null;
@@ -76,7 +78,7 @@ export default function RootPage() {
 
     return (
         <div className="min-h-screen bg-[#05070f] text-white overflow-x-hidden selection:bg-[#007BFF]/30">
-            <AnimatePresence>{splash && <Splash onDone={() => setSplash(false)} />}</AnimatePresence>
+            {splash && <ZenitSplashAnimation />}
 
             {/* Aurora background */}
             <div className="fixed inset-0 pointer-events-none">

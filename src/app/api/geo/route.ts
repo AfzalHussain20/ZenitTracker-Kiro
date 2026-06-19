@@ -16,9 +16,12 @@ export async function GET(req: NextRequest) {
         '';
 
     const currency = currencyForCountry(country);
-    return NextResponse.json({
-        country: country || null,
-        currency,
-        config: CURRENCIES[currency],
-    });
+    return NextResponse.json(
+        {
+            country: country || null,
+            currency,
+            config: CURRENCIES[currency],
+        },
+        { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+    );
 }
