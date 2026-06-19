@@ -8,13 +8,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { motion } from 'framer-motion';
-import { Rocket, Users, CheckCircle2, Loader2, Building2 } from 'lucide-react';
+import { Rocket, Users, CheckCircle2, Loader2, Building2, Zap } from 'lucide-react';
+import { PLAN_PRICING, type PlanTier } from '@/types/organization';
 
 export default function OnboardingPage() {
     const { user } = useAuth();
     const router = useRouter();
-    const [step, setStep] = useState<'welcome' | 'create' | 'done'>('welcome');
+    const [step, setStep] = useState<'welcome' | 'create' | 'plan' | 'done'>('welcome');
     const [orgName, setOrgName] = useState('');
+    const [orgId, setOrgId] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
 
@@ -35,8 +37,8 @@ export default function OnboardingPage() {
             });
             const data = await res.json();
             if (data.success) {
-                setStep('done');
-                setTimeout(() => router.push('/dashboard'), 1500);
+                setOrgId(data.orgId);
+                setStep('plan');
             } else {
                 setError(data.error || 'Failed to create organization');
             }
@@ -44,6 +46,24 @@ export default function OnboardingPage() {
             setError('Network error');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const choosePlan = async (plan: PlanTier) => {
+        if (plan === 'free') {
+            // activate free instantly
+            setSaving(true);
+            try {
+                await fetch('/api/billing/activate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uid: user?.uid, orgId, plan: 'free' }),
+                });
+                setStep('done');
+                setTimeout(() => router.push('/dashboard'), 1500);
+            } catch {} finally { setSaving(false); }
+        } else {
+            router.push(`/billing/checkout?plan=${plan}`);
         }
     };
 
@@ -118,6 +138,58 @@ export default function OnboardingPage() {
                                 {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
                                 {saving ? 'Creating…' : 'Create Organization'}
                             </Button>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {step === 'plan' && (
+                    <Card className="border-indigo-500/20 bg-slate-900/80 backdrop-blur-xl shadow-2xl">
+                        <CardContent className="p-8 space-y-5">
+                            <div className="text-center">
+                                <h2 className="text-xl font-bold text-white">Choose your plan</h2>
+                                <p className="text-xs text-slate-400 mt-1">Start free, upgrade anytime.</p>
+                            </div>
+                            <div className="space-y-3">
+                                {/* Free */}
+                                <button
+                                    onClick={() => choosePlan('free')}
+                                    disabled={saving}
+                                    className="w-full text-left p-4 rounded-xl bg-white/5 border border-white/10 hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-all"
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Zap className="w-4 h-4 text-zinc-400" />
+                                            <span className="font-bold text-white">Free</span>
+                                        </div>
+                                        <span className="text-sm text-slate-400">₹0</span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-1">3 users · 5 plans · 10 devices</p>
+                                </button>
+                                {/* Pro */}
+                                <button
+                                    onClick={() => choosePlan('pro')}
+                                    className="w-full text-left p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/40 hover:bg-emerald-500/15 transition-all relative"
+                                >
+                                    <span className="absolute top-3 right-3 text-[9px] uppercase font-bold text-emerald-400">Popular</span>
+                                    <div className="flex items-center gap-2">
+                                        <Rocket className="w-4 h-4 text-emerald-400" />
+                                        <span className="font-bold text-white">Pro</span>
+                                    </div>
+                                    <p className="text-xs text-slate-400 mt-1">₹{PLAN_PRICING.pro.monthly}/user/mo · Unlimited everything + Jira</p>
+                                </button>
+                                {/* Enterprise */}
+                                <button
+                                    onClick={() => choosePlan('enterprise')}
+                                    className="w-full text-left p-4 rounded-xl bg-white/5 border border-white/10 hover:border-indigo-500/40 hover:bg-indigo-500/5 transition-all"
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <Building2 className="w-4 h-4 text-indigo-400" />
+                                        <span className="font-bold text-white">Enterprise</span>
+                                    </div>
+                                    <p className="text-xs text-slate-400 mt-1">₹{PLAN_PRICING.enterprise.monthly}/user/mo · SSO + API + dedicated support</p>
+                                </button>
+                            </div>
+                            {saving && <div className="flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-indigo-400" /></div>}
                         </CardContent>
                     </Card>
                 )}

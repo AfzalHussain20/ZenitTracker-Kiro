@@ -18,10 +18,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const signupSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters" }),
-  email: z.string().email({ message: "Invalid email address" })
-    .refine(email => email.endsWith('@sunnetwork.in'), { 
-      message: "Only @sunnetwork.in emails are allowed" 
-    }),
+  email: z.string().email({ message: "Invalid email address" }),
   password: z.string().min(6, { message: "Password must be at least 6 characters" }),
   confirmPassword: z.string()
 }).refine((data) => data.password === data.confirmPassword, {
@@ -47,18 +44,28 @@ export default function SignupPage() {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
       await updateProfile(userCredential.user, { displayName: data.name });
-      
+
+      // Internal @sunnetwork.in users get enterprise free; everyone else starts on free
+      const isInternal = data.email.toLowerCase().endsWith('@sunnetwork.in');
+
       await setDoc(doc(db, 'users', userCredential.user.uid), {
         uid: userCredential.user.uid,
         email: data.email,
         displayName: data.name,
         role: 'tester',
+        plan: isInternal ? 'enterprise' : 'free',
         createdAt: new Date(),
       });
 
-      document.cookie = "firebase-auth-session=true; path=/; max-age=3600";
+      document.cookie = "firebase-auth-session=true; path=/; max-age=86400";
       toast({ title: "Account created!", description: "Welcome to Zenit Tracker" });
-      router.replace('/dashboard');
+
+      // Internal users skip onboarding (full access); external users set up their org + plan
+      if (isInternal) {
+        router.replace('/dashboard');
+      } else {
+        router.replace('/onboarding');
+      }
     } catch (err: any) {
       let errorMessage = "Failed to create account. Please try again.";
       if (err.code === 'auth/email-already-in-use') {
@@ -101,7 +108,7 @@ export default function SignupPage() {
           <Input 
             id="email" 
             type="email" 
-            placeholder="you@sunnetwork.in" 
+            placeholder="you@company.com" 
             {...register("email")}
             autoComplete="email"
             className={errors.email ? 'border-destructive' : ''}

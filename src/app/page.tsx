@@ -86,11 +86,11 @@ export default function RootPage() {
                     <motion.div variants={fade} className="flex items-center justify-center gap-4 flex-wrap">
                         <Link href="/signup">
                             <Button size="lg" className="h-12 px-8 text-sm font-bold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white border-0 shadow-xl shadow-indigo-600/30">
-                                Request a Demo
+                                Get Started Free
                             </Button>
                         </Link>
                         <a href="#pricing">
-                            <Button size="lg" variant="outline" className="h-12 px-8 text-sm font-bold border-white/20 text-white/90 hover:bg-white/5">
+                            <Button size="lg" className="h-12 px-8 text-sm font-bold bg-white/10 hover:bg-white/20 text-white border border-white/20 shadow-none">
                                 See Pricing
                             </Button>
                         </a>

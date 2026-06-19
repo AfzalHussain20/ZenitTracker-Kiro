@@ -6,19 +6,34 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebaseConfig';
 import type { UserProfile } from '@/types';
+import type { PlanTier } from '@/types/organization';
+import { getEntitlements, isInternalEmail, type Entitlements } from '@/lib/entitlements';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   userRole: UserProfile['role'] | null;
   displayName: string;
+  // SaaS entitlements
+  plan: PlanTier;
+  isPremium: boolean;
+  isInternal: boolean;
+  orgId: string | null;
+  entitlements: Entitlements;
 }
+
+const defaultEntitlements = getEntitlements(null, 'free');
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   userRole: null,
   displayName: '',
+  plan: 'free',
+  isPremium: false,
+  isInternal: false,
+  orgId: null,
+  entitlements: defaultEntitlements,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -26,6 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<UserProfile['role'] | null>(null);
   const [displayName, setDisplayName] = useState<string>('');
+  const [storedPlan, setStoredPlan] = useState<PlanTier | null>(null);
+  const [orgId, setOrgId] = useState<string | null>(null);
 
   useEffect(() => {
     if (auth) {
@@ -34,8 +51,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (user) {
           // Refresh the session cookie so middleware doesn't expire it mid-session
           document.cookie = "firebase-auth-session=true; path=/; max-age=86400";
-          // Set loading false immediately so UI renders with auth user
-          // Also set name immediately from auth object as fallback
           setDisplayName(user.displayName?.split(' ')[0] || user.email?.split('@')[0] || 'Tester');
           setLoading(false);
           // Fetch Firestore profile in background — doesn't block render
@@ -43,12 +58,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const userDocRef = doc(db, 'users', user.uid);
             const docSnap = await getDoc(userDocRef);
             if (docSnap.exists()) {
-              const userData = docSnap.data() as UserProfile;
+              const userData = docSnap.data() as UserProfile & { plan?: PlanTier; orgId?: string };
               setUserRole(userData.role || 'tester');
+              setStoredPlan(userData.plan ?? 'free');
+              setOrgId(userData.orgId ?? null);
               const name = userData.displayName || user.displayName || user.email?.split('@')[0] || 'Tester';
               setDisplayName(name.split(' ')[0]);
             } else {
               setUserRole('tester');
+              setStoredPlan('free');
               const name = user.displayName || user.email?.split('@')[0] || 'Tester';
               setDisplayName(name.split(' ')[0]);
             }
@@ -59,22 +77,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           setUserRole(null);
           setDisplayName('');
+          setStoredPlan(null);
+          setOrgId(null);
           setLoading(false);
         }
       });
 
       return () => unsubscribe();
     } else {
-      // If firebase is not initialized, stop loading.
       setLoading(false);
     }
   }, []);
 
-  const value = { user, loading, userRole, displayName };
+  const entitlements = getEntitlements(user?.email, storedPlan);
 
-  // Note: We intentionally do NOT block rendering here with a Splash Screen.
-  // The 'ZenitSplashAnimation' in the Root/App Layout handles the visual startup sequence.
-  // This allows the App Shell to hydrate immediately behind the splash screen.
+  const value: AuthContextType = {
+    user,
+    loading,
+    userRole,
+    displayName,
+    plan: entitlements.plan,
+    isPremium: entitlements.isPremium,
+    isInternal: isInternalEmail(user?.email),
+    orgId,
+    entitlements,
+  };
 
   return (
     <AuthContext.Provider value={value}>
