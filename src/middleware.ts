@@ -13,7 +13,7 @@ export async function middleware(request: NextRequest) {
   const publicRoutes = ['/login', '/signup', '/forgot-password'];
 
   // Routes that start with these prefixes are always public (no auth needed)
-  const publicPrefixes = ['/scan/', '/api/keepr/', '/api/jira/teams'];
+  const publicPrefixes = ['/scan/', '/api/keepr/', '/api/jira/teams', '/api/org/', '/landing'];
   const isPublicPrefix = publicPrefixes.some(prefix => pathname.startsWith(prefix));
 
   const isPublicRoute = publicRoutes.includes(pathname) || isPublicPrefix;
@@ -23,8 +23,8 @@ export async function middleware(request: NextRequest) {
     if (sessionToken) {
       return NextResponse.redirect(new URL('/dashboard', request.url));
     }
-    // If no token, and trying to access root, go to login.
-    return NextResponse.redirect(new URL('/login', request.url));
+    // Show the landing page for unauthenticated visitors
+    return NextResponse.next();
   }
 
   // If the user has a session token and is trying to access a public auth page (like login/signup),
