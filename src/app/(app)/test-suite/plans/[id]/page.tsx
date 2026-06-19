@@ -2,10 +2,11 @@
 
 import { PageShell } from '@/components/ui/page-shell';
 import { Button } from '@/components/ui/button';
-import { Loader2, Plus, FileText, CheckCircle2, BrainCircuit, Activity, History, Zap, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Loader2, Plus, FileText, CheckCircle2, BrainCircuit, Activity, History, Zap, AlertTriangle, TrendingUp, Play } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { TestService, TestPlan, TestCase } from '@/lib/test-suite-service';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -14,10 +15,13 @@ import { Progress } from '@/components/ui/progress';
 
 export default function PlanDetailsPage() {
     const params = useParams();
+    const router = useRouter();
+    const { user } = useAuth();
     const id = params?.id as string;
     const [plan, setPlan] = useState<TestPlan | null>(null);
     const [cases, setCases] = useState<TestCase[]>([]);
     const [loading, setLoading] = useState(true);
+    const [startingRun, setStartingRun] = useState(false);
 
     useEffect(() => {
         async function fetchData() {
@@ -38,6 +42,26 @@ export default function PlanDetailsPage() {
 
     if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
     if (!plan) return <div className="text-center py-20">Plan not found</div>;
+
+    const startRun = async () => {
+        if (!plan || !id) return;
+        setStartingRun(true);
+        try {
+            const res = await fetch('/api/test-runs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    planId: id,
+                    planTitle: plan.title,
+                    startedBy: user?.displayName ?? user?.email ?? 'Unknown',
+                    startedByUid: user?.uid ?? '',
+                }),
+            });
+            const data = await res.json();
+            if (data.success) router.push('/test-suite/runs');
+        } catch {}
+        finally { setStartingRun(false); }
+    };
 
     // Use 'status' instead of 'type' for metrics since 'type' is not in the interface
     const readyCount = cases.filter(c => c.status === 'ready').length;
@@ -61,10 +85,16 @@ export default function PlanDetailsPage() {
             title={plan.title}
             description="Strategic testing protocol and architecture."
             actions={
-                <Button className="bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium px-6 rounded-xl shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95">
-                    <Plus className="w-4 h-4 mr-2" />
-                    New Definition
-                </Button>
+                <div className="flex gap-2">
+                    <Button onClick={startRun} disabled={startingRun || cases.length === 0} className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-5 rounded-xl shadow-lg shadow-emerald-600/20">
+                        {startingRun ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                        Start Run ({cases.length} cases)
+                    </Button>
+                    <Button className="bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium px-6 rounded-xl shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95">
+                        <Plus className="w-4 h-4 mr-2" />
+                        New Definition
+                    </Button>
+                </div>
             }
         >
             <Tabs defaultValue="architecture" className="space-y-8">
