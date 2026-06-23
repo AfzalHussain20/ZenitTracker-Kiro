@@ -23,8 +23,8 @@ export async function middleware(request: NextRequest) {
     if (sessionToken) {
       return NextResponse.redirect(new URL('/dashboard', request.url));
     }
-    // Show the landing page for unauthenticated visitors
-    return NextResponse.next();
+    // If no token, and trying to access root, go to login.
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
   // If the user has a session token and is trying to access a public auth page (like login/signup),
