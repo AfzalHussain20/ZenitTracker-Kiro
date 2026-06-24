@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { motion, AnimatePresence, useScroll, useTransform, type MotionValue } from 'framer-motion';
+import { motion, AnimatePresence, useScroll, useTransform, useMotionValue, useMotionTemplate, type MotionValue } from 'framer-motion';
 import { ZenitLogo } from '@/components/brand/zenit-logo';
 import { CURRENCIES, fmtPrice, annualPrice, currencyForCountry, type CurrencyCode } from '@/lib/pricing';
 import type { HeroState } from '@/components/three/ZenitHero3D';
@@ -22,28 +22,107 @@ const FEATURES = [
     { icon: Zap, title: 'Live in an afternoon', desc: 'Web-based, zero install, Jira-ready. Your team is running real test cycles the same day.', span: 'lg:col-span-2' },
 ];
 
-// ─── Loader (counts to 100, branded) ─────────────────────────────────────────
-function Loader({ onDone }: { onDone: () => void }) {
-    const [pct, setPct] = useState(0);
+// ─── Branded splash: Z draws → signature dot lifts off → lands as the dot on "i" ─
+function ZenitSplash({ onDone }: { onDone: () => void }) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const originRef = useRef<HTMLSpanElement>(null);   // the Z's signature-dot spot
+    const targetRef = useRef<HTMLSpanElement>(null);   // the dot-slot above the "ı"
+    const [c, setC] = useState<{ ox: number; oy: number; tx: number; ty: number } | null>(null);
+    const [phase, setPhase] = useState<'draw' | 'reveal' | 'fly' | 'land'>('draw');
+
+    // measure origin + target relative to container (re-measure on font load / resize)
     useEffect(() => {
-        let raf = 0; const start = performance.now(); const dur = 1900;
-        const ease = (x: number) => 1 - Math.pow(1 - x, 3);
-        const tick = (t: number) => {
-            const p = Math.min((t - start) / dur, 1);
-            setPct(Math.round(ease(p) * 100));
-            if (p < 1) raf = requestAnimationFrame(tick); else setTimeout(onDone, 250);
+        const measure = () => {
+            const cont = containerRef.current, o = originRef.current, t = targetRef.current;
+            if (!cont || !o || !t) return;
+            const cb = cont.getBoundingClientRect(), ob = o.getBoundingClientRect(), tb = t.getBoundingClientRect();
+            setC({
+                ox: ob.left + ob.width / 2 - cb.left,
+                oy: ob.top + ob.height / 2 - cb.top,
+                tx: tb.left + tb.width / 2 - cb.left,
+                ty: tb.top + tb.height / 2 - cb.top,
+            });
         };
-        raf = requestAnimationFrame(tick);
-        return () => cancelAnimationFrame(raf);
+        measure();
+        const id = setTimeout(measure, 250);
+        (document as any).fonts?.ready?.then?.(measure);
+        window.addEventListener('resize', measure);
+        return () => { clearTimeout(id); window.removeEventListener('resize', measure); };
+    }, []);
+
+    // choreography
+    useEffect(() => {
+        const t1 = setTimeout(() => setPhase('reveal'), 1300); // Z drawn, wordmark fades in
+        const t2 = setTimeout(() => setPhase('fly'), 1750);    // dot lifts off + flies
+        const t3 = setTimeout(() => setPhase('land'), 2550);   // dot seats as the "i" dot
+        const t4 = setTimeout(onDone, 3350);
+        return () => [t1, t2, t3, t4].forEach(clearTimeout);
     }, [onDone]);
+
     return (
         <motion.div exit={{ opacity: 0 }} transition={{ duration: 0.7 }}
-            className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#05070f]">
-            <ZenitLogo markClassName="w-10 h-10" className="text-2xl" />
-            <div className="mt-8 w-56 h-px bg-white/10 relative overflow-hidden">
-                <motion.div className="absolute inset-y-0 left-0 bg-gradient-to-r from-[#007BFF] to-[#00C6FF]" style={{ width: `${pct}%` }} />
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#05070f]">
+            <div ref={containerRef} className="relative flex items-center gap-4 md:gap-5">
+                {/* The Z mark — draws itself (its own dot is "held" by the flying dot) */}
+                <div className="relative">
+                    <svg viewBox="0 0 100 100" className="w-14 h-14 md:w-16 md:h-16 overflow-visible">
+                        <defs>
+                            <linearGradient id="zspl" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stopColor="#007BFF" />
+                                <stop offset="100%" stopColor="#00C6FF" />
+                            </linearGradient>
+                        </defs>
+                        <path d="M 15 25 H 80 L 30 80 H 65" stroke="url(#zspl)" strokeWidth="12" fill="none"
+                            strokeLinecap="round" strokeLinejoin="round"
+                            style={{ strokeDasharray: 240, strokeDashoffset: 240, animation: 'zspl-draw 1.3s cubic-bezier(.6,0,.2,1) forwards' }} />
+                    </svg>
+                    <span ref={originRef} className="absolute" style={{ left: '75%', top: '28%', width: 0, height: 0 }} />
+                    <style>{`@keyframes zspl-draw { to { stroke-dashoffset: 0; } }`}</style>
+                </div>
+
+                {/* Wordmark — fades in (opacity only, so the "i" slot stays pixel-stable) */}
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: phase === 'draw' ? 0 : 1 }}
+                    transition={{ duration: 0.7, ease: 'easeOut' }}
+                    className="text-3xl md:text-5xl font-black tracking-tight leading-none select-none"
+                >
+                    <span className="text-white">Zen</span>
+                    <span className="relative inline-block text-white" style={{ lineHeight: 1 }}>
+                        {'\u0131'}{/* dotless i — the flying dot becomes its dot */}
+                        <span ref={targetRef} className="absolute left-1/2" style={{ top: '0.12em', width: 0, height: 0 }} />
+                    </span>
+                    <span className="text-white">t</span>
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#007BFF] to-[#00C6FF]"> Tracker</span>
+                </motion.div>
+
+                {/* The travelling dot */}
+                {c && (
+                    <motion.div
+                        className="absolute rounded-full"
+                        style={{ width: 11, height: 11, marginLeft: -5.5, marginTop: -5.5, left: 0, top: 0, background: '#00C6FF', boxShadow: '0 0 16px 3px rgba(0,198,255,0.6)' }}
+                        initial={{ x: c.ox, y: c.oy, opacity: 0, scale: 0 }}
+                        animate={
+                            phase === 'draw' ? { x: c.ox, y: c.oy, opacity: 0, scale: 0 }
+                                : phase === 'reveal' ? { x: c.ox, y: c.oy, opacity: 1, scale: 1 }
+                                    : phase === 'fly' ? { x: [c.ox, c.ox - 10, c.tx], y: [c.oy, c.oy - 16, c.ty], opacity: 1, scale: 1 }
+                                        : { x: c.tx, y: c.ty, opacity: 1, scale: [1.5, 0.85, 1] }
+                        }
+                        transition={
+                            phase === 'fly' ? { duration: 0.8, ease: [0.6, 0, 0.2, 1], times: [0, 0.28, 1] }
+                                : phase === 'land' ? { duration: 0.45, ease: 'easeOut' }
+                                    : { duration: 0.35, ease: 'easeOut' }
+                        }
+                    />
+                )}
+
+                {/* Splash ripple on landing */}
+                {c && phase === 'land' && (
+                    <motion.div className="absolute rounded-full border border-[#00C6FF]"
+                        style={{ left: c.tx, top: c.ty, width: 11, height: 11, marginLeft: -5.5, marginTop: -5.5 }}
+                        initial={{ scale: 1, opacity: 0.8 }} animate={{ scale: 4.5, opacity: 0 }} transition={{ duration: 0.6, ease: 'easeOut' }} />
+                )}
             </div>
-            <p className="mt-3 text-xs tabular-nums tracking-[0.3em] text-white/40">{pct}%</p>
         </motion.div>
     );
 }
@@ -104,6 +183,42 @@ function StoryStage() {
                 </div>
             </div>
         </section>
+    );
+}
+
+// ─── Interactive feature card: pointer-tracked spotlight + animated icon ──────
+function FeatureCard({ f, variants }: { f: typeof FEATURES[number]; variants: any }) {
+    const mx = useMotionValue(-200);
+    const my = useMotionValue(-200);
+    const [hover, setHover] = useState(false);
+    const spotlight = useMotionTemplate`radial-gradient(240px circle at ${mx}px ${my}px, rgba(0,198,255,0.14), transparent 72%)`;
+    return (
+        <motion.div
+            variants={variants}
+            onMouseMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); mx.set(e.clientX - r.left); my.set(e.clientY - r.top); }}
+            onMouseEnter={() => setHover(true)}
+            onMouseLeave={() => { setHover(false); mx.set(-200); my.set(-200); }}
+            whileHover={{ y: -4 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+            className={`group relative p-7 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-[#007BFF]/40 transition-colors duration-300 overflow-hidden ${f.span}`}
+        >
+            <motion.div className="pointer-events-none absolute inset-0" style={{ background: spotlight }} />
+            <motion.div
+                animate={hover ? { y: -3, rotate: -8, scale: 1.12 } : { y: 0, rotate: 0, scale: 1 }}
+                transition={{ type: 'spring', stiffness: 320, damping: 16 }}
+                className="relative w-12 h-12 rounded-xl bg-gradient-to-br from-[#007BFF]/25 to-[#00C6FF]/10 border border-white/10 flex items-center justify-center mb-5"
+            >
+                <f.icon className="w-5 h-5 text-[#5cc8ff]" />
+                <motion.span
+                    className="absolute inset-0 rounded-xl pointer-events-none"
+                    style={{ boxShadow: '0 0 22px 2px rgba(0,198,255,0.55)' }}
+                    animate={hover ? { opacity: [0, 0.7, 0] } : { opacity: 0 }}
+                    transition={{ duration: 1.4, repeat: hover ? Infinity : 0, ease: 'easeInOut' }}
+                />
+            </motion.div>
+            <h3 className="relative font-bold text-xl mb-2">{f.title}</h3>
+            <p className="relative text-sm text-white/45 leading-relaxed">{f.desc}</p>
+        </motion.div>
     );
 }
 
@@ -176,7 +291,7 @@ export default function LandingPage() {
 
     return (
         <div className="relative min-h-screen bg-[#05070f] text-white selection:bg-[#007BFF]/30">
-            <AnimatePresence>{loading && <Loader onDone={() => setLoading(false)} />}</AnimatePresence>
+            <AnimatePresence>{loading && <ZenitSplash onDone={() => setLoading(false)} />}</AnimatePresence>
 
             {/* Fixed 3D background */}
             <div className="fixed inset-0 z-0 pointer-events-none">
@@ -264,13 +379,7 @@ export default function LandingPage() {
                             <motion.p variants={fade} className="text-center text-white/40 mb-16">Consolidate the stack. Cut the cost. Ship with confidence.</motion.p>
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                                 {FEATURES.map((f, i) => (
-                                    <motion.div key={i} variants={fade} className={`group p-7 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-[#007BFF]/40 hover:bg-[#007BFF]/[0.04] transition-all duration-300 ${f.span}`}>
-                                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#007BFF]/20 to-[#00C6FF]/10 border border-white/10 flex items-center justify-center mb-5 group-hover:scale-110 transition-transform duration-300">
-                                            <f.icon className="w-5 h-5 text-[#5cc8ff]" />
-                                        </div>
-                                        <h3 className="font-bold text-xl mb-2">{f.title}</h3>
-                                        <p className="text-sm text-white/45 leading-relaxed">{f.desc}</p>
-                                    </motion.div>
+                                    <FeatureCard key={i} f={f} variants={fade} />
                                 ))}
                             </div>
                         </motion.div>
