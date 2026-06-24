@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -22,105 +22,171 @@ const FEATURES = [
     { icon: Zap, title: 'Live in an afternoon', desc: 'Web-based, zero install, Jira-ready. Your team is running real test cycles the same day.', span: 'lg:col-span-2' },
 ];
 
-// ─── Branded splash: Z draws → signature dot lifts off → lands as the dot on "i" ─
+// ─── Cinematic brand splash ──────────────────────────────────────────────────
+// Draw Z → forge splash → dot breaks free + Z dissolves → "Zenit" writes itself
+// → dot lands as the "i" dot (ripple) → "Tracker" completes → final lockup.
+type SplashPhase = 'draw' | 'forge' | 'birth' | 'fly' | 'land' | 'complete';
+
+const ZENIT = ['Z', 'e', 'n', '\u0131', 't']; // dotless ı — the flying dot becomes its dot
+
 function ZenitSplash({ onDone }: { onDone: () => void }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const originRef = useRef<HTMLSpanElement>(null);   // the Z's signature-dot spot
     const targetRef = useRef<HTMLSpanElement>(null);   // the dot-slot above the "ı"
     const [c, setC] = useState<{ ox: number; oy: number; tx: number; ty: number } | null>(null);
-    const [phase, setPhase] = useState<'draw' | 'reveal' | 'fly' | 'land'>('draw');
+    const [phase, setPhase] = useState<SplashPhase>('draw');
 
-    // measure origin + target relative to container (re-measure on font load / resize)
+    const measure = useCallback(() => {
+        const cont = containerRef.current, o = originRef.current, t = targetRef.current;
+        if (!cont || !o || !t) return;
+        const cb = cont.getBoundingClientRect(), ob = o.getBoundingClientRect(), tb = t.getBoundingClientRect();
+        setC({
+            ox: ob.left + ob.width / 2 - cb.left,
+            oy: ob.top + ob.height / 2 - cb.top,
+            tx: tb.left + tb.width / 2 - cb.left,
+            ty: tb.top + tb.height / 2 - cb.top,
+        });
+    }, []);
+
     useEffect(() => {
-        const measure = () => {
-            const cont = containerRef.current, o = originRef.current, t = targetRef.current;
-            if (!cont || !o || !t) return;
-            const cb = cont.getBoundingClientRect(), ob = o.getBoundingClientRect(), tb = t.getBoundingClientRect();
-            setC({
-                ox: ob.left + ob.width / 2 - cb.left,
-                oy: ob.top + ob.height / 2 - cb.top,
-                tx: tb.left + tb.width / 2 - cb.left,
-                ty: tb.top + tb.height / 2 - cb.top,
-            });
-        };
         measure();
         const id = setTimeout(measure, 250);
         (document as any).fonts?.ready?.then?.(measure);
         window.addEventListener('resize', measure);
         return () => { clearTimeout(id); window.removeEventListener('resize', measure); };
-    }, []);
+    }, [measure]);
 
-    // choreography
+    // choreography clock
     useEffect(() => {
-        const t1 = setTimeout(() => setPhase('reveal'), 1300); // Z drawn, wordmark fades in
-        const t2 = setTimeout(() => setPhase('fly'), 1750);    // dot lifts off + flies
-        const t3 = setTimeout(() => setPhase('land'), 2550);   // dot seats as the "i" dot
-        const t4 = setTimeout(onDone, 3350);
-        return () => [t1, t2, t3, t4].forEach(clearTimeout);
-    }, [onDone]);
+        const timers = [
+            setTimeout(() => setPhase('forge'), 1250),   // Z fully drawn → forge splash
+            setTimeout(() => setPhase('birth'), 1550),   // glowing dot condenses at the Z
+            setTimeout(() => { measure(); setPhase('fly'); }, 1950), // dot breaks free, Z dissolves, "Zenit" writes
+            setTimeout(() => setPhase('land'), 2800),    // dot seats as the "i" dot + ripple
+            setTimeout(() => setPhase('complete'), 3050),// "Tracker" completes
+            setTimeout(onDone, 4000),
+        ];
+        return () => timers.forEach(clearTimeout);
+    }, [onDone, measure]);
+
+    // particle bursts (memoized so they don't reshuffle on re-render)
+    const sparks = useMemo(() => Array.from({ length: 12 }).map((_, i) => ({
+        a: (i / 12) * Math.PI * 2 + Math.random() * 0.4,
+        d: 55 + Math.random() * 55,
+        s: 2 + Math.random() * 3,
+    })), []);
+
+    const zDrawn = phase !== 'draw';
+    const zDissolving = phase === 'fly' || phase === 'land' || phase === 'complete';
+    const writeZenit = phase === 'fly' || phase === 'land' || phase === 'complete';
+    const showTracker = phase === 'land' || phase === 'complete';
+
+    const letterParent = { hide: {}, show: { transition: { staggerChildren: 0.085 } } };
+    const letterChild = {
+        hide: { opacity: 0, y: '0.35em', filter: 'blur(8px)' },
+        show: { opacity: 1, y: '0em', filter: 'blur(0px)', transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] as any } },
+    };
 
     return (
         <motion.div exit={{ opacity: 0 }} transition={{ duration: 0.7 }}
             className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#05070f]">
-            <div ref={containerRef} className="relative flex items-center gap-4 md:gap-5">
-                {/* The Z mark — draws itself (its own dot is "held" by the flying dot) */}
-                <div className="relative">
-                    <svg viewBox="0 0 100 100" className="w-14 h-14 md:w-16 md:h-16 overflow-visible">
-                        <defs>
-                            <linearGradient id="zspl" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stopColor="#007BFF" />
-                                <stop offset="100%" stopColor="#00C6FF" />
-                            </linearGradient>
-                        </defs>
-                        <path d="M 15 25 H 80 L 30 80 H 65" stroke="url(#zspl)" strokeWidth="12" fill="none"
-                            strokeLinecap="round" strokeLinejoin="round"
-                            style={{ strokeDasharray: 240, strokeDashoffset: 240, animation: 'zspl-draw 1.3s cubic-bezier(.6,0,.2,1) forwards' }} />
-                    </svg>
-                    <span ref={originRef} className="absolute" style={{ left: '75%', top: '28%', width: 0, height: 0 }} />
-                    <style>{`@keyframes zspl-draw { to { stroke-dashoffset: 0; } }`}</style>
-                </div>
+            <div ref={containerRef} className="relative flex items-center justify-center" style={{ width: 'min(92vw, 680px)', height: 300 }}>
 
-                {/* Wordmark — fades in (opacity only, so the "i" slot stays pixel-stable) */}
+                {/* ── The Z mark (large, dominant) — draws, forges, then dissolves ── */}
                 <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: phase === 'draw' ? 0 : 1 }}
-                    transition={{ duration: 0.7, ease: 'easeOut' }}
-                    className="text-3xl md:text-5xl font-black tracking-tight leading-none select-none"
+                    className="absolute inset-0 flex items-center justify-center"
+                    initial={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                    animate={zDissolving ? { opacity: 0, scale: 1.18, filter: 'blur(7px)' } : { opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                    transition={{ duration: 0.85, ease: 'easeOut' }}
                 >
-                    <span className="text-white">Zen</span>
-                    <span className="relative inline-block text-white" style={{ lineHeight: 1 }}>
-                        {'\u0131'}{/* dotless i — the flying dot becomes its dot */}
-                        <span ref={targetRef} className="absolute left-1/2" style={{ top: '0.12em', width: 0, height: 0 }} />
-                    </span>
-                    <span className="text-white">t</span>
-                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#007BFF] to-[#00C6FF]"> Tracker</span>
+                    <div className="relative">
+                        <svg viewBox="0 0 100 100" className="w-36 h-36 md:w-44 md:h-44 overflow-visible"
+                            style={{ filter: 'drop-shadow(0 0 18px rgba(0,150,255,0.45))' }}>
+                            <defs>
+                                <linearGradient id="zspl" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stopColor="#007BFF" />
+                                    <stop offset="100%" stopColor="#00C6FF" />
+                                </linearGradient>
+                            </defs>
+                            <path d="M 15 25 H 80 L 30 80 H 65" stroke="url(#zspl)" strokeWidth="12" fill="none"
+                                strokeLinecap="round" strokeLinejoin="round"
+                                style={{ strokeDasharray: 240, strokeDashoffset: 240, animation: 'zspl-draw 1.25s cubic-bezier(.6,0,.2,1) forwards' }} />
+                        </svg>
+                        <span ref={originRef} className="absolute" style={{ left: '75%', top: '28%', width: 0, height: 0 }} />
+                        <style>{`@keyframes zspl-draw { to { stroke-dashoffset: 0; } }`}</style>
+                    </div>
                 </motion.div>
 
-                {/* The travelling dot */}
-                {c && (
-                    <motion.div
+                {/* forge splash + dissolve scatter (centered on the Z) */}
+                {(phase === 'forge' || phase === 'birth' || phase === 'fly') && sparks.map((p, i) => (
+                    <motion.span key={`${phase === 'fly' ? 'f' : 'b'}-${i}`}
                         className="absolute rounded-full"
-                        style={{ width: 11, height: 11, marginLeft: -5.5, marginTop: -5.5, left: 0, top: 0, background: '#00C6FF', boxShadow: '0 0 16px 3px rgba(0,198,255,0.6)' }}
+                        style={{ left: '50%', top: '50%', width: p.s, height: p.s, marginLeft: -p.s / 2, marginTop: -p.s / 2, background: '#3fb6ff', boxShadow: '0 0 8px 1px rgba(0,198,255,0.6)' }}
+                        initial={{ opacity: 0, x: 0, y: 0, scale: 1 }}
+                        animate={{ opacity: [0, 0.9, 0], x: Math.cos(p.a) * p.d, y: Math.sin(p.a) * p.d, scale: [1, 1, 0.4] }}
+                        transition={{ duration: 1.0, ease: 'easeOut' }}
+                    />
+                ))}
+
+                {/* ── The wordmark — born as the dot flies ── */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-4xl md:text-6xl font-black tracking-tight leading-none select-none flex items-baseline">
+                        <motion.div variants={letterParent} initial="hide" animate={writeZenit ? 'show' : 'hide'} className="flex items-baseline">
+                            {ZENIT.map((ch, i) => (
+                                ch === '\u0131' ? (
+                                    <motion.span key={i} variants={letterChild} className="relative inline-block text-white" style={{ lineHeight: 1 }}>
+                                        {'\u0131'}
+                                        <span ref={targetRef} className="absolute left-1/2" style={{ top: '0.12em', width: 0, height: 0 }} />
+                                    </motion.span>
+                                ) : (
+                                    <motion.span key={i} variants={letterChild} className="text-white">{ch}</motion.span>
+                                )
+                            ))}
+                        </motion.div>
+                        <motion.span
+                            initial={{ opacity: 0, x: '-0.3em', filter: 'blur(8px)' }}
+                            animate={showTracker ? { opacity: 1, x: '0em', filter: 'blur(0px)' } : { opacity: 0, x: '-0.3em', filter: 'blur(8px)' }}
+                            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] as any }}
+                            className="text-transparent bg-clip-text bg-gradient-to-r from-[#007BFF] to-[#00C6FF]"
+                        >&nbsp;Tracker</motion.span>
+                    </div>
+                </div>
+
+                {/* ── The travelling dot (the Z's energy) + light trail ── */}
+                {c && [2, 1, 0].map((ghost) => (
+                    <motion.div key={ghost}
+                        className="absolute rounded-full"
+                        style={{
+                            width: 13 - ghost * 2, height: 13 - ghost * 2,
+                            marginLeft: -(13 - ghost * 2) / 2, marginTop: -(13 - ghost * 2) / 2, left: 0, top: 0,
+                            background: '#00C6FF',
+                            boxShadow: ghost === 0 ? '0 0 18px 4px rgba(0,198,255,0.7)' : 'none',
+                            opacity: ghost === 0 ? 1 : 0.35 - ghost * 0.1,
+                            zIndex: ghost === 0 ? 2 : 1,
+                        }}
                         initial={{ x: c.ox, y: c.oy, opacity: 0, scale: 0 }}
                         animate={
-                            phase === 'draw' ? { x: c.ox, y: c.oy, opacity: 0, scale: 0 }
-                                : phase === 'reveal' ? { x: c.ox, y: c.oy, opacity: 1, scale: 1 }
-                                    : phase === 'fly' ? { x: [c.ox, c.ox - 10, c.tx], y: [c.oy, c.oy - 16, c.ty], opacity: 1, scale: 1 }
-                                        : { x: c.tx, y: c.ty, opacity: 1, scale: [1.5, 0.85, 1] }
+                            phase === 'draw' || phase === 'forge' ? { x: c.ox, y: c.oy, opacity: 0, scale: 0 }
+                                : phase === 'birth' ? { x: c.ox, y: c.oy, opacity: ghost === 0 ? 1 : 0, scale: [0, 1.6, 1] }
+                                    : phase === 'fly' ? { x: [c.ox, c.ox - 4, c.tx], y: [c.oy, c.oy - 34, c.ty], opacity: ghost === 0 ? 1 : 0.4 - ghost * 0.12, scale: 1 }
+                                        : phase === 'land' ? { x: c.tx, y: c.ty, opacity: ghost === 0 ? 1 : 0, scale: ghost === 0 ? [1.7, 0.8, 1] : 1 }
+                                            : { x: c.tx, y: c.ty, opacity: ghost === 0 ? 1 : 0, scale: ghost === 0 ? [1, 1.25, 1] : 1 }
                         }
                         transition={
-                            phase === 'fly' ? { duration: 0.8, ease: [0.6, 0, 0.2, 1], times: [0, 0.28, 1] }
-                                : phase === 'land' ? { duration: 0.45, ease: 'easeOut' }
-                                    : { duration: 0.35, ease: 'easeOut' }
+                            phase === 'birth' ? { duration: 0.4, ease: 'easeOut' }
+                                : phase === 'fly' ? { duration: 0.85, ease: [0.6, 0, 0.2, 1], times: [0, 0.3, 1], delay: ghost * 0.045 }
+                                    : phase === 'land' ? { duration: 0.4, ease: 'easeOut' }
+                                        : phase === 'complete' ? { duration: 0.7, ease: 'easeInOut' }
+                                            : { duration: 0.3 }
                         }
                     />
-                )}
+                ))}
 
-                {/* Splash ripple on landing */}
+                {/* impact ripple where the dot lands on the "i" */}
                 {c && phase === 'land' && (
                     <motion.div className="absolute rounded-full border border-[#00C6FF]"
-                        style={{ left: c.tx, top: c.ty, width: 11, height: 11, marginLeft: -5.5, marginTop: -5.5 }}
-                        initial={{ scale: 1, opacity: 0.8 }} animate={{ scale: 4.5, opacity: 0 }} transition={{ duration: 0.6, ease: 'easeOut' }} />
+                        style={{ left: c.tx, top: c.ty, width: 13, height: 13, marginLeft: -6.5, marginTop: -6.5 }}
+                        initial={{ scale: 1, opacity: 0.85 }} animate={{ scale: 5, opacity: 0 }} transition={{ duration: 0.7, ease: 'easeOut' }} />
                 )}
             </div>
         </motion.div>
@@ -204,16 +270,37 @@ function FeatureCard({ f, variants }: { f: typeof FEATURES[number]; variants: an
         >
             <motion.div className="pointer-events-none absolute inset-0" style={{ background: spotlight }} />
             <motion.div
-                animate={hover ? { y: -3, rotate: -8, scale: 1.12 } : { y: 0, rotate: 0, scale: 1 }}
-                transition={{ type: 'spring', stiffness: 320, damping: 16 }}
-                className="relative w-12 h-12 rounded-xl bg-gradient-to-br from-[#007BFF]/25 to-[#00C6FF]/10 border border-white/10 flex items-center justify-center mb-5"
+                animate={hover ? { y: [0, -5, 0] } : { y: 0 }}
+                transition={hover ? { duration: 2.0, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 }}
+                className="relative w-12 h-12 mb-5"
             >
-                <f.icon className="w-5 h-5 text-[#5cc8ff]" />
+                {/* icon plate — gentle breathing + sway */}
+                <motion.div
+                    animate={hover ? { rotate: [0, 6, -6, 0], scale: [1, 1.08, 1] } : { rotate: 0, scale: 1 }}
+                    transition={hover ? { duration: 2.4, repeat: Infinity, ease: 'easeInOut' } : { type: 'spring', stiffness: 300, damping: 18 }}
+                    className="absolute inset-0 rounded-xl bg-gradient-to-br from-[#007BFF]/25 to-[#00C6FF]/10 border border-white/10 flex items-center justify-center"
+                >
+                    <f.icon className="w-5 h-5 text-[#5cc8ff]" />
+                </motion.div>
+                {/* orbiting accent particle */}
+                <motion.div
+                    className="absolute inset-0"
+                    animate={hover ? { rotate: 360 } : { rotate: 0 }}
+                    transition={hover ? { duration: 2.8, repeat: Infinity, ease: 'linear' } : { duration: 0.4 }}
+                >
+                    <motion.span
+                        className="absolute left-1/2 -top-1 w-1.5 h-1.5 -ml-[3px] rounded-full bg-[#5cc8ff]"
+                        style={{ boxShadow: '0 0 8px 2px rgba(0,198,255,0.7)' }}
+                        animate={{ opacity: hover ? 1 : 0 }}
+                        transition={{ duration: 0.3 }}
+                    />
+                </motion.div>
+                {/* glow pulse */}
                 <motion.span
                     className="absolute inset-0 rounded-xl pointer-events-none"
                     style={{ boxShadow: '0 0 22px 2px rgba(0,198,255,0.55)' }}
                     animate={hover ? { opacity: [0, 0.7, 0] } : { opacity: 0 }}
-                    transition={{ duration: 1.4, repeat: hover ? Infinity : 0, ease: 'easeInOut' }}
+                    transition={{ duration: 1.6, repeat: hover ? Infinity : 0, ease: 'easeInOut' }}
                 />
             </motion.div>
             <h3 className="relative font-bold text-xl mb-2">{f.title}</h3>
