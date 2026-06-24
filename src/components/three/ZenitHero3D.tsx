@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * ZenitHero3D — a cinematic, reflective 3D centerpiece for the landing hero.
+ * ZenitHero3D — a cinematic, reflective 3D centerpiece with scroll choreography.
  *
  * Reliability-first (no EffectComposer, no external models/HDR):
- *  • A chrome extruded "Z" monolith + floating glass shards.
+ *  • Chrome extruded "Z" monolith + a glass dot that detaches and orbits +
+ *    glass/metal shards that disperse as you scroll.
  *  • REAL reflections from an in-scene studio Environment built with Lightformers
  *    (procedural — no CDN HDR fetch, so it never blanks out).
- *  • ContactShadows for grounding, Sparkles for atmosphere.
- *  • Mouse parallax + scroll-driven motion via a shared ref (no per-frame React
- *    state → buttery smooth, zero re-render lag).
+ *  • Camera ARCS around the monolith as you scroll (scrollytelling) while every
+ *    transform is lerped toward scroll-derived targets → buttery, no re-renders.
  */
 
 import { useRef, useMemo, Suspense } from 'react';
@@ -17,15 +17,17 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Environment, Lightformer, ContactShadows, Float, Sparkles, MeshTransmissionMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 
-export interface HeroState { scroll: number; px: number; py: number } // page scroll 0..1 + pointer −1..1
+export interface HeroState { scroll: number; px: number; py: number }
+type StateRef = { current: HeroState };
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
 // ─── The Zenit "Z" — extruded, chrome ────────────────────────────────────────
 function ZMonolith() {
     const geo = useMemo(() => {
-        // Build the Z stroke as a flat shape, then extrude it
         const s = new THREE.Shape();
-        // outer outline of a bold Z (in a ~3 x 3.6 box), drawn clockwise
-        const t = 0.62; // stroke thickness
+        const t = 0.62;
         s.moveTo(-1.5, 1.8);
         s.lineTo(1.5, 1.8);
         s.lineTo(1.5, 1.8 - t);
@@ -41,7 +43,6 @@ function ZMonolith() {
         g.center();
         return g;
     }, []);
-
     return (
         <mesh geometry={geo} castShadow>
             <meshStandardMaterial color="#dfe9ff" metalness={1} roughness={0.12} envMapIntensity={1.4} />
@@ -49,11 +50,27 @@ function ZMonolith() {
     );
 }
 
-// the signature dot, as a glass sphere
-function BrandDot() {
+// the signature dot — detaches and orbits the monolith with scroll
+function BrandDot({ state }: { state: StateRef }) {
+    const ref = useRef<THREE.Mesh>(null);
+    useFrame((s) => {
+        if (!ref.current) return;
+        const p = state.current.scroll;
+        // p<0.12: attached at top-right of the Z; beyond that, orbit outward
+        const detach = clamp01((p - 0.1) / 0.5);
+        const ang = s.clock.elapsedTime * 0.6 + detach * Math.PI * 2;
+        const radius = lerp(0.0, 3.4, detach);
+        const homeX = 2.0, homeY = 1.7;
+        const tx = lerp(homeX, Math.cos(ang) * radius, detach);
+        const ty = lerp(homeY, Math.sin(ang) * radius * 0.6, detach);
+        const tz = lerp(0.1, Math.sin(ang) * radius * 0.5, detach);
+        ref.current.position.x = lerp(ref.current.position.x, tx, 0.08);
+        ref.current.position.y = lerp(ref.current.position.y, ty, 0.08);
+        ref.current.position.z = lerp(ref.current.position.z, tz, 0.08);
+    });
     return (
-        <mesh position={[2.0, 1.7, 0.1]}>
-            <sphereGeometry args={[0.36, 48, 48]} />
+        <mesh ref={ref} position={[2.0, 1.7, 0.1]}>
+            <sphereGeometry args={[0.34, 48, 48]} />
             <MeshTransmissionMaterial
                 thickness={0.6} roughness={0.05} transmission={1} ior={1.4}
                 chromaticAberration={0.06} anisotropy={0.2} distortion={0.2} distortionScale={0.3}
@@ -63,23 +80,38 @@ function BrandDot() {
     );
 }
 
-// floating glass shards around the monolith
-function Shards() {
+// floating glass/metal shards that disperse outward with scroll
+function Shards({ state }: { state: StateRef }) {
     const items = useMemo(() => [
-        { p: [-3.2, 1.4, -1.5], s: 0.5, r: [0.4, 0.8, 0.2] },
-        { p: [3.4, -1.2, -1.0], s: 0.7, r: [1.0, 0.3, 0.6] },
-        { p: [-2.6, -1.8, 0.6], s: 0.4, r: [0.2, 1.2, 0.4] },
-        { p: [2.8, 2.2, -2.0], s: 0.55, r: [0.6, 0.5, 1.0] },
+        { base: [-3.2, 1.4, -1.5], s: 0.5, r: [0.4, 0.8, 0.2] },
+        { base: [3.4, -1.2, -1.0], s: 0.7, r: [1.0, 0.3, 0.6] },
+        { base: [-2.6, -1.8, 0.6], s: 0.4, r: [0.2, 1.2, 0.4] },
+        { base: [2.8, 2.2, -2.0], s: 0.55, r: [0.6, 0.5, 1.0] },
+        { base: [-3.8, -0.4, -2.4], s: 0.45, r: [0.9, 0.2, 0.7] },
+        { base: [3.9, 1.0, 0.4], s: 0.5, r: [0.3, 0.9, 0.5] },
     ], []);
+    const refs = useRef<(THREE.Group | null)[]>([]);
+    useFrame(() => {
+        const p = state.current.scroll;
+        const spread = 1 + p * 1.1;
+        items.forEach((it, i) => {
+            const g = refs.current[i]; if (!g) return;
+            g.position.x = lerp(g.position.x, it.base[0] * spread, 0.06);
+            g.position.y = lerp(g.position.y, it.base[1] * spread, 0.06);
+            g.position.z = lerp(g.position.z, it.base[2] * spread, 0.06);
+        });
+    });
     return (
         <>
             {items.map((it, i) => (
-                <Float key={i} speed={1.4} rotationIntensity={0.6} floatIntensity={1.2}>
-                    <mesh position={it.p as [number, number, number]} rotation={it.r as [number, number, number]} scale={it.s}>
-                        <icosahedronGeometry args={[1, 0]} />
-                        <meshStandardMaterial color="#9fd8ff" metalness={0.9} roughness={0.08} envMapIntensity={1.2} />
-                    </mesh>
-                </Float>
+                <group key={i} ref={(el) => { refs.current[i] = el; }} position={it.base as [number, number, number]}>
+                    <Float speed={1.4} rotationIntensity={0.6} floatIntensity={1.2}>
+                        <mesh rotation={it.r as [number, number, number]} scale={it.s}>
+                            <icosahedronGeometry args={[1, 0]} />
+                            <meshStandardMaterial color="#9fd8ff" metalness={0.9} roughness={0.08} envMapIntensity={1.2} />
+                        </mesh>
+                    </Float>
+                </group>
             ))}
         </>
     );
@@ -94,7 +126,6 @@ function StudioEnv() {
                 <Lightformer form="circle" intensity={3} position={[-5, 1, -6]} scale={5} color="#ffffff" />
                 <Lightformer form="ring" intensity={3} position={[6, -2, -5]} scale={4} color="#00C6FF" />
                 <Lightformer form="rect" intensity={2} position={[0, -6, -4]} scale={[12, 4, 1]} color="#1b3a8f" />
-                {/* moving softbox for living reflections */}
                 <SpinningLight />
             </group>
         </Environment>
@@ -113,42 +144,48 @@ function SpinningLight() {
     return <Lightformer ref={ref} form="rect" intensity={3} scale={[3, 6, 1]} color="#7fb6ff" />;
 }
 
-// ─── group that reacts to mouse + scroll ─────────────────────────────────────
-function Rig({ state }: { state: { current: HeroState } }) {
+// ─── rig: camera arcs around the monolith as you scroll ──────────────────────
+function Rig({ state }: { state: StateRef }) {
     const group = useRef<THREE.Group>(null);
     const { camera } = useThree();
+    const camTarget = useRef(new THREE.Vector3(0, 0.2, 9));
+    const look = useRef(new THREE.Vector3(0, 0, 0));
     useFrame((_, dt) => {
         if (!group.current) return;
         const { scroll: p, px, py } = state.current;
-        // gentle continuous spin + mouse parallax tilt
+        const arc = clamp01(p / 0.55);          // most camera motion happens early
+        // monolith: continuous spin + scroll tilt + mouse parallax
         group.current.rotation.y += dt * 0.25;
-        const targetX = py * 0.25 + p * 0.6;
-        const targetZrot = px * 0.15;
-        group.current.rotation.x += (targetX - group.current.rotation.x) * 0.06;
-        group.current.rotation.z += (targetZrot - group.current.rotation.z) * 0.06;
-        // scroll: push the object back + down as the user scrolls into content
-        const targetY = -p * 2.2;
-        const targetScale = 1 - p * 0.25;
-        group.current.position.y += (targetY - group.current.position.y) * 0.08;
-        const sc = group.current.scale.x + (targetScale - group.current.scale.x) * 0.08;
-        group.current.scale.setScalar(sc);
-        // subtle camera dolly with cursor
-        camera.position.x += (px * 0.6 - camera.position.x) * 0.04;
-        camera.position.y += (py * 0.4 + 0.2 - camera.position.y) * 0.04;
-        camera.lookAt(0, 0, 0);
+        const tiltX = py * 0.2 + arc * 0.5;
+        const tiltZ = px * 0.12;
+        group.current.rotation.x = lerp(group.current.rotation.x, tiltX, 0.06);
+        group.current.rotation.z = lerp(group.current.rotation.z, tiltZ, 0.06);
+        group.current.position.y = lerp(group.current.position.y, -arc * 1.4, 0.06);
+
+        // camera arcs on a circle around the Z + dollies in, then settles
+        const ang = -0.25 + arc * 1.15 + px * 0.25;
+        const rad = lerp(9, 6.8, arc);
+        camTarget.current.set(
+            Math.sin(ang) * rad,
+            lerp(0.2, 1.6, arc) + py * 0.4,
+            Math.cos(ang) * rad
+        );
+        camera.position.lerp(camTarget.current, 0.045);
+        look.current.set(0, lerp(0, -0.6, arc), 0);
+        camera.lookAt(look.current);
     });
     return (
         <group ref={group}>
             <Float speed={1.1} rotationIntensity={0.15} floatIntensity={0.6}>
                 <ZMonolith />
-                <BrandDot />
             </Float>
-            <Shards />
+            <BrandDot state={state} />
+            <Shards state={state} />
         </group>
     );
 }
 
-export default function ZenitHero3D({ state }: { state: { current: HeroState } }) {
+export default function ZenitHero3D({ state }: { state: StateRef }) {
     return (
         <Canvas
             camera={{ position: [0, 0.2, 9], fov: 42 }}
@@ -162,7 +199,7 @@ export default function ZenitHero3D({ state }: { state: { current: HeroState } }
                 <StudioEnv />
                 <Rig state={state} />
                 <ContactShadows position={[0, -2.6, 0]} opacity={0.5} scale={16} blur={2.6} far={5} color="#0a1530" />
-                <Sparkles count={60} scale={14} size={2} speed={0.25} opacity={0.5} color="#9fd8ff" />
+                <Sparkles count={70} scale={16} size={2} speed={0.25} opacity={0.5} color="#9fd8ff" />
             </Suspense>
         </Canvas>
     );

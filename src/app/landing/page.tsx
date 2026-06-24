@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useScroll, useTransform, type MotionValue } from 'framer-motion';
 import { ZenitLogo } from '@/components/brand/zenit-logo';
 import { CURRENCIES, fmtPrice, annualPrice, currencyForCountry, type CurrencyCode } from '@/lib/pricing';
 import type { HeroState } from '@/components/three/ZenitHero3D';
@@ -54,6 +54,65 @@ function Loader({ onDone }: { onDone: () => void }) {
             </div>
             <p className="mt-3 text-xs tabular-nums tracking-[0.3em] text-white/40">{pct}%</p>
         </motion.div>
+    );
+}
+
+// ─── Story beats: pinned captions that crossfade while the 3D choreographs ───
+const BEATS = [
+    {
+        kicker: 'The problem',
+        title: 'Your QA lives in five different tools.',
+        body: 'Test cases in a spreadsheet. Bugs in Jira. Devices in a drawer. Reports built by hand at 11pm. Context lost in every handoff.',
+    },
+    {
+        kicker: 'The shift',
+        title: 'One source of truth — every signal in one orbit.',
+        body: 'Plans, runs, bugs, devices and analytics share the same data. Click a failed test, see the exact phone it ran on, jump straight to the bug.',
+    },
+    {
+        kicker: 'The payoff',
+        title: 'Decisions in seconds, not spreadsheets.',
+        body: 'Live pass-rates, fleet status and team velocity render the moment you open Zenit. No exports. No stale dashboards. Just trust.',
+    },
+];
+
+// A single beat that fades + lifts as the stage scrolls through its slice
+function Beat({ progress, index, total, beat }: { progress: MotionValue<number>; index: number; total: number; beat: typeof BEATS[number] }) {
+    const seg = 1 / total;
+    const start = index * seg;
+    const inAt = start + seg * 0.12;
+    const holdEnd = start + seg * 0.72;
+    const end = start + seg;
+    const opacity = useTransform(progress, [start, inAt, holdEnd, end], [0, 1, 1, 0]);
+    const y = useTransform(progress, [start, inAt, holdEnd, end], [40, 0, 0, -40]);
+    const blur = useTransform(progress, [start, inAt, holdEnd, end], [12, 0, 0, 12]);
+    const filter = useTransform(blur, (b) => `blur(${b}px)`);
+    return (
+        <motion.div style={{ opacity, y, filter }} className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+            <span className="text-xs uppercase tracking-[0.4em] text-[#5cc8ff] mb-5">{beat.kicker}</span>
+            <h2 className="text-4xl md:text-6xl font-black tracking-[-0.02em] leading-[1.02] max-w-3xl">{beat.title}</h2>
+            <p className="text-base md:text-lg text-white/55 max-w-xl mx-auto mt-6 leading-relaxed">{beat.body}</p>
+        </motion.div>
+    );
+}
+
+// Tall pinned scroll-stage: the 3D choreographs behind, captions crossfade through
+function StoryStage() {
+    const ref = useRef<HTMLDivElement>(null);
+    const { scrollYProgress } = useScroll({ target: ref, offset: ['start start', 'end end'] });
+    const railWidth = useTransform(scrollYProgress, [0, 1], ['0%', '100%']);
+    return (
+        <section ref={ref} className="relative z-10" style={{ height: `${BEATS.length * 110}vh` }}>
+            <div className="sticky top-0 h-screen overflow-hidden">
+                {BEATS.map((b, i) => (
+                    <Beat key={i} progress={scrollYProgress} index={i} total={BEATS.length} beat={b} />
+                ))}
+                {/* progress rail */}
+                <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-40 h-px bg-white/10 overflow-hidden">
+                    <motion.div className="absolute inset-y-0 left-0 bg-gradient-to-r from-[#007BFF] to-[#00C6FF]" style={{ width: railWidth }} />
+                </div>
+            </div>
+        </section>
     );
 }
 
@@ -190,6 +249,9 @@ export default function LandingPage() {
                     <ChevronDown className="w-4 h-4 animate-bounce" />
                 </motion.div>
             </section>
+
+            {/* ── Cinematic scroll-stage: 3D choreographs behind crossfading beats ── */}
+            <StoryStage />
 
             {/* ── Content (solid sections slide over the 3D) ── */}
             <div className="relative z-10 bg-gradient-to-b from-transparent via-[#05070f] to-[#05070f]">
