@@ -24,27 +24,36 @@ const FEATURES = [
 
 // ─── Cinematic brand splash ──────────────────────────────────────────────────
 // Draw Z → forge splash → dot breaks free + Z dissolves → "Zenit" writes itself
-// → dot lands as the "i" dot (ripple) → "Tracker" completes → final lockup.
+// → dot lands as the "i" dot (splash) → "Tracker" completes → final lockup.
+// The "i" is hand-built (stem drawn by us, dot = the flying droplet) so the dot
+// ALWAYS lands perfectly on the stem at any size — no font-glyph guessing.
 type SplashPhase = 'draw' | 'forge' | 'birth' | 'fly' | 'land' | 'complete';
 
-const ZENIT = ['Z', 'e', 'n', '\u0131', 't']; // dotless ı — the flying dot becomes its dot
+const ZENIT = ['Z', 'e', 'n', 'i', 't'];
 
 function ZenitSplash({ onDone }: { onDone: () => void }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const originRef = useRef<HTMLSpanElement>(null);   // the Z's signature-dot spot
-    const targetRef = useRef<HTMLSpanElement>(null);   // the dot-slot above the "ı"
-    const [c, setC] = useState<{ ox: number; oy: number; tx: number; ty: number } | null>(null);
+    const iRef = useRef<HTMLSpanElement>(null);        // the hand-built "i" container
+    const targetRef = useRef<HTMLSpanElement>(null);   // exact landing point = dot of the "i"
+    const [c, setC] = useState<{ ox: number; oy: number; tx: number; ty: number; ds: number } | null>(null);
     const [phase, setPhase] = useState<SplashPhase>('draw');
 
     const measure = useCallback(() => {
         const cont = containerRef.current, o = originRef.current, t = targetRef.current;
         if (!cont || !o || !t) return;
         const cb = cont.getBoundingClientRect(), ob = o.getBoundingClientRect(), tb = t.getBoundingClientRect();
+        let ds = 12;
+        if (iRef.current) {
+            const fs = parseFloat(getComputedStyle(iRef.current).fontSize);
+            if (fs) ds = Math.max(7, Math.round(fs * 0.2));
+        }
         setC({
             ox: ob.left + ob.width / 2 - cb.left,
             oy: ob.top + ob.height / 2 - cb.top,
             tx: tb.left + tb.width / 2 - cb.left,
             ty: tb.top + tb.height / 2 - cb.top,
+            ds,
         });
     }, []);
 
@@ -59,33 +68,34 @@ function ZenitSplash({ onDone }: { onDone: () => void }) {
     // choreography clock
     useEffect(() => {
         const timers = [
-            setTimeout(() => setPhase('forge'), 1250),   // Z fully drawn → forge splash
-            setTimeout(() => setPhase('birth'), 1550),   // glowing dot condenses at the Z
-            setTimeout(() => { measure(); setPhase('fly'); }, 1950), // dot breaks free, Z dissolves, "Zenit" writes
-            setTimeout(() => setPhase('land'), 2800),    // dot seats as the "i" dot + ripple
-            setTimeout(() => setPhase('complete'), 3050),// "Tracker" completes
-            setTimeout(onDone, 4000),
+            setTimeout(() => setPhase('forge'), 1250),
+            setTimeout(() => setPhase('birth'), 1550),
+            setTimeout(() => { measure(); setPhase('fly'); }, 1950),
+            setTimeout(() => { measure(); setPhase('land'); }, 2850),
+            setTimeout(() => setPhase('complete'), 3120),
+            setTimeout(onDone, 4150),
         ];
         return () => timers.forEach(clearTimeout);
     }, [onDone, measure]);
 
-    // particle bursts (memoized so they don't reshuffle on re-render)
     const sparks = useMemo(() => Array.from({ length: 12 }).map((_, i) => ({
-        a: (i / 12) * Math.PI * 2 + Math.random() * 0.4,
-        d: 55 + Math.random() * 55,
-        s: 2 + Math.random() * 3,
+        a: (i / 12) * Math.PI * 2 + Math.random() * 0.4, d: 55 + Math.random() * 55, s: 2 + Math.random() * 3,
+    })), []);
+    const landBurst = useMemo(() => Array.from({ length: 10 }).map((_, i) => ({
+        a: (i / 10) * Math.PI * 2 + Math.random() * 0.3, d: 26 + Math.random() * 26, s: 2 + Math.random() * 2.5,
     })), []);
 
-    const zDrawn = phase !== 'draw';
     const zDissolving = phase === 'fly' || phase === 'land' || phase === 'complete';
     const writeZenit = phase === 'fly' || phase === 'land' || phase === 'complete';
     const showTracker = phase === 'land' || phase === 'complete';
+    const dotLanded = phase === 'land' || phase === 'complete';
 
     const letterParent = { hide: {}, show: { transition: { staggerChildren: 0.085 } } };
     const letterChild = {
         hide: { opacity: 0, y: '0.35em', filter: 'blur(8px)' },
         show: { opacity: 1, y: '0em', filter: 'blur(0px)', transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] as any } },
     };
+    const ds = c?.ds ?? 12;
 
     return (
         <motion.div exit={{ opacity: 0 }} transition={{ duration: 0.7 }}
@@ -117,7 +127,12 @@ function ZenitSplash({ onDone }: { onDone: () => void }) {
                     </div>
                 </motion.div>
 
-                {/* forge splash + dissolve scatter (centered on the Z) */}
+                {/* forge ring + scatter (centered on the Z) */}
+                {phase === 'forge' && (
+                    <motion.div className="absolute rounded-full border-2 border-[#00C6FF]"
+                        style={{ left: '50%', top: '50%', width: 40, height: 40, marginLeft: -20, marginTop: -20 }}
+                        initial={{ scale: 0.4, opacity: 0.9 }} animate={{ scale: 3.6, opacity: 0 }} transition={{ duration: 0.7, ease: 'easeOut' }} />
+                )}
                 {(phase === 'forge' || phase === 'birth' || phase === 'fly') && sparks.map((p, i) => (
                     <motion.span key={`${phase === 'fly' ? 'f' : 'b'}-${i}`}
                         className="absolute rounded-full"
@@ -128,16 +143,19 @@ function ZenitSplash({ onDone }: { onDone: () => void }) {
                     />
                 ))}
 
-                {/* ── The wordmark — born as the dot flies ── */}
+                {/* ── The wordmark — born as the dot flies (the "i" is hand-built) ── */}
                 <div className="absolute inset-0 flex items-center justify-center">
                     <div className="text-4xl md:text-6xl font-black tracking-tight leading-none select-none flex items-baseline">
                         <motion.div variants={letterParent} initial="hide" animate={writeZenit ? 'show' : 'hide'} className="flex items-baseline">
                             {ZENIT.map((ch, i) => (
-                                ch === '\u0131' ? (
-                                    <motion.span key={i} variants={letterChild} className="relative inline-block text-white" style={{ lineHeight: 1 }}>
-                                        {'\u0131'}
-                                        <span ref={targetRef} className="absolute left-1/2" style={{ top: '0.12em', width: 0, height: 0 }} />
-                                    </motion.span>
+                                ch === 'i' ? (
+                                    <span key={i} ref={iRef} className="relative inline-block align-baseline" style={{ width: '0.30em', height: '0.52em' }}>
+                                        {/* the stem — drawn by us, writes in with the other letters */}
+                                        <motion.span variants={letterChild} className="absolute bottom-0 bg-white"
+                                            style={{ left: '50%', marginLeft: '-0.07em', width: '0.14em', height: '0.52em', borderRadius: '0.06em' }} />
+                                        {/* exact landing point for the droplet (the dot of the i) */}
+                                        <span ref={targetRef} className="absolute" style={{ left: '50%', top: '-0.18em', width: 0, height: 0 }} />
+                                    </span>
                                 ) : (
                                     <motion.span key={i} variants={letterChild} className="text-white">{ch}</motion.span>
                                 )
@@ -152,41 +170,54 @@ function ZenitSplash({ onDone }: { onDone: () => void }) {
                     </div>
                 </div>
 
-                {/* ── The travelling dot (the Z's energy) + light trail ── */}
-                {c && [2, 1, 0].map((ghost) => (
-                    <motion.div key={ghost}
-                        className="absolute rounded-full"
-                        style={{
-                            width: 13 - ghost * 2, height: 13 - ghost * 2,
-                            marginLeft: -(13 - ghost * 2) / 2, marginTop: -(13 - ghost * 2) / 2, left: 0, top: 0,
-                            background: '#00C6FF',
-                            boxShadow: ghost === 0 ? '0 0 18px 4px rgba(0,198,255,0.7)' : 'none',
-                            opacity: ghost === 0 ? 1 : 0.35 - ghost * 0.1,
-                            zIndex: ghost === 0 ? 2 : 1,
-                        }}
-                        initial={{ x: c.ox, y: c.oy, opacity: 0, scale: 0 }}
-                        animate={
-                            phase === 'draw' || phase === 'forge' ? { x: c.ox, y: c.oy, opacity: 0, scale: 0 }
-                                : phase === 'birth' ? { x: c.ox, y: c.oy, opacity: ghost === 0 ? 1 : 0, scale: [0, 1.6, 1] }
-                                    : phase === 'fly' ? { x: [c.ox, c.ox - 4, c.tx], y: [c.oy, c.oy - 34, c.ty], opacity: ghost === 0 ? 1 : 0.4 - ghost * 0.12, scale: 1 }
-                                        : phase === 'land' ? { x: c.tx, y: c.ty, opacity: ghost === 0 ? 1 : 0, scale: ghost === 0 ? [1.7, 0.8, 1] : 1 }
-                                            : { x: c.tx, y: c.ty, opacity: ghost === 0 ? 1 : 0, scale: ghost === 0 ? [1, 1.25, 1] : 1 }
-                        }
-                        transition={
-                            phase === 'birth' ? { duration: 0.4, ease: 'easeOut' }
-                                : phase === 'fly' ? { duration: 0.85, ease: [0.6, 0, 0.2, 1], times: [0, 0.3, 1], delay: ghost * 0.045 }
-                                    : phase === 'land' ? { duration: 0.4, ease: 'easeOut' }
-                                        : phase === 'complete' ? { duration: 0.7, ease: 'easeInOut' }
-                                            : { duration: 0.3 }
-                        }
-                    />
-                ))}
+                {/* ── The travelling droplet (the Z's energy) + light trail ── */}
+                {c && [2, 1, 0].map((ghost) => {
+                    const size = ds - ghost * 2;
+                    return (
+                        <motion.div key={ghost}
+                            className="absolute rounded-full"
+                            style={{
+                                width: size, height: size, marginLeft: -size / 2, marginTop: -size / 2, left: 0, top: 0,
+                                background: '#00C6FF',
+                                boxShadow: ghost === 0 ? '0 0 18px 4px rgba(0,198,255,0.7)' : 'none',
+                                zIndex: ghost === 0 ? 2 : 1,
+                            }}
+                            initial={{ x: c.ox, y: c.oy, opacity: 0, scale: 0 }}
+                            animate={
+                                phase === 'draw' || phase === 'forge' ? { x: c.ox, y: c.oy, opacity: 0, scale: 0 }
+                                    : phase === 'birth' ? { x: c.ox, y: c.oy, opacity: ghost === 0 ? 1 : 0, scale: [0, 1.6, 1] }
+                                        : phase === 'fly' ? { x: [c.ox, c.ox - 4, c.tx], y: [c.oy, c.oy - 34, c.ty], opacity: ghost === 0 ? 1 : 0.4 - ghost * 0.12, scale: 1 }
+                                            : phase === 'land' ? { x: c.tx, y: c.ty, opacity: ghost === 0 ? 1 : 0, scale: ghost === 0 ? [2, 0.7, 1.15, 1] : 1 }
+                                                : { x: c.tx, y: c.ty, opacity: ghost === 0 ? 1 : 0, scale: ghost === 0 ? [1, 1.2, 1] : 1 }
+                            }
+                            transition={
+                                phase === 'birth' ? { duration: 0.4, ease: 'easeOut' }
+                                    : phase === 'fly' ? { duration: 0.85, ease: [0.6, 0, 0.2, 1], times: [0, 0.3, 1], delay: ghost * 0.045 }
+                                        : phase === 'land' ? { duration: 0.5, ease: 'easeOut', times: [0, 0.4, 0.7, 1] }
+                                            : phase === 'complete' ? { duration: 0.7, ease: 'easeInOut' }
+                                                : { duration: 0.3 }
+                            }
+                        />
+                    );
+                })}
 
-                {/* impact ripple where the dot lands on the "i" */}
-                {c && phase === 'land' && (
-                    <motion.div className="absolute rounded-full border border-[#00C6FF]"
-                        style={{ left: c.tx, top: c.ty, width: 13, height: 13, marginLeft: -6.5, marginTop: -6.5 }}
-                        initial={{ scale: 1, opacity: 0.85 }} animate={{ scale: 5, opacity: 0 }} transition={{ duration: 0.7, ease: 'easeOut' }} />
+                {/* ── Landing splash: flash + ring + particle burst at the "i" dot ── */}
+                {c && dotLanded && (
+                    <>
+                        <motion.div className="absolute rounded-full" key="flash"
+                            style={{ left: c.tx, top: c.ty, width: ds, height: ds, marginLeft: -ds / 2, marginTop: -ds / 2, background: 'radial-gradient(circle, rgba(255,255,255,0.95), rgba(0,198,255,0.5) 60%, transparent 70%)' }}
+                            initial={{ scale: 0.5, opacity: 1 }} animate={{ scale: 5, opacity: 0 }} transition={{ duration: 0.5, ease: 'easeOut' }} />
+                        <motion.div className="absolute rounded-full border border-[#00C6FF]" key="ring"
+                            style={{ left: c.tx, top: c.ty, width: ds, height: ds, marginLeft: -ds / 2, marginTop: -ds / 2 }}
+                            initial={{ scale: 1, opacity: 0.85 }} animate={{ scale: 6, opacity: 0 }} transition={{ duration: 0.7, ease: 'easeOut' }} />
+                        {landBurst.map((p, i) => (
+                            <motion.span key={`lb-${i}`} className="absolute rounded-full"
+                                style={{ left: c.tx, top: c.ty, width: p.s, height: p.s, marginLeft: -p.s / 2, marginTop: -p.s / 2, background: '#9fdcff', boxShadow: '0 0 6px 1px rgba(0,198,255,0.7)' }}
+                                initial={{ opacity: 0, x: 0, y: 0 }}
+                                animate={{ opacity: [0, 1, 0], x: Math.cos(p.a) * p.d, y: Math.sin(p.a) * p.d }}
+                                transition={{ duration: 0.6, ease: 'easeOut' }} />
+                        ))}
+                    </>
                 )}
             </div>
         </motion.div>
