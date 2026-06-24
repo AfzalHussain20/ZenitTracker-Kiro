@@ -9,26 +9,17 @@ import { ZenitLogo } from '@/components/brand/zenit-logo';
 import { CURRENCIES, fmtPrice, annualPrice, currencyForCountry, type CurrencyCode } from '@/lib/pricing';
 import type { HeroState } from '@/components/three/ZenitHero3D';
 import {
-    CheckCircle2, Smartphone, BarChart3, ClipboardCheck, Bug, Users, Zap,
+    CheckCircle2, Smartphone, BarChart3, ClipboardCheck, Zap,
     ArrowRight, Globe, ChevronDown,
 } from 'lucide-react';
 
 const ZenitHero3D = dynamic(() => import('@/components/three/ZenitHero3D'), { ssr: false });
 
 const FEATURES = [
-    { icon: ClipboardCheck, title: 'Test Management', desc: 'Plan, execute, and track suites with step-by-step run execution and live pass-rates.', span: 'lg:col-span-2' },
-    { icon: Smartphone, title: 'Device Fleet — Keepr', desc: 'Know which phone every bug came from. QR checkout, weekly audits, real-time sync.', span: '' },
-    { icon: Bug, title: 'Bug Tracking', desc: 'Jira sync, priority analytics, KPI dashboards.', span: '' },
-    { icon: BarChart3, title: 'QA Analytics', desc: 'Pass rates, coverage, team performance and trend visualization in 3D.', span: 'lg:col-span-2' },
-    { icon: Users, title: 'Team & Worklog', desc: 'Roles, capacity, and time tracking.', span: '' },
-    { icon: Zap, title: 'Automation Runner', desc: 'Run and monitor automated suites with live telemetry.', span: '' },
-];
-
-const FAQS = [
-    { q: 'How is Zenit different from TestRail or Zephyr?', a: 'Those tools only do test management. Zenit unifies test management, bug tracking, device fleet management, automation, and analytics in one platform — at a fraction of the price.' },
-    { q: 'Can I import my existing test cases?', a: 'Yes. Create a plan, add cases manually or in bulk, and start running. Spreadsheet import is on the roadmap.' },
-    { q: 'Is there a free plan?', a: 'Yes — 3 users, 5 test plans, and basic device tracking, free forever. Upgrade when your team grows.' },
-    { q: 'Do you integrate with Jira?', a: 'Yes. Bug analytics and KPI dashboards sync directly with your Jira project on the Pro and Enterprise plans.' },
+    { icon: ClipboardCheck, title: 'One platform, five tools retired', desc: 'Test management, bug tracking, device fleet, automation and analytics — consolidated. Cut licence sprawl and the cost that comes with it.', span: 'lg:col-span-2' },
+    { icon: BarChart3, title: 'Decision-ready analytics', desc: 'Live pass-rates, coverage and team velocity — board-ready, no manual reporting.', span: '' },
+    { icon: Smartphone, title: 'Full device traceability', desc: 'Every bug tied to the exact device it came from. QR checkout, audits, real-time sync.', span: '' },
+    { icon: Zap, title: 'Live in an afternoon', desc: 'Web-based, zero install, Jira-ready. Your team is running real test cycles the same day.', span: 'lg:col-span-2' },
 ];
 
 // ─── Loader (counts to 100, branded) ─────────────────────────────────────────
@@ -102,7 +93,7 @@ function StoryStage() {
     const { scrollYProgress } = useScroll({ target: ref, offset: ['start start', 'end end'] });
     const railWidth = useTransform(scrollYProgress, [0, 1], ['0%', '100%']);
     return (
-        <section ref={ref} className="relative z-10" style={{ height: `${BEATS.length * 110}vh` }}>
+        <section ref={ref} className="relative z-10" style={{ height: `${BEATS.length * 95}vh` }}>
             <div className="sticky top-0 h-screen overflow-hidden">
                 {BEATS.map((b, i) => (
                     <Beat key={i} progress={scrollYProgress} index={i} total={BEATS.length} beat={b} />
@@ -120,7 +111,6 @@ export default function LandingPage() {
     const [loading, setLoading] = useState(true);
     const [cur, setCur] = useState<CurrencyCode>('INR');
     const [cycle, setCycle] = useState<'monthly' | 'annual'>('monthly');
-    const [openFaq, setOpenFaq] = useState<number | null>(0);
 
     // shared motion state for the 3D scene (no re-renders → smooth)
     const state = useRef<HeroState>({ scroll: 0, px: 0, py: 0 });
@@ -200,9 +190,8 @@ export default function LandingPage() {
                 <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
                     <ZenitLogo />
                     <div className="hidden md:flex items-center gap-7 text-sm text-white/60">
-                        <a href="#features" className="hover:text-white transition-colors">Features</a>
+                        <a href="#features" className="hover:text-white transition-colors">Platform</a>
                         <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
-                        <a href="#faq" className="hover:text-white transition-colors">FAQ</a>
                     </div>
                     <div className="flex items-center gap-3">
                         <Link href="/login"><Button variant="ghost" className="text-sm text-white/70 hover:text-white">Log in</Button></Link>
@@ -219,7 +208,7 @@ export default function LandingPage() {
             <section className="relative z-10 min-h-screen flex flex-col items-center justify-center text-center px-6">
                 <motion.div initial="hidden" animate={loading ? 'hidden' : 'show'} variants={stagger}>
                     <motion.div variants={fade} className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-[#5cc8ff] font-semibold mb-7 backdrop-blur-sm">
-                        <Globe className="w-3.5 h-3.5" />The all-in-one QA platform
+                        <Globe className="w-3.5 h-3.5" />The QA platform that pays for itself
                     </motion.div>
                     <motion.h1 variants={fade} className="text-6xl md:text-8xl font-black tracking-[-0.03em] leading-[0.95]">
                         Ship quality
@@ -228,7 +217,7 @@ export default function LandingPage() {
                         at the speed of trust.
                     </motion.h1>
                     <motion.p variants={fade} className="text-base md:text-lg text-white/50 max-w-xl mx-auto mt-8 leading-relaxed">
-                        Test management, bug tracking, device fleet control, automation and analytics — unified in one breathtaking platform.
+                        Retire five disconnected tools. Give your QA team — and your board — one place for testing, bugs, devices and analytics. Less spend, faster releases, clearer decisions.
                     </motion.p>
                     <motion.div variants={fade} className="flex items-center justify-center gap-4 mt-10 flex-wrap">
                         <Link href="/signup">
@@ -268,11 +257,11 @@ export default function LandingPage() {
                 </section>
 
                 {/* Features bento */}
-                <section id="features" className="py-28 px-6 bg-[#05070f]">
+                <section id="features" className="py-24 px-6 bg-[#05070f]">
                     <div className="max-w-6xl mx-auto">
                         <motion.div initial="hidden" whileInView="show" viewport={{ once: true, margin: '-100px' }} variants={stagger}>
-                            <motion.h2 variants={fade} className="text-4xl md:text-5xl font-black text-center tracking-tight mb-3">Everything your QA team needs</motion.h2>
-                            <motion.p variants={fade} className="text-center text-white/40 mb-16">One platform. Zero context-switching.</motion.p>
+                            <motion.h2 variants={fade} className="text-4xl md:text-5xl font-black text-center tracking-tight mb-3">Built for outcomes, not busywork</motion.h2>
+                            <motion.p variants={fade} className="text-center text-white/40 mb-16">Consolidate the stack. Cut the cost. Ship with confidence.</motion.p>
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                                 {FEATURES.map((f, i) => (
                                     <motion.div key={i} variants={fade} className={`group p-7 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-[#007BFF]/40 hover:bg-[#007BFF]/[0.04] transition-all duration-300 ${f.span}`}>
@@ -288,25 +277,8 @@ export default function LandingPage() {
                     </div>
                 </section>
 
-                {/* Stats */}
-                <section className="py-20 px-6 border-y border-white/5 bg-white/[0.02]">
-                    <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-                        {[
-                            { v: '5-in-1', l: 'Tools unified' },
-                            { v: '5 min', l: 'To first test run' },
-                            { v: '3×', l: 'Cheaper than TestRail' },
-                            { v: '100%', l: 'Web-based, no install' },
-                        ].map((s, i) => (
-                            <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.08 }}>
-                                <p className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[#007BFF] to-[#00C6FF]">{s.v}</p>
-                                <p className="text-xs text-white/40 mt-2">{s.l}</p>
-                            </motion.div>
-                        ))}
-                    </div>
-                </section>
-
                 {/* Pricing */}
-                <section id="pricing" className="py-28 px-6 bg-[#05070f]">
+                <section id="pricing" className="py-24 px-6 bg-[#05070f]">
                     <div className="max-w-5xl mx-auto">
                         <h2 className="text-4xl md:text-5xl font-black text-center tracking-tight mb-3">Simple, fair pricing</h2>
                         <p className="text-center text-white/40 mb-3">
@@ -358,37 +330,13 @@ export default function LandingPage() {
                     </div>
                 </section>
 
-                {/* FAQ */}
-                <section id="faq" className="py-28 px-6 bg-[#05070f]">
-                    <div className="max-w-3xl mx-auto">
-                        <h2 className="text-4xl md:text-5xl font-black text-center tracking-tight mb-14">Questions, answered</h2>
-                        <div className="space-y-3">
-                            {FAQS.map((f, i) => (
-                                <div key={i} className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
-                                    <button onClick={() => setOpenFaq(openFaq === i ? null : i)} className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left">
-                                        <span className="font-semibold text-sm">{f.q}</span>
-                                        <ChevronDown className={`w-4 h-4 text-white/40 transition-transform flex-shrink-0 ${openFaq === i ? 'rotate-180' : ''}`} />
-                                    </button>
-                                    <AnimatePresence>
-                                        {openFaq === i && (
-                                            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                                                <p className="px-5 pb-4 text-sm text-white/50 leading-relaxed">{f.a}</p>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </section>
-
                 {/* CTA */}
-                <section className="py-28 px-6 bg-[#05070f]">
+                <section className="py-24 px-6 bg-[#05070f]">
                     <div className="max-w-4xl mx-auto rounded-3xl border border-white/10 bg-gradient-to-br from-[#007BFF]/15 via-[#00C6FF]/8 to-transparent p-12 md:p-16 text-center relative overflow-hidden">
                         <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-80 h-80 bg-[#007BFF]/20 rounded-full blur-[100px]" />
                         <div className="relative">
-                            <h2 className="text-4xl md:text-5xl font-black tracking-tight mb-4">Bring your QA into one place.</h2>
-                            <p className="text-white/50 mb-8 max-w-lg mx-auto">Start free in minutes. No credit card, no migration headache.</p>
+                            <h2 className="text-4xl md:text-5xl font-black tracking-tight mb-4">Consolidate your QA. Start today.</h2>
+                            <p className="text-white/50 mb-8 max-w-lg mx-auto">Free to start, priced to scale. No credit card, no migration headache — your team is running by this afternoon.</p>
                             <Link href="/signup">
                                 <Button size="lg" className="h-12 px-10 text-sm font-bold bg-gradient-to-r from-[#007BFF] to-[#00C6FF] hover:opacity-90 text-white border-0 shadow-xl shadow-[#007BFF]/30">
                                     Get Started Free <ArrowRight className="w-4 h-4 ml-2" />
@@ -403,7 +351,7 @@ export default function LandingPage() {
                     <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
                         <ZenitLogo markClassName="w-6 h-6" />
                         <div className="flex items-center gap-6 text-xs text-white/40">
-                            <a href="#features" className="hover:text-white">Features</a>
+                            <a href="#features" className="hover:text-white">Platform</a>
                             <a href="#pricing" className="hover:text-white">Pricing</a>
                             <Link href="/login" className="hover:text-white">Log in</Link>
                         </div>
