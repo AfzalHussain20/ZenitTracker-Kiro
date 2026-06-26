@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { motion, AnimatePresence, useScroll, useTransform, useMotionValue, useMotionTemplate, type MotionValue } from 'framer-motion';
+import { motion, AnimatePresence, useScroll, useTransform, useMotionValue, useMotionTemplate, animate, type MotionValue } from 'framer-motion';
 import { ZenitLogo } from '@/components/brand/zenit-logo';
 import { CURRENCIES, fmtPrice, annualPrice, currencyForCountry, type CurrencyCode } from '@/lib/pricing';
 import type { HeroState } from '@/components/three/ZenitHero3D';
@@ -23,17 +23,26 @@ const FEATURES = [
 ];
 
 // ─── Cinematic brand splash (title-card transformation) ──────────────────────
-// The dot is the pen tip that draws the Z; it then detaches, the Z un-draws in
-// its wake, "Zenit" writes itself as the dot flies, and the dot lands as the dot
-// of the hand-built "i". No particles, no splash — the transformation is the show.
-type SplashPhase = 'draw' | 'anticip' | 'fly' | 'land' | 'complete';
-
+// The dot is the pen tip that draws the Z (one continuous eased motion — the
+// stroke + dot are driven by a single value so the draw never stalls). It then
+// detaches on a Bezier arc, the Z un-draws in its wake, "Zenit" writes itself,
+// and the same dot lands as the dot of the hand-built "i". No particles.
 const ZENIT = ['Z', 'e', 'n', 'i', 't'];
-// Z polyline in viewBox units (the pen path) + segment-proportional timing
 const ZPTS: [number, number][] = [[15, 25], [80, 25], [30, 80], [65, 80]];
-const ZTIMES = [0, 0.373, 0.799, 1];
-const GLOW = '0 0 16px 3px rgba(0,198,255,0.6)';
-const GLOW_HI = '0 0 30px 9px rgba(0,198,255,0.9)';
+const SEG = [0, 0.373, 0.799, 1]; // cumulative arc-length fraction at each point
+
+// position along the Z polyline at progress p (0..1), in container coords
+function polyline(p: number, pts: [number, number][]): [number, number] {
+    const q = Math.max(0, Math.min(1, p));
+    for (let i = 0; i < 3; i++) {
+        if (q <= SEG[i + 1] || i === 2) {
+            const t = (q - SEG[i]) / (SEG[i + 1] - SEG[i]);
+            const tt = Math.max(0, Math.min(1, t));
+            return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * tt, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * tt];
+        }
+    }
+    return pts[3];
+}
 
 function ZenitSplash({ onDone }: { onDone: () => void }) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -41,8 +50,19 @@ function ZenitSplash({ onDone }: { onDone: () => void }) {
     const iRef = useRef<HTMLSpanElement>(null);
     const targetRef = useRef<HTMLSpanElement>(null);
     const startedRef = useRef(false);
+    const flyingRef = useRef(false);
     const [c, setC] = useState<{ pts: [number, number][]; tx: number; ty: number; ds: number } | null>(null);
-    const [phase, setPhase] = useState<SplashPhase>('draw');
+    const [writeZenit, setWriteZenit] = useState(false);
+    const [showTracker, setShowTracker] = useState(false);
+
+    // motion values — the single source of truth for the dot + stroke (no re-renders)
+    const progress = useMotionValue(0);
+    const x = useMotionValue(-9999);
+    const y = useMotionValue(-9999);
+    const scale = useMotionValue(1);
+    const dash = useMotionValue(1);   // strokeDashoffset (pathLength normalised: 1 → hidden, 0 → full)
+    const glow = useMotionValue(0);
+    const boxShadow = useTransform(glow, (g) => `0 0 ${16 + g * 16}px ${3 + g * 6}px rgba(0,198,255,${0.6 + g * 0.32})`);
 
     const measure = useCallback(() => {
         const cont = containerRef.current, svg = svgRef.current, t = targetRef.current;
@@ -59,43 +79,71 @@ function ZenitSplash({ onDone }: { onDone: () => void }) {
 
     useEffect(() => {
         measure();
-        const id = setTimeout(measure, 250);
+        const id = setTimeout(measure, 200);
         (document as any).fonts?.ready?.then?.(measure);
-        window.addEventListener('resize', measure);
-        return () => { clearTimeout(id); window.removeEventListener('resize', measure); };
+        const onResize = () => { if (!startedRef.current) measure(); };
+        window.addEventListener('resize', onResize);
+        return () => { clearTimeout(id); window.removeEventListener('resize', onResize); };
     }, [measure]);
 
-    // start the choreography only once the geometry is known (deterministic + synced)
+    // keep the stroke + dot glued together during the draw (single eased progress)
+    useEffect(() => {
+        if (!c) return;
+        const start = polyline(0, c.pts);
+        if (!flyingRef.current) { x.set(start[0]); y.set(start[1]); dash.set(1); }
+        const unsub = progress.on('change', (p) => {
+            if (flyingRef.current) return;
+            dash.set(1 - p);
+            const pt = polyline(p, c.pts);
+            x.set(pt[0]); y.set(pt[1]);
+        });
+        return unsub;
+    }, [c, progress, x, y, dash]);
+
+    // deterministic choreography — starts only once geometry is known
     useEffect(() => {
         if (!c || startedRef.current) return;
         startedRef.current = true;
-        const timers = [
-            setTimeout(() => setPhase('anticip'), 1700),  // Z drawn → dot eases at the edge
-            setTimeout(() => setPhase('fly'), 1950),       // dot launches, Z un-draws, "Zenit" writes
-            setTimeout(() => setPhase('land'), 3150),      // dot seats as the "i" dot
-            setTimeout(() => setPhase('complete'), 3300),  // "Tracker" writes in
-            setTimeout(onDone, 4600),
-        ];
-        return () => timers.forEach(clearTimeout);
-    }, [c, onDone]);
-
-    const drawn = phase !== 'draw';
-    const erasing = phase === 'fly' || phase === 'land' || phase === 'complete';
-    const writeZenit = phase === 'fly' || phase === 'land' || phase === 'complete';
-    const showTracker = phase === 'land' || phase === 'complete';
+        let cancelled = false;
+        const seq = async () => {
+            // 1) DRAW — one continuous ease-out; dot is the pen tip
+            await animate(progress, 1, { duration: 1.8, ease: [0.33, 1, 0.68, 1] });
+            if (cancelled) return;
+            // 2) HOLD + ANTICIPATION — settle, slight compression at the edge
+            await new Promise((r) => setTimeout(r, 160));
+            if (cancelled) return;
+            await animate(scale, 0.85, { duration: 0.18, ease: 'easeOut' });
+            if (cancelled) return;
+            // 3) BREAK AWAY — dot launches on a Bezier arc; Z un-draws; "Zenit" writes
+            flyingRef.current = true;
+            setWriteZenit(true);
+            animate(scale, 1, { duration: 0.3, ease: 'easeOut' });
+            animate(dash, 1, { duration: 0.7, ease: [0.4, 0, 0.6, 1] }); // erase from the end
+            const P3 = c.pts[3];
+            const ctrlX = P3[0] + (c.tx - P3[0]) * 0.4;
+            const ctrlY = Math.min(P3[1], c.ty) - 70;
+            await Promise.all([
+                animate(x, [P3[0], ctrlX, c.tx], { duration: 1.15, times: [0, 0.45, 1], ease: [0.45, 0, 0.2, 1] }),
+                animate(y, [P3[1], ctrlY, c.ty], { duration: 1.15, times: [0, 0.45, 1], ease: [0.45, 0, 0.2, 1] }),
+            ]);
+            if (cancelled) return;
+            // 4) LAND — seat as the "i" dot: tiny compression + subtle glow pulse
+            setShowTracker(true);
+            animate(glow, [0, 1, 0], { duration: 0.5, ease: 'easeOut' });
+            await animate(scale, [1, 0.8, 1], { duration: 0.42, ease: 'easeOut' });
+            // 5) HOLD final title card, then exit
+            await new Promise((r) => setTimeout(r, 1250));
+            if (!cancelled) onDone();
+        };
+        seq();
+        return () => { cancelled = true; };
+    }, [c, onDone, progress, x, y, scale, dash, glow]);
 
     const letterParent = { hide: {}, show: { transition: { staggerChildren: 0.09 } } };
     const letterChild = {
         hide: { clipPath: 'inset(0 100% 0 0)' },
         show: { clipPath: 'inset(0 0% 0 0)', transition: { duration: 0.34, ease: [0.5, 0, 0.2, 1] as any } },
     };
-
-    // dot geometry
-    const pts = c?.pts;
-    const P3 = pts?.[3];
-    const ctrlX = c && P3 ? P3[0] + (c.tx - P3[0]) * 0.4 : 0;
-    const ctrlY = c && P3 ? Math.min(P3[1], c.ty) - 70 : 0;
-    const ds = c?.ds ?? 12;
 
     return (
         <motion.div exit={{ opacity: 0 }} transition={{ duration: 0.6 }}
@@ -113,11 +161,8 @@ function ZenitSplash({ onDone }: { onDone: () => void }) {
                             </linearGradient>
                         </defs>
                         <motion.path d="M 15 25 H 80 L 30 80 H 65" stroke="url(#zspl)" strokeWidth="12" fill="none"
-                            strokeLinecap="round" strokeLinejoin="round" strokeDasharray={240}
-                            initial={{ strokeDashoffset: 240 }}
-                            animate={{ strokeDashoffset: !c ? 240 : (erasing ? 240 : 0) }}
-                            transition={!drawn ? { duration: 1.7, ease: 'linear' } : erasing ? { duration: 0.7, ease: [0.4, 0, 0.6, 1] as any } : { duration: 0 }}
-                        />
+                            strokeLinecap="round" strokeLinejoin="round" pathLength={1} strokeDasharray={1}
+                            style={{ strokeDashoffset: dash }} />
                     </svg>
                 </div>
 
@@ -147,26 +192,9 @@ function ZenitSplash({ onDone }: { onDone: () => void }) {
                 </div>
 
                 {/* ── The single dot: pen tip → droplet → the dot of the "i" ── */}
-                {c && P3 && (
-                    <motion.div
-                        className="absolute rounded-full"
-                        style={{ width: ds, height: ds, marginLeft: -ds / 2, marginTop: -ds / 2, left: 0, top: 0, background: '#00C6FF', boxShadow: GLOW, zIndex: 50 }}
-                        initial={{ x: pts![0][0], y: pts![0][1], opacity: 1, scale: 1 }}
-                        animate={
-                            phase === 'draw' ? { x: pts!.map(p => p[0]), y: pts!.map(p => p[1]), scale: 1, opacity: 1 }
-                                : phase === 'anticip' ? { x: P3[0], y: P3[1], scale: [1, 0.88], opacity: 1 }
-                                    : phase === 'fly' ? { x: [P3[0], ctrlX, c.tx], y: [P3[1], ctrlY, c.ty], scale: 1, opacity: 1 }
-                                        : phase === 'land' ? { x: c.tx, y: c.ty, scale: [1, 0.8, 1], boxShadow: [GLOW, GLOW_HI, GLOW] }
-                                            : { x: c.tx, y: c.ty, scale: 1, opacity: 1 }
-                        }
-                        transition={
-                            phase === 'draw' ? { duration: 1.7, ease: 'linear', times: ZTIMES }
-                                : phase === 'anticip' ? { duration: 0.25, ease: 'easeOut' }
-                                    : phase === 'fly' ? { duration: 1.2, ease: [0.45, 0, 0.2, 1], times: [0, 0.45, 1] }
-                                        : phase === 'land' ? { duration: 0.42, ease: 'easeOut' }
-                                            : { duration: 0.3 }
-                        }
-                    />
+                {c && (
+                    <motion.div className="absolute rounded-full"
+                        style={{ x, y, scale, boxShadow, width: c.ds, height: c.ds, marginLeft: -c.ds / 2, marginTop: -c.ds / 2, left: 0, top: 0, background: '#00C6FF', zIndex: 50 }} />
                 )}
             </div>
         </motion.div>
