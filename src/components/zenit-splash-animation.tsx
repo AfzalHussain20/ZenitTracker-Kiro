@@ -45,6 +45,8 @@ const ZenitSplashAnimation = () => {
     const flyingRef = useRef(false);
 
     const [c, setC] = useState<{ pts: [number, number][]; tx: number; ty: number; ds: number } | null>(null);
+    const geomRef = useRef<{ pts: [number, number][]; tx: number; ty: number; ds: number } | null>(null);
+    const [ready, setReady] = useState(false);
     const [writeZenit, setWriteZenit] = useState(false);
     const [showTracker, setShowTracker] = useState(false);
     const [showTag, setShowTag] = useState(false);
@@ -68,16 +70,20 @@ const ZenitSplashAnimation = () => {
         ] as [number, number]);
         let ds = 12;
         if (iRef.current) { const fs = parseFloat(getComputedStyle(iRef.current).fontSize); if (fs) ds = Math.max(7, Math.round(fs * 0.2)); }
-        setC({ pts, tx: tb.left + tb.width / 2 - cb.left, ty: tb.top + tb.height / 2 - cb.top, ds });
+        const geom = { pts, tx: tb.left + tb.width / 2 - cb.left, ty: tb.top + tb.height / 2 - cb.top, ds };
+        geomRef.current = geom;
+        setC(geom);
+        setReady(true);
     }, []);
 
     useEffect(() => {
         measure();
-        const id = setTimeout(measure, 200);
-        (document as any).fonts?.ready?.then?.(measure);
+        let tries = 0;
+        const id = setInterval(() => { if (geomRef.current || tries++ > 20) clearInterval(id); else measure(); }, 60);
+        (document as any).fonts?.ready?.then?.(() => { if (!startedRef.current) measure(); });
         const onResize = () => { if (!startedRef.current) measure(); };
         window.addEventListener('resize', onResize);
-        return () => { clearTimeout(id); window.removeEventListener('resize', onResize); };
+        return () => { clearInterval(id); window.removeEventListener('resize', onResize); };
     }, [measure]);
 
     // glue the stroke + dot together during the draw (one eased progress value)
@@ -94,19 +100,23 @@ const ZenitSplashAnimation = () => {
         return unsub;
     }, [c, progress, x, y, dash]);
 
-    // the master timeline — starts once geometry is known, dismisses when finished
+    // the master timeline — runs ONCE when geometry is ready, dismisses when finished
     useEffect(() => {
-        if (!c || startedRef.current) return;
+        if (!ready || startedRef.current) return;
         startedRef.current = true;
 
         const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
         let cancelled = false;
+        // hard safety net: never stay stuck on the splash
+        const failSafe = setTimeout(() => { if (!cancelled) setShow(false); }, 9000);
 
         const seq = async () => {
+            const g0 = geomRef.current!;
             if (reduce) {
                 setWriteZenit(true); setShowTracker(true); setShowTag(true);
-                x.set(c.tx); y.set(c.ty); dash.set(1); flyingRef.current = true;
+                x.set(g0.tx); y.set(g0.ty); dash.set(1); flyingRef.current = true;
                 await new Promise((r) => setTimeout(r, 1400));
+                clearTimeout(failSafe);
                 if (!cancelled) setShow(false);
                 return;
             }
@@ -123,12 +133,13 @@ const ZenitSplashAnimation = () => {
             setWriteZenit(true);
             animate(scale, 1, { duration: 0.3, ease: 'easeOut' });
             animate(dash, 1, { duration: 0.7, ease: [0.4, 0, 0.6, 1] });
-            const P3 = c.pts[3];
-            const ctrlX = P3[0] + (c.tx - P3[0]) * 0.4;
-            const ctrlY = Math.min(P3[1], c.ty) - 70;
+            const g = geomRef.current ?? g0;
+            const P3 = g.pts[3];
+            const ctrlX = P3[0] + (g.tx - P3[0]) * 0.4;
+            const ctrlY = Math.min(P3[1], g.ty) - 70;
             await Promise.all([
-                animate(x, [P3[0], ctrlX, c.tx], { duration: 1.15, times: [0, 0.45, 1], ease: [0.45, 0, 0.2, 1] }),
-                animate(y, [P3[1], ctrlY, c.ty], { duration: 1.15, times: [0, 0.45, 1], ease: [0.45, 0, 0.2, 1] }),
+                animate(x, [P3[0], ctrlX, g.tx], { duration: 1.15, times: [0, 0.45, 1], ease: [0.45, 0, 0.2, 1] }),
+                animate(y, [P3[1], ctrlY, g.ty], { duration: 1.15, times: [0, 0.45, 1], ease: [0.45, 0, 0.2, 1] }),
             ]);
             if (cancelled) return;
             // 4) LAND — seat as the "i" dot: tiny compression + subtle glow pulse
@@ -139,11 +150,12 @@ const ZenitSplashAnimation = () => {
             // 5) tagline + hold, then exit (dismiss only AFTER the sequence finishes)
             setShowTag(true);
             await new Promise((r) => setTimeout(r, 1300));
+            clearTimeout(failSafe);
             if (!cancelled) setShow(false);
         };
         seq();
-        return () => { cancelled = true; };
-    }, [c, progress, x, y, scale, dash, glow]);
+        return () => { cancelled = true; clearTimeout(failSafe); };
+    }, [ready, progress, x, y, scale, dash, glow]);
 
     const letterParent = { hide: {}, show: { transition: { staggerChildren: 0.09 } } };
     const letterChild = {

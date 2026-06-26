@@ -52,8 +52,15 @@ function ZenitSplash({ onDone }: { onDone: () => void }) {
     const startedRef = useRef(false);
     const flyingRef = useRef(false);
     const [c, setC] = useState<{ pts: [number, number][]; tx: number; ty: number; ds: number } | null>(null);
+    const geomRef = useRef<{ pts: [number, number][]; tx: number; ty: number; ds: number } | null>(null);
+    const [ready, setReady] = useState(false);
     const [writeZenit, setWriteZenit] = useState(false);
     const [showTracker, setShowTracker] = useState(false);
+
+    // keep onDone in a ref so an unrelated parent re-render can NEVER cancel the
+    // in-flight sequence (the bug that left the splash stuck forever).
+    const onDoneRef = useRef(onDone);
+    useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
 
     // motion values — the single source of truth for the dot + stroke (no re-renders)
     const progress = useMotionValue(0);
@@ -74,16 +81,21 @@ function ZenitSplash({ onDone }: { onDone: () => void }) {
         ] as [number, number]);
         let ds = 12;
         if (iRef.current) { const fs = parseFloat(getComputedStyle(iRef.current).fontSize); if (fs) ds = Math.max(7, Math.round(fs * 0.2)); }
-        setC({ pts, tx: tb.left + tb.width / 2 - cb.left, ty: tb.top + tb.height / 2 - cb.top, ds });
+        const geom = { pts, tx: tb.left + tb.width / 2 - cb.left, ty: tb.top + tb.height / 2 - cb.top, ds };
+        geomRef.current = geom;   // always-fresh geometry for the sequence
+        setC(geom);               // for rendering (dot size + draw subscription)
+        setReady(true);           // stable boolean → starts the sequence exactly once
     }, []);
 
     useEffect(() => {
+        // retry until the refs exist and geometry is captured (no infinite null wait)
         measure();
-        const id = setTimeout(measure, 200);
-        (document as any).fonts?.ready?.then?.(measure);
+        let tries = 0;
+        const id = setInterval(() => { if (geomRef.current || tries++ > 20) clearInterval(id); else measure(); }, 60);
+        (document as any).fonts?.ready?.then?.(() => { if (!startedRef.current) measure(); });
         const onResize = () => { if (!startedRef.current) measure(); };
         window.addEventListener('resize', onResize);
-        return () => { clearTimeout(id); window.removeEventListener('resize', onResize); };
+        return () => { clearInterval(id); window.removeEventListener('resize', onResize); };
     }, [measure]);
 
     // keep the stroke + dot glued together during the draw (single eased progress)
@@ -100,12 +112,16 @@ function ZenitSplash({ onDone }: { onDone: () => void }) {
         return unsub;
     }, [c, progress, x, y, dash]);
 
-    // deterministic choreography — starts only once geometry is known
+    // deterministic choreography — runs ONCE when geometry is ready; insulated from
+    // parent re-renders (deps are only the stable `ready` flag).
     useEffect(() => {
-        if (!c || startedRef.current) return;
+        if (!ready || startedRef.current) return;
         startedRef.current = true;
         let cancelled = false;
+        // hard safety net: the page must NEVER stay stuck on the splash
+        const failSafe = setTimeout(() => { if (!cancelled) onDoneRef.current(); }, 9000);
         const seq = async () => {
+            const g0 = geomRef.current!;
             // 1) DRAW — one continuous ease-out; dot is the pen tip
             await animate(progress, 1, { duration: 1.8, ease: [0.33, 1, 0.68, 1] });
             if (cancelled) return;
@@ -119,12 +135,13 @@ function ZenitSplash({ onDone }: { onDone: () => void }) {
             setWriteZenit(true);
             animate(scale, 1, { duration: 0.3, ease: 'easeOut' });
             animate(dash, 1, { duration: 0.7, ease: [0.4, 0, 0.6, 1] }); // erase from the end
-            const P3 = c.pts[3];
-            const ctrlX = P3[0] + (c.tx - P3[0]) * 0.4;
-            const ctrlY = Math.min(P3[1], c.ty) - 70;
+            const g = geomRef.current ?? g0;
+            const P3 = g.pts[3];
+            const ctrlX = P3[0] + (g.tx - P3[0]) * 0.4;
+            const ctrlY = Math.min(P3[1], g.ty) - 70;
             await Promise.all([
-                animate(x, [P3[0], ctrlX, c.tx], { duration: 1.15, times: [0, 0.45, 1], ease: [0.45, 0, 0.2, 1] }),
-                animate(y, [P3[1], ctrlY, c.ty], { duration: 1.15, times: [0, 0.45, 1], ease: [0.45, 0, 0.2, 1] }),
+                animate(x, [P3[0], ctrlX, g.tx], { duration: 1.15, times: [0, 0.45, 1], ease: [0.45, 0, 0.2, 1] }),
+                animate(y, [P3[1], ctrlY, g.ty], { duration: 1.15, times: [0, 0.45, 1], ease: [0.45, 0, 0.2, 1] }),
             ]);
             if (cancelled) return;
             // 4) LAND — seat as the "i" dot: tiny compression + subtle glow pulse
@@ -133,11 +150,12 @@ function ZenitSplash({ onDone }: { onDone: () => void }) {
             await animate(scale, [1, 0.8, 1], { duration: 0.42, ease: 'easeOut' });
             // 5) HOLD final title card, then exit
             await new Promise((r) => setTimeout(r, 1250));
-            if (!cancelled) onDone();
+            clearTimeout(failSafe);
+            if (!cancelled) onDoneRef.current();
         };
         seq();
-        return () => { cancelled = true; };
-    }, [c, onDone, progress, x, y, scale, dash, glow]);
+        return () => { cancelled = true; clearTimeout(failSafe); };
+    }, [ready, progress, x, y, scale, dash, glow]);
 
     const letterParent = { hide: {}, show: { transition: { staggerChildren: 0.09 } } };
     const letterChild = {
@@ -325,8 +343,13 @@ export default function LandingPage() {
     // shared motion state for the 3D scene (no re-renders → smooth)
     const state = useRef<HeroState>({ scroll: 0, px: 0, py: 0 });
 
-    // Lenis smooth inertia scroll + scroll progress
+    // stable callback — never tears down the splash sequence on parent re-render
+    const handleSplashDone = useCallback(() => setLoading(false), []);
+
+    // Lenis smooth inertia scroll — initialised only AFTER the splash, so it
+    // doesn't contend for the main thread / RAF budget during the animation.
     useEffect(() => {
+        if (loading) return;
         let lenis: any;
         let raf = 0;
         (async () => {
@@ -346,20 +369,22 @@ export default function LandingPage() {
         };
         window.addEventListener('scroll', onScrollNative, { passive: true });
         return () => { cancelAnimationFrame(raf); try { lenis?.destroy(); } catch {} window.removeEventListener('scroll', onScrollNative); };
-    }, []);
+    }, [loading]);
 
-    // pointer for 3D parallax
+    // pointer for 3D parallax (only while the 3D is mounted)
     useEffect(() => {
+        if (loading) return;
         const onMove = (e: PointerEvent) => {
             state.current.px = (e.clientX / window.innerWidth) * 2 - 1;
             state.current.py = -((e.clientY / window.innerHeight) * 2 - 1);
         };
         window.addEventListener('pointermove', onMove);
         return () => window.removeEventListener('pointermove', onMove);
-    }, []);
+    }, [loading]);
 
-    // geo currency (works behind VPN)
+    // geo currency (works behind VPN) — deferred until after the splash
     useEffect(() => {
+        if (loading) return;
         let cancelled = false;
         (async () => {
             try {
@@ -374,7 +399,7 @@ export default function LandingPage() {
             } catch {}
         })();
         return () => { cancelled = true; };
-    }, []);
+    }, [loading]);
 
     const cfg = CURRENCIES[cur];
     const proPrice = cycle === 'annual' ? annualPrice(cfg.pro) : cfg.pro;
@@ -386,11 +411,11 @@ export default function LandingPage() {
 
     return (
         <div className="relative min-h-screen bg-[#05070f] text-white selection:bg-[#007BFF]/30">
-            <AnimatePresence>{loading && <ZenitSplash onDone={() => setLoading(false)} />}</AnimatePresence>
+            <AnimatePresence>{loading && <ZenitSplash onDone={handleSplashDone} />}</AnimatePresence>
 
-            {/* Fixed 3D background */}
+            {/* Fixed 3D background — mounted only after the splash to avoid startup contention */}
             <div className="fixed inset-0 z-0 pointer-events-none">
-                <ZenitHero3D state={state} />
+                {!loading && <ZenitHero3D state={state} />}
             </div>
             {/* vignette + grain over the 3D */}
             <div className="fixed inset-0 z-[1] pointer-events-none" style={{ boxShadow: 'inset 0 0 240px 40px rgba(5,7,15,0.9)' }} />
