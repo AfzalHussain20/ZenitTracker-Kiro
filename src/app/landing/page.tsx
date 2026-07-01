@@ -131,53 +131,59 @@ const MEASURE_POLL_MS = 32;
 const MEASURE_TIMEOUT = 2500;
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  LetterReveal — cinematic materialise.
-//  Each letter erupts from below with a vertical motion-blur streak that
-//  collapses as the letter settles, like a title card punching into frame.
-//  A brief white flash pulses behind the letter on arrival (the "ignition"),
-//  and a faint afterglow lingers for 200ms before fading.
+//  LetterReveal — SLAM MATERIALISE.
+//
+//  The word doesn't "appear" — it ARRIVES. Like a heavyweight title stamped
+//  onto the screen in one brutal instant. Each letter starts at 3× scale,
+//  fully blurred, behind the viewer plane — then SLAMS into final position
+//  in 0.26s. A white-hot flash sears the background on impact. The speed +
+//  scale drop + instant deblur produces a visual "freeze" — the brain needs
+//  a beat to register what just happened. That pause IS the masterpiece.
 // ─────────────────────────────────────────────────────────────────────────────
 function LetterReveal({ visible, char, delay = 0 }: { visible: boolean; char: string; delay?: number }) {
     return (
-        <span className="relative inline-block align-baseline" style={{ perspective: 600 }}>
-            {/* motion-blur streak — vertical ghost that collapses as letter arrives */}
+        <span className="relative inline-block align-baseline" style={{ perspective: 1000 }}>
+            {/* IMPACT FLASH — white-hot sear that flares on contact */}
             <motion.span
                 aria-hidden
-                className="absolute inset-x-0 pointer-events-none"
+                className="absolute -inset-4 pointer-events-none"
                 style={{
-                    top: '-30%', bottom: '-30%',
-                    background: 'linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.5) 35%, rgba(120,210,255,0.8) 50%, rgba(255,255,255,0.5) 65%, transparent 100%)',
-                    filter: 'blur(4px)',
-                    transformOrigin: 'center center',
+                    background: 'radial-gradient(ellipse at center, rgba(255,255,255,1) 0%, rgba(180,230,255,0.9) 25%, transparent 65%)',
+                    filter: 'blur(3px)',
+                    mixBlendMode: 'screen',
                 }}
-                initial={{ opacity: 0, scaleY: 2.8, scaleX: 0.4 }}
+                initial={{ opacity: 0, scale: 0.2 }}
                 animate={visible
-                    ? { opacity: [0, 0.9, 0], scaleY: [2.8, 0.3, 0], scaleX: [0.4, 1.2, 0.8] }
-                    : { opacity: 0, scaleY: 2.8, scaleX: 0.4 }
+                    ? { opacity: [0, 1, 0], scale: [0.2, 1.8, 2.6] }
+                    : { opacity: 0, scale: 0.2 }
                 }
-                transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1], delay }}
+                transition={{ duration: 0.20, ease: [0.12, 1, 0.2, 1], delay }}
             />
-            {/* the letter itself — punches up from below with rotateX, scale overshoot, deblur */}
+            {/* THE LETTER — slams from huge/blurred to native/crisp: one violent motion */}
             <motion.span
                 className="relative inline-block align-baseline text-white"
-                style={{ willChange: 'transform, opacity, filter', transformStyle: 'preserve-3d' }}
-                initial={{ opacity: 0, y: '0.6em', scale: 0.55, rotateX: 75, filter: 'blur(14px)' }}
+                style={{ willChange: 'transform, opacity, filter', transformStyle: 'preserve-3d', textShadow: '0 0 0px rgba(255,255,255,0)' }}
+                initial={{ opacity: 0, scale: 3.2, rotateX: -40, y: '-0.25em', filter: 'blur(22px)' }}
                 animate={visible
-                    ? { opacity: [0, 1, 1], y: ['0.6em', '-0.04em', '0em'], scale: [0.55, 1.12, 1], rotateX: [75, -8, 0], filter: ['blur(14px)', 'blur(2px)', 'blur(0px)'] }
-                    : { opacity: 0, y: '0.6em', scale: 0.55, rotateX: 75, filter: 'blur(14px)' }
+                    ? { opacity: [0, 1, 1], scale: [3.2, 0.92, 1], rotateX: [-40, 4, 0], y: ['-0.25em', '0.015em', '0em'], filter: ['blur(22px)', 'blur(0px)', 'blur(0px)'] }
+                    : { opacity: 0, scale: 3.2, rotateX: -40, y: '-0.25em', filter: 'blur(22px)' }
                 }
-                transition={{ duration: 0.52, ease: [0.16, 1, 0.3, 1], times: [0, 0.6, 1], delay }}
+                transition={{ duration: 0.26, ease: [0.08, 0.95, 0.15, 1], times: [0, 0.72, 1], delay }}
             >
                 {char}
             </motion.span>
-            {/* afterglow — a faint residual brightness that lingers under the letter */}
+            {/* HEAT SHIMMER — brief glow lingering under the settled letter */}
             <motion.span
                 aria-hidden
-                className="absolute inset-0 pointer-events-none rounded-sm"
-                style={{ background: 'radial-gradient(ellipse at center, rgba(0,198,255,0.4), transparent 70%)', filter: 'blur(6px)' }}
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                    background: 'linear-gradient(180deg, rgba(0,198,255,0.6), rgba(255,255,255,0.2))',
+                    filter: 'blur(10px)',
+                    mixBlendMode: 'screen',
+                }}
                 initial={{ opacity: 0 }}
-                animate={visible ? { opacity: [0, 0.6, 0] } : { opacity: 0 }}
-                transition={{ duration: 0.7, ease: 'easeOut', delay: delay + 0.15 }}
+                animate={visible ? { opacity: [0, 0.9, 0] } : { opacity: 0 }}
+                transition={{ duration: 0.55, ease: 'easeOut', delay: delay + 0.06 }}
             />
         </span>
     );
@@ -690,41 +696,48 @@ function ZenitSplash({ onDone }: { onDone: () => void }) {
 
                         <LetterReveal visible={letT} char="t" />
 
-                        {/* Tracker — cinematic subtitle card entrance.
-                            A vertical light-bar wipes across from left, revealing the
-                            word behind it like a film title reveal. The word simultaneously
-                            deblurs and lifts into position with slight scale overshoot.
-                            Feels like a premium credits roll landing its final card. */}
-                        <span className="relative inline-block align-baseline overflow-hidden">
-                            {/* the word — deblurs + lifts + scale settle */}
-                            <motion.span
-                                className="inline-block align-baseline text-transparent bg-clip-text bg-gradient-to-r from-[#007BFF] to-[#00C6FF]"
-                                style={{ willChange: 'transform, opacity, filter' }}
-                                initial={{ opacity: 0, y: '0.15em', scale: 0.92, filter: 'blur(10px)' }}
-                                animate={tracker
-                                    ? { opacity: [0, 1, 1], y: ['0.15em', '-0.02em', '0em'], scale: [0.92, 1.04, 1], filter: ['blur(10px)', 'blur(1px)', 'blur(0px)'] }
-                                    : { opacity: 0, y: '0.15em', scale: 0.92, filter: 'blur(10px)' }
-                                }
-                                transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1], times: [0, 0.55, 1] }}
-                            >
-                                &nbsp;Tracker
-                            </motion.span>
-                            {/* wipe light-bar — sweeps left-to-right revealing the word */}
+                        {/* Tracker — SLAM SUBTITLE.
+                            The whole word hits at once — massive scale drop with a horizontal
+                            streak of light that flares across on impact. Different character
+                            from Zenit (which hits letter-by-letter) — this is ONE punch. */}
+                        <span className="relative inline-block align-baseline" style={{ perspective: 900 }}>
+                            {/* horizontal impact streak */}
                             <motion.span
                                 aria-hidden
-                                className="absolute inset-y-0 pointer-events-none"
+                                className="absolute inset-y-0 -inset-x-4 pointer-events-none"
                                 style={{
-                                    width: '28%',
-                                    background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.85) 40%, rgba(0,198,255,0.6) 60%, transparent 100%)',
+                                    background: 'linear-gradient(90deg, transparent 0%, rgba(0,198,255,0.8) 35%, rgba(255,255,255,1) 50%, rgba(0,198,255,0.8) 65%, transparent 100%)',
                                     filter: 'blur(3px)',
                                     mixBlendMode: 'screen',
                                 }}
-                                initial={{ left: '-30%', opacity: 0 }}
+                                initial={{ opacity: 0, scaleX: 0.1, scaleY: 3 }}
                                 animate={tracker
-                                    ? { left: ['−30%', '110%'], opacity: [0, 1, 1, 0] }
-                                    : { left: '-30%', opacity: 0 }
+                                    ? { opacity: [0, 1, 0], scaleX: [0.1, 1.8, 3], scaleY: [3, 1, 0.5] }
+                                    : { opacity: 0, scaleX: 0.1, scaleY: 3 }
                                 }
-                                transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1], times: [0, 0.1, 0.7, 1] }}
+                                transition={{ duration: 0.28, ease: [0.12, 1, 0.2, 1] }}
+                            />
+                            {/* the word — slams from oversized/blurred to crisp */}
+                            <motion.span
+                                className="relative inline-block align-baseline text-transparent bg-clip-text bg-gradient-to-r from-[#007BFF] to-[#00C6FF]"
+                                style={{ willChange: 'transform, opacity, filter', transformStyle: 'preserve-3d' }}
+                                initial={{ opacity: 0, scale: 2.6, y: '-0.1em', filter: 'blur(18px)' }}
+                                animate={tracker
+                                    ? { opacity: [0, 1, 1], scale: [2.6, 0.95, 1], y: ['-0.1em', '0.01em', '0em'], filter: ['blur(18px)', 'blur(0px)', 'blur(0px)'] }
+                                    : { opacity: 0, scale: 2.6, y: '-0.1em', filter: 'blur(18px)' }
+                                }
+                                transition={{ duration: 0.30, ease: [0.08, 0.95, 0.15, 1], times: [0, 0.7, 1] }}
+                            >
+                                &nbsp;Tracker
+                            </motion.span>
+                            {/* residual glow */}
+                            <motion.span
+                                aria-hidden
+                                className="absolute inset-0 pointer-events-none"
+                                style={{ background: 'linear-gradient(90deg, rgba(0,123,255,0.5), rgba(0,198,255,0.4))', filter: 'blur(10px)', mixBlendMode: 'screen' }}
+                                initial={{ opacity: 0 }}
+                                animate={tracker ? { opacity: [0, 0.8, 0] } : { opacity: 0 }}
+                                transition={{ duration: 0.5, ease: 'easeOut', delay: 0.05 }}
                             />
                         </span>
 
