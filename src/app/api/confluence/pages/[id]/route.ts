@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 const CONFLUENCE_BASE = process.env.CONFLUENCE_BASE_URL!;
 const CONFLUENCE_AUTH = () =>
   Buffer.from(`${process.env.CONFLUENCE_EMAIL}:${process.env.CONFLUENCE_API_TOKEN}`).toString('base64');
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     // Fetch page with body in storage format
     const pageRes = await fetch(
@@ -19,6 +21,7 @@ export async function GET(
           Authorization: `Basic ${CONFLUENCE_AUTH()}`,
           Accept: 'application/json',
         },
+        cache: 'no-store',
       }
     );
 
@@ -39,6 +42,7 @@ export async function GET(
             Authorization: `Basic ${CONFLUENCE_AUTH()}`,
             Accept: 'application/json',
           },
+          cache: 'no-store',
         }
       );
 
