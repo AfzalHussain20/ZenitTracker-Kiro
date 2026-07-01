@@ -108,68 +108,57 @@ interface DesignLink {
   category: 'web' | 'tv' | 'mobile' | 'generic';
 }
 
-const DESIGN_PATTERNS = [
-  /https?:\/\/xd\.adobe\.com\/view\/[^\s"<)]+/gi,
-  /https?:\/\/(?:www\.)?figma\.com\/(?:file|proto|design)\/[^\s"<)]+/gi,
-  /https?:\/\/(?:app\.)?zeplin\.io\/[^\s"<)]+/gi,
-  /https?:\/\/(?:www\.)?sketch\.com\/s\/[^\s"<)]+/gi,
-];
-
 function extractDesignLinks(body: string): DesignLink[] {
   const seen = new Set<string>();
   const links: DesignLink[] = [];
 
-  // Get surrounding text context for categorization
-  const textBody = body.replace(/<[^>]+>/g, ' ');
+  // Convert body to plain text with separators to find context
+  const textBody = body.replace(/<[^>]+>/g, '|');
 
-  for (const pattern of DESIGN_PATTERNS) {
-    const matches = body.matchAll(new RegExp(pattern));
-    for (const m of matches) {
-      const url = m[0].replace(/[",;)]+$/, ''); // strip trailing punctuation
-      if (seen.has(url)) continue;
-      seen.add(url);
+  // Find all XD / Figma / Zeplin URLs
+  const urlPattern = /https?:\/\/(xd\.adobe\.com\/view|(?:www\.)?figma\.com\/(?:file|proto|design)|app\.zeplin\.io)\/[^\s"<|)]+/gi;
+  const allUrls: { url: string; idx: number }[] = [];
+  let match;
+  while ((match = urlPattern.exec(textBody)) !== null) {
+    allUrls.push({ url: match[0].replace(/[|",;)]+$/, ''), idx: match.index });
+  }
 
-      // Determine platform
-      let platform: DesignLink['platform'] = 'generic';
-      if (url.includes('xd.adobe.com')) platform = 'adobe-xd';
-      else if (url.includes('figma.com')) platform = 'figma';
-      else if (url.includes('zeplin.io')) platform = 'zeplin';
-      else if (url.includes('sketch.com')) platform = 'sketch';
+  // Current category tracker (based on headings like "Web:", "TV:")
+  let currentCategory: DesignLink['category'] = 'generic';
 
-      // Try to determine category from surrounding context
-      const idx = textBody.indexOf(url.substring(0, 40));
-      const ctx = idx >= 0 ? textBody.substring(Math.max(0, idx - 200), idx + 10).toLowerCase() : '';
-      let category: DesignLink['category'] = 'generic';
-      if (ctx.includes('tv') || ctx.includes('television') || ctx.includes('android tv') || ctx.includes('fire tv')) category = 'tv';
-      else if (ctx.includes('mobile') || ctx.includes('ios') || ctx.includes('android') || ctx.includes('app')) category = 'mobile';
-      else if (ctx.includes('web') || ctx.includes('website') || ctx.includes('desktop')) category = 'web';
+  for (const { url, idx } of allUrls) {
+    if (seen.has(url)) continue;
+    seen.add(url);
 
-      // Generate a readable label
-      const hashPart = url.split('/').pop()?.split('-').slice(0, 3).join(' ') || '';
-      const label = hashPart ? `${platform === 'adobe-xd' ? 'XD' : platform.charAt(0).toUpperCase() + platform.slice(1)} Design` : 'Design Link';
+    // Look at the 300 chars before this URL for context/label
+    const before = textBody.substring(Math.max(0, idx - 300), idx);
+    const segments = before.split('|').filter(s => s.trim());
+    const lastSegment = segments[segments.length - 1]?.trim() || '';
+    const prevSegment = segments[segments.length - 2]?.trim() || '';
 
-      links.push({ url, label, platform, category });
+    // Detect category from nearby headings
+    const ctx = before.toLowerCase();
+    if (ctx.includes('tv:') || ctx.includes('tv designs') || ctx.includes('android tv') || ctx.includes('fire tv')) currentCategory = 'tv';
+    else if (ctx.includes('web:') || ctx.includes('web designs')) currentCategory = 'web';
+    else if (ctx.includes('mobile') || ctx.includes('ios') || ctx.includes('android app')) currentCategory = 'mobile';
+
+    // Extract label — use preceding text that's not a URL and not too long
+    let label = '';
+    const candidate = lastSegment.startsWith('http') ? prevSegment : lastSegment;
+    if (candidate && !candidate.startsWith('http') && candidate.length < 80 && candidate.length > 1) {
+      label = candidate.replace(/[-–—:]+$/, '').trim();
     }
+    if (!label) label = `Design ${links.length + 1}`;
+
+    // Determine platform
+    let platform: DesignLink['platform'] = 'generic';
+    if (url.includes('xd.adobe.com')) platform = 'adobe-xd';
+    else if (url.includes('figma.com')) platform = 'figma';
+    else if (url.includes('zeplin.io')) platform = 'zeplin';
+
+    links.push({ url, label, platform, category: currentCategory });
   }
   return links;
-}
-
-function getPlatformColor(platform: DesignLink['platform']): string {
-  switch (platform) {
-    case 'adobe-xd': return 'from-pink-500/20 to-purple-500/20 border-pink-500/30';
-    case 'figma': return 'from-green-500/20 to-emerald-500/20 border-green-500/30';
-    case 'zeplin': return 'from-orange-500/20 to-yellow-500/20 border-orange-500/30';
-    default: return 'from-blue-500/20 to-cyan-500/20 border-blue-500/30';
-  }
-}
-
-function getCategoryIcon(category: DesignLink['category']) {
-  switch (category) {
-    case 'web': return Monitor;
-    case 'tv': return Tv;
-    case 'mobile': return Palette;
-    default: return Palette;
-  }
 }
 
 export default function ConfluencePage() {
@@ -281,11 +270,6 @@ export default function ConfluencePage() {
     const designLinks = extractDesignLinks(selectedPage.body || '');
     const mockupCount = imageAttachments.length + designLinks.length;
 
-    // Group design links by category
-    const webLinks = designLinks.filter(l => l.category === 'web');
-    const tvLinks = designLinks.filter(l => l.category === 'tv');
-    const otherLinks = designLinks.filter(l => l.category !== 'web' && l.category !== 'tv');
-
     return (
       <div className="min-h-screen">
         {/* Lightbox */}
@@ -382,141 +366,99 @@ export default function ConfluencePage() {
 
         {/* Tab Content */}
         {activeTab === 'document' ? (
-          <div className="rounded-xl border border-border/50 bg-card/50 p-6 md:p-10">
-            <article
-              className="prose prose-invert prose-sm sm:prose-base max-w-none
-                prose-headings:text-foreground prose-headings:font-bold prose-headings:border-b prose-headings:border-border/30 prose-headings:pb-2 prose-headings:mb-4
-                prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg
-                prose-p:text-muted-foreground prose-p:leading-relaxed prose-p:mb-4
-                prose-a:text-primary prose-a:underline prose-a:underline-offset-2 hover:prose-a:text-primary/80
-                prose-strong:text-foreground prose-strong:font-semibold
-                prose-code:text-orange-300 prose-code:bg-orange-500/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
-                prose-pre:bg-zinc-900/80 prose-pre:border prose-pre:border-border/50 prose-pre:rounded-lg
-                prose-table:border-collapse prose-table:rounded-lg prose-table:overflow-hidden
-                prose-th:border prose-th:border-border/50 prose-th:p-3 prose-th:bg-muted/40 prose-th:text-foreground prose-th:font-semibold prose-th:text-sm
-                prose-td:border prose-td:border-border/50 prose-td:p-3 prose-td:text-sm
-                prose-li:text-muted-foreground prose-li:mb-1
-                prose-ul:space-y-1 prose-ol:space-y-1
-                prose-img:rounded-lg prose-img:shadow-md prose-img:border prose-img:border-border/30
-                prose-hr:border-border/30"
-              dangerouslySetInnerHTML={{ __html: cleanStorageFormat(selectedPage.body) }}
-            />
+          <div className="rounded-2xl border border-border/40 bg-card/30 backdrop-blur-sm shadow-sm">
+            <div className="p-6 md:p-10 lg:p-12">
+              <article
+                className="prose prose-invert prose-sm sm:prose-base max-w-none
+                  prose-headings:text-foreground prose-headings:font-bold prose-headings:border-b prose-headings:border-border/20 prose-headings:pb-3 prose-headings:mb-5
+                  prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-h2:mt-10 prose-h3:mt-8
+                  prose-p:text-muted-foreground prose-p:leading-[1.8] prose-p:mb-4
+                  prose-a:text-primary prose-a:underline prose-a:underline-offset-2 hover:prose-a:text-primary/80
+                  prose-strong:text-foreground prose-strong:font-semibold
+                  prose-code:text-orange-300 prose-code:bg-orange-500/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
+                  prose-pre:bg-zinc-900/80 prose-pre:border prose-pre:border-border/50 prose-pre:rounded-xl prose-pre:p-4
+                  prose-table:border-collapse prose-table:rounded-xl prose-table:overflow-hidden prose-table:w-full
+                  prose-th:border prose-th:border-border/40 prose-th:p-3.5 prose-th:bg-muted/40 prose-th:text-foreground prose-th:font-semibold prose-th:text-sm prose-th:text-left
+                  prose-td:border prose-td:border-border/40 prose-td:p-3.5 prose-td:text-sm
+                  prose-li:text-muted-foreground prose-li:mb-1.5 prose-li:leading-relaxed
+                  prose-ul:space-y-1 prose-ol:space-y-1
+                  prose-img:rounded-xl prose-img:shadow-lg prose-img:border prose-img:border-border/20
+                  prose-hr:border-border/20 prose-hr:my-8"
+                dangerouslySetInnerHTML={{ __html: cleanStorageFormat(selectedPage.body) }}
+              />
+            </div>
           </div>
         ) : (
-          <div className="space-y-8">
-            {/* Design links extracted from the document */}
-            {designLinks.length > 0 && (
+          <div className="space-y-6">
+            {/* Mockup viewer — embedded prototypes accessible right here */}
+            {designLinks.length > 0 ? (
               <>
-                {webLinks.length > 0 && (
-                  <div>
-                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-4">
-                      <Monitor className="h-4 w-4 text-blue-400" />
-                      Web Designs
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {webLinks.map((link, i) => {
-                        const CatIcon = getCategoryIcon(link.category);
-                        return (
-                          <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
-                            className={`group flex items-center gap-3 p-4 rounded-xl border bg-gradient-to-br transition-all hover:shadow-lg hover:shadow-primary/5 hover:scale-[1.02] ${getPlatformColor(link.platform)}`}>
-                            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-background/50 flex items-center justify-center">
-                              <CatIcon className="h-5 w-5 text-primary" />
+                {/* Category sections */}
+                {([['web', 'Web', Monitor, 'blue'] as const, ['tv', 'TV', Tv, 'purple'] as const, ['mobile', 'Mobile', Palette, 'emerald'] as const, ['generic', 'Other', Palette, 'zinc'] as const])
+                  .map(([cat, catLabel, CatIcon, color]) => {
+                    const catLinks = designLinks.filter(l => l.category === cat);
+                    if (catLinks.length === 0) return null;
+                    return (
+                      <div key={cat}>
+                        <div className="flex items-center gap-2 mb-4">
+                          <CatIcon className={`h-4 w-4 text-${color}-400`} />
+                          <h3 className="text-sm font-semibold text-foreground">{catLabel} Designs</h3>
+                          <span className="text-xs text-muted-foreground">({catLinks.length})</span>
+                        </div>
+                        <div className="space-y-4">
+                          {catLinks.map((link, i) => (
+                            <div key={i} className="rounded-xl border border-border/40 bg-card/30 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                              {/* Mockup header with name + open externally */}
+                              <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 bg-muted/20">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className={`w-8 h-8 rounded-lg bg-${color}-500/10 border border-${color}-500/20 flex items-center justify-center flex-shrink-0`}>
+                                    <CatIcon className={`h-4 w-4 text-${color}-400`} />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-medium text-foreground truncate">{link.label}</p>
+                                    <p className="text-[11px] text-muted-foreground">Adobe XD • {catLabel}</p>
+                                  </div>
+                                </div>
+                                <a href={link.url} target="_blank" rel="noopener noreferrer"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium transition-colors flex-shrink-0">
+                                  <ExternalLink className="h-3 w-3" />
+                                  Open
+                                </a>
+                              </div>
+                              {/* Embedded iframe viewer */}
+                              <div className="relative bg-zinc-950">
+                                <iframe
+                                  src={link.url}
+                                  title={link.label}
+                                  className="w-full border-0"
+                                  style={{ height: '560px' }}
+                                  sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+                                  loading="lazy"
+                                  allowFullScreen
+                                />
+                              </div>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-foreground truncate">
-                                {link.platform === 'adobe-xd' ? 'Adobe XD' : link.platform.charAt(0).toUpperCase() + link.platform.slice(1)} Prototype
-                              </p>
-                              <p className="text-[11px] text-muted-foreground truncate">{link.url.split('/view/')[1]?.substring(0, 20) || 'Open design'}</p>
-                            </div>
-                            <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-primary flex-shrink-0 transition-colors" />
-                          </a>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {tvLinks.length > 0 && (
-                  <div>
-                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-4">
-                      <Tv className="h-4 w-4 text-purple-400" />
-                      TV Designs
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {tvLinks.map((link, i) => {
-                        const CatIcon = getCategoryIcon(link.category);
-                        return (
-                          <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
-                            className={`group flex items-center gap-3 p-4 rounded-xl border bg-gradient-to-br transition-all hover:shadow-lg hover:shadow-primary/5 hover:scale-[1.02] ${getPlatformColor(link.platform)}`}>
-                            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-background/50 flex items-center justify-center">
-                              <CatIcon className="h-5 w-5 text-purple-400" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-foreground truncate">
-                                {link.platform === 'adobe-xd' ? 'Adobe XD' : link.platform.charAt(0).toUpperCase() + link.platform.slice(1)} Prototype
-                              </p>
-                              <p className="text-[11px] text-muted-foreground truncate">{link.url.split('/view/')[1]?.substring(0, 20) || 'Open design'}</p>
-                            </div>
-                            <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-purple-400 flex-shrink-0 transition-colors" />
-                          </a>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {otherLinks.length > 0 && (
-                  <div>
-                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-4">
-                      <Palette className="h-4 w-4 text-emerald-400" />
-                      Other Designs
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {otherLinks.map((link, i) => {
-                        const CatIcon = getCategoryIcon(link.category);
-                        return (
-                          <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
-                            className={`group flex items-center gap-3 p-4 rounded-xl border bg-gradient-to-br transition-all hover:shadow-lg hover:shadow-primary/5 hover:scale-[1.02] ${getPlatformColor(link.platform)}`}>
-                            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-background/50 flex items-center justify-center">
-                              <CatIcon className="h-5 w-5 text-emerald-400" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-foreground truncate">
-                                {link.platform === 'adobe-xd' ? 'Adobe XD' : link.platform.charAt(0).toUpperCase() + link.platform.slice(1)} Design
-                              </p>
-                              <p className="text-[11px] text-muted-foreground truncate">{link.url.split('/view/')[1]?.substring(0, 20) || 'Open design'}</p>
-                            </div>
-                            <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-emerald-400 flex-shrink-0 transition-colors" />
-                          </a>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
               </>
-            )}
-
-            {/* Image attachments */}
-            {imageAttachments.length > 0 && (
+            ) : imageAttachments.length > 0 ? (
               <div>
                 <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-4">
                   <ImageIcon className="h-4 w-4 text-cyan-400" />
-                  Attached Screenshots
+                  Screenshots
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {imageAttachments.map((att) => (
-                    <div
-                      key={att.id}
-                      className="group relative bg-muted/30 border border-border/50 rounded-xl overflow-hidden cursor-pointer hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5"
-                      onClick={() => setLightboxImage(att)}
-                    >
-                      <div className="aspect-video bg-zinc-900 flex items-center justify-center overflow-hidden">
-                        <img
-                          src={att.downloadUrl}
-                          alt={att.title}
+                    <div key={att.id}
+                      className="group relative rounded-xl border border-border/40 bg-card/30 overflow-hidden cursor-pointer hover:border-primary/50 transition-all hover:shadow-lg"
+                      onClick={() => setLightboxImage(att)}>
+                      <div className="aspect-video bg-zinc-900 overflow-hidden">
+                        <img src={att.downloadUrl} alt={att.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                        />
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                       </div>
                       <div className="p-3 flex items-center justify-between">
                         <p className="text-xs text-muted-foreground truncate flex-1">{att.title}</p>
@@ -526,13 +468,10 @@ export default function ConfluencePage() {
                   ))}
                 </div>
               </div>
-            )}
-
-            {/* Empty state */}
-            {mockupCount === 0 && (
-              <div className="text-center py-16">
-                <Palette className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-muted-foreground">No design links or mockups found in this document</p>
+            ) : (
+              <div className="text-center py-16 rounded-2xl border border-border/30 bg-card/20">
+                <Palette className="h-12 w-12 text-muted-foreground/20 mx-auto mb-3" />
+                <p className="text-muted-foreground text-sm">No designs or mockups in this document</p>
               </div>
             )}
           </div>
