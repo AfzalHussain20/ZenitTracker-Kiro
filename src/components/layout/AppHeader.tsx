@@ -21,7 +21,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuPortal
 } from '@/components/ui/dropdown-menu';
-import { LogOut, UserCircle, LayoutDashboard, Sun, Moon, Monitor, Settings, ChevronDown, ClipboardList, Info } from 'lucide-react';
+import { LogOut, UserCircle, LayoutDashboard, Sun, Moon, Monitor, Settings, ChevronDown, ClipboardList, Info, BookOpen } from 'lucide-react';
 import { LogoIcon } from '@/components/ui/Logo';
 
 export default function AppHeader() {
@@ -72,6 +72,12 @@ export default function AppHeader() {
           <Link href="/analytics/bugs">
             <Button variant={pathname?.startsWith('/analytics/bugs') ? 'secondary' : 'ghost'} size="sm">
               Jira Overview
+            </Button>
+          </Link>
+          <Link href="/confluence">
+            <Button variant={pathname === '/confluence' ? 'secondary' : 'ghost'} size="sm">
+              <BookOpen className="h-4 w-4 mr-2" />
+              Docs
             </Button>
           </Link>
           <Link href="/about">
