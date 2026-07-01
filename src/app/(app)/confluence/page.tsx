@@ -15,6 +15,10 @@ import {
   Maximize2,
   BookOpen,
   Layers,
+  ExternalLink,
+  Monitor,
+  Tv,
+  Palette,
 } from 'lucide-react';
 
 // Types
@@ -94,6 +98,78 @@ function cleanStorageFormat(html: string): string {
     .replace(/<p>\s*<\/p>/gi, '')
     // Keep everything else as-is for prose rendering
     .trim();
+}
+
+// ─── Extract design/mockup URLs from the page body ───────────────────────────
+interface DesignLink {
+  url: string;
+  label: string;
+  platform: 'adobe-xd' | 'figma' | 'zeplin' | 'sketch' | 'generic';
+  category: 'web' | 'tv' | 'mobile' | 'generic';
+}
+
+const DESIGN_PATTERNS = [
+  /https?:\/\/xd\.adobe\.com\/view\/[^\s"<)]+/gi,
+  /https?:\/\/(?:www\.)?figma\.com\/(?:file|proto|design)\/[^\s"<)]+/gi,
+  /https?:\/\/(?:app\.)?zeplin\.io\/[^\s"<)]+/gi,
+  /https?:\/\/(?:www\.)?sketch\.com\/s\/[^\s"<)]+/gi,
+];
+
+function extractDesignLinks(body: string): DesignLink[] {
+  const seen = new Set<string>();
+  const links: DesignLink[] = [];
+
+  // Get surrounding text context for categorization
+  const textBody = body.replace(/<[^>]+>/g, ' ');
+
+  for (const pattern of DESIGN_PATTERNS) {
+    const matches = body.matchAll(new RegExp(pattern));
+    for (const m of matches) {
+      const url = m[0].replace(/[",;)]+$/, ''); // strip trailing punctuation
+      if (seen.has(url)) continue;
+      seen.add(url);
+
+      // Determine platform
+      let platform: DesignLink['platform'] = 'generic';
+      if (url.includes('xd.adobe.com')) platform = 'adobe-xd';
+      else if (url.includes('figma.com')) platform = 'figma';
+      else if (url.includes('zeplin.io')) platform = 'zeplin';
+      else if (url.includes('sketch.com')) platform = 'sketch';
+
+      // Try to determine category from surrounding context
+      const idx = textBody.indexOf(url.substring(0, 40));
+      const ctx = idx >= 0 ? textBody.substring(Math.max(0, idx - 200), idx + 10).toLowerCase() : '';
+      let category: DesignLink['category'] = 'generic';
+      if (ctx.includes('tv') || ctx.includes('television') || ctx.includes('android tv') || ctx.includes('fire tv')) category = 'tv';
+      else if (ctx.includes('mobile') || ctx.includes('ios') || ctx.includes('android') || ctx.includes('app')) category = 'mobile';
+      else if (ctx.includes('web') || ctx.includes('website') || ctx.includes('desktop')) category = 'web';
+
+      // Generate a readable label
+      const hashPart = url.split('/').pop()?.split('-').slice(0, 3).join(' ') || '';
+      const label = hashPart ? `${platform === 'adobe-xd' ? 'XD' : platform.charAt(0).toUpperCase() + platform.slice(1)} Design` : 'Design Link';
+
+      links.push({ url, label, platform, category });
+    }
+  }
+  return links;
+}
+
+function getPlatformColor(platform: DesignLink['platform']): string {
+  switch (platform) {
+    case 'adobe-xd': return 'from-pink-500/20 to-purple-500/20 border-pink-500/30';
+    case 'figma': return 'from-green-500/20 to-emerald-500/20 border-green-500/30';
+    case 'zeplin': return 'from-orange-500/20 to-yellow-500/20 border-orange-500/30';
+    default: return 'from-blue-500/20 to-cyan-500/20 border-blue-500/30';
+  }
+}
+
+function getCategoryIcon(category: DesignLink['category']) {
+  switch (category) {
+    case 'web': return Monitor;
+    case 'tv': return Tv;
+    case 'mobile': return Palette;
+    default: return Palette;
+  }
 }
 
 export default function ConfluencePage() {
@@ -202,6 +278,13 @@ export default function ConfluencePage() {
   if (selectedPage) {
     const space = getSpaceForPage(selectedPage);
     const imageAttachments = selectedPage.attachments || [];
+    const designLinks = extractDesignLinks(selectedPage.body || '');
+    const mockupCount = imageAttachments.length + designLinks.length;
+
+    // Group design links by category
+    const webLinks = designLinks.filter(l => l.category === 'web');
+    const tvLinks = designLinks.filter(l => l.category === 'tv');
+    const otherLinks = designLinks.filter(l => l.category !== 'web' && l.category !== 'tv');
 
     return (
       <div className="min-h-screen">
@@ -245,12 +328,9 @@ export default function ConfluencePage() {
             {selectedPage.title}
           </h1>
 
-          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
             {space && (
-              <Badge
-                variant="outline"
-                className={`text-xs ${getSpaceColor(space.key)}`}
-              >
+              <Badge variant="outline" className={`text-xs ${getSpaceColor(space.key)}`}>
                 {space.name}
               </Badge>
             )}
@@ -260,10 +340,10 @@ export default function ConfluencePage() {
                 {formatDate(selectedPage.lastUpdated)}
               </span>
             )}
-            {imageAttachments.length > 0 && (
+            {mockupCount > 0 && (
               <span className="flex items-center gap-1">
-                <ImageIcon className="h-3.5 w-3.5" />
-                {imageAttachments.length} mockup{imageAttachments.length !== 1 ? 's' : ''}
+                <Palette className="h-3.5 w-3.5" />
+                {mockupCount} design{mockupCount !== 1 ? 's' : ''}
               </span>
             )}
           </div>
@@ -290,11 +370,11 @@ export default function ConfluencePage() {
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            <ImageIcon className="h-4 w-4" />
+            <Palette className="h-4 w-4" />
             Mockups
-            {imageAttachments.length > 0 && (
+            {mockupCount > 0 && (
               <Badge variant="secondary" className="ml-1 text-xs h-5 px-1.5">
-                {imageAttachments.length}
+                {mockupCount}
               </Badge>
             )}
           </button>
@@ -302,53 +382,157 @@ export default function ConfluencePage() {
 
         {/* Tab Content */}
         {activeTab === 'document' ? (
-          <article
-            className="prose prose-invert prose-sm sm:prose-base max-w-none
-              prose-headings:text-foreground prose-headings:font-semibold
-              prose-p:text-muted-foreground prose-p:leading-relaxed
-              prose-a:text-primary prose-a:no-underline hover:prose-a:underline
-              prose-strong:text-foreground
-              prose-code:text-orange-300 prose-code:bg-orange-500/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded
-              prose-pre:bg-zinc-900 prose-pre:border prose-pre:border-border/50
-              prose-table:border-collapse prose-th:border prose-th:border-border/50 prose-th:p-2 prose-th:bg-muted/30
-              prose-td:border prose-td:border-border/50 prose-td:p-2
-              prose-li:text-muted-foreground
-              prose-img:rounded-lg prose-img:shadow-md"
-            dangerouslySetInnerHTML={{ __html: cleanStorageFormat(selectedPage.body) }}
-          />
+          <div className="rounded-xl border border-border/50 bg-card/50 p-6 md:p-10">
+            <article
+              className="prose prose-invert prose-sm sm:prose-base max-w-none
+                prose-headings:text-foreground prose-headings:font-bold prose-headings:border-b prose-headings:border-border/30 prose-headings:pb-2 prose-headings:mb-4
+                prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg
+                prose-p:text-muted-foreground prose-p:leading-relaxed prose-p:mb-4
+                prose-a:text-primary prose-a:underline prose-a:underline-offset-2 hover:prose-a:text-primary/80
+                prose-strong:text-foreground prose-strong:font-semibold
+                prose-code:text-orange-300 prose-code:bg-orange-500/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
+                prose-pre:bg-zinc-900/80 prose-pre:border prose-pre:border-border/50 prose-pre:rounded-lg
+                prose-table:border-collapse prose-table:rounded-lg prose-table:overflow-hidden
+                prose-th:border prose-th:border-border/50 prose-th:p-3 prose-th:bg-muted/40 prose-th:text-foreground prose-th:font-semibold prose-th:text-sm
+                prose-td:border prose-td:border-border/50 prose-td:p-3 prose-td:text-sm
+                prose-li:text-muted-foreground prose-li:mb-1
+                prose-ul:space-y-1 prose-ol:space-y-1
+                prose-img:rounded-lg prose-img:shadow-md prose-img:border prose-img:border-border/30
+                prose-hr:border-border/30"
+              dangerouslySetInnerHTML={{ __html: cleanStorageFormat(selectedPage.body) }}
+            />
+          </div>
         ) : (
-          <div>
-            {imageAttachments.length === 0 ? (
-              <div className="text-center py-16">
-                <ImageIcon className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-muted-foreground">No mockups attached to this document</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {imageAttachments.map((att) => (
-                  <div
-                    key={att.id}
-                    className="group relative bg-muted/30 border border-border/50 rounded-xl overflow-hidden cursor-pointer hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5"
-                    onClick={() => setLightboxImage(att)}
-                  >
-                    <div className="aspect-video bg-zinc-900 flex items-center justify-center overflow-hidden">
-                      <img
-                        src={att.downloadUrl}
-                        alt={att.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    </div>
-                    <div className="p-3 flex items-center justify-between">
-                      <p className="text-xs text-muted-foreground truncate flex-1">
-                        {att.title}
-                      </p>
-                      <Maximize2 className="h-3.5 w-3.5 text-muted-foreground/50 group-hover:text-primary transition-colors" />
+          <div className="space-y-8">
+            {/* Design links extracted from the document */}
+            {designLinks.length > 0 && (
+              <>
+                {webLinks.length > 0 && (
+                  <div>
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-4">
+                      <Monitor className="h-4 w-4 text-blue-400" />
+                      Web Designs
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {webLinks.map((link, i) => {
+                        const CatIcon = getCategoryIcon(link.category);
+                        return (
+                          <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
+                            className={`group flex items-center gap-3 p-4 rounded-xl border bg-gradient-to-br transition-all hover:shadow-lg hover:shadow-primary/5 hover:scale-[1.02] ${getPlatformColor(link.platform)}`}>
+                            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-background/50 flex items-center justify-center">
+                              <CatIcon className="h-5 w-5 text-primary" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">
+                                {link.platform === 'adobe-xd' ? 'Adobe XD' : link.platform.charAt(0).toUpperCase() + link.platform.slice(1)} Prototype
+                              </p>
+                              <p className="text-[11px] text-muted-foreground truncate">{link.url.split('/view/')[1]?.substring(0, 20) || 'Open design'}</p>
+                            </div>
+                            <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-primary flex-shrink-0 transition-colors" />
+                          </a>
+                        );
+                      })}
                     </div>
                   </div>
-                ))}
+                )}
+
+                {tvLinks.length > 0 && (
+                  <div>
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-4">
+                      <Tv className="h-4 w-4 text-purple-400" />
+                      TV Designs
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {tvLinks.map((link, i) => {
+                        const CatIcon = getCategoryIcon(link.category);
+                        return (
+                          <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
+                            className={`group flex items-center gap-3 p-4 rounded-xl border bg-gradient-to-br transition-all hover:shadow-lg hover:shadow-primary/5 hover:scale-[1.02] ${getPlatformColor(link.platform)}`}>
+                            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-background/50 flex items-center justify-center">
+                              <CatIcon className="h-5 w-5 text-purple-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">
+                                {link.platform === 'adobe-xd' ? 'Adobe XD' : link.platform.charAt(0).toUpperCase() + link.platform.slice(1)} Prototype
+                              </p>
+                              <p className="text-[11px] text-muted-foreground truncate">{link.url.split('/view/')[1]?.substring(0, 20) || 'Open design'}</p>
+                            </div>
+                            <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-purple-400 flex-shrink-0 transition-colors" />
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {otherLinks.length > 0 && (
+                  <div>
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-4">
+                      <Palette className="h-4 w-4 text-emerald-400" />
+                      Other Designs
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {otherLinks.map((link, i) => {
+                        const CatIcon = getCategoryIcon(link.category);
+                        return (
+                          <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
+                            className={`group flex items-center gap-3 p-4 rounded-xl border bg-gradient-to-br transition-all hover:shadow-lg hover:shadow-primary/5 hover:scale-[1.02] ${getPlatformColor(link.platform)}`}>
+                            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-background/50 flex items-center justify-center">
+                              <CatIcon className="h-5 w-5 text-emerald-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">
+                                {link.platform === 'adobe-xd' ? 'Adobe XD' : link.platform.charAt(0).toUpperCase() + link.platform.slice(1)} Design
+                              </p>
+                              <p className="text-[11px] text-muted-foreground truncate">{link.url.split('/view/')[1]?.substring(0, 20) || 'Open design'}</p>
+                            </div>
+                            <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-emerald-400 flex-shrink-0 transition-colors" />
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Image attachments */}
+            {imageAttachments.length > 0 && (
+              <div>
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-4">
+                  <ImageIcon className="h-4 w-4 text-cyan-400" />
+                  Attached Screenshots
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {imageAttachments.map((att) => (
+                    <div
+                      key={att.id}
+                      className="group relative bg-muted/30 border border-border/50 rounded-xl overflow-hidden cursor-pointer hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5"
+                      onClick={() => setLightboxImage(att)}
+                    >
+                      <div className="aspect-video bg-zinc-900 flex items-center justify-center overflow-hidden">
+                        <img
+                          src={att.downloadUrl}
+                          alt={att.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      </div>
+                      <div className="p-3 flex items-center justify-between">
+                        <p className="text-xs text-muted-foreground truncate flex-1">{att.title}</p>
+                        <Maximize2 className="h-3.5 w-3.5 text-muted-foreground/50 group-hover:text-primary transition-colors" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Empty state */}
+            {mockupCount === 0 && (
+              <div className="text-center py-16">
+                <Palette className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-muted-foreground">No design links or mockups found in this document</p>
               </div>
             )}
           </div>
