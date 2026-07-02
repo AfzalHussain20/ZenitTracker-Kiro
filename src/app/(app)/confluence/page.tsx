@@ -216,6 +216,18 @@ function extractDesignLinks(body: string): DesignLink[] {
     }
   }
 
+  // Merge "General" into the nearest real category or rename it to "Mobile" 
+  // (since named links typically come from the Mobile ordered list section)
+  const hasGeneral = links.some(l => l.category === 'General');
+  if (hasGeneral) {
+    const generalLinks = links.filter(l => l.category === 'General');
+    const hasMobile = links.some(l => l.category === 'Mobile');
+    // If there's a Mobile category, merge General into it; otherwise rename General to Mobile
+    for (const link of generalLinks) {
+      link.category = hasMobile ? 'Mobile' : 'Mobile';
+    }
+  }
+
   return links;
 }
 
