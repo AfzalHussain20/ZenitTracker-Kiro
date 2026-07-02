@@ -105,58 +105,58 @@ interface DesignLink {
   url: string;
   label: string;
   platform: 'adobe-xd' | 'figma' | 'zeplin' | 'sketch' | 'generic';
-  category: 'web' | 'tv' | 'mobile' | 'generic';
+  category: string; // "Web", "TV", "Mobile", etc.
 }
 
 function extractDesignLinks(body: string): DesignLink[] {
   const seen = new Set<string>();
   const links: DesignLink[] = [];
 
-  // Convert body to plain text with separators to find context
+  // Convert body to plain text lines
   const textBody = body.replace(/<[^>]+>/g, '|');
+  const lines = textBody.split('|').map(s => s.trim()).filter(Boolean);
 
-  // Find all XD / Figma / Zeplin URLs
-  const urlPattern = /https?:\/\/(xd\.adobe\.com\/view|(?:www\.)?figma\.com\/(?:file|proto|design)|app\.zeplin\.io)\/[^\s"<|)]+/gi;
-  const allUrls: { url: string; idx: number }[] = [];
-  let match;
-  while ((match = urlPattern.exec(textBody)) !== null) {
-    allUrls.push({ url: match[0].replace(/[|",;)]+$/, ''), idx: match.index });
-  }
+  let currentCategory = 'General';
+  let pendingLabel = '';
 
-  // Current category tracker (based on headings like "Web:", "TV:")
-  let currentCategory: DesignLink['category'] = 'generic';
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
 
-  for (const { url, idx } of allUrls) {
-    if (seen.has(url)) continue;
-    seen.add(url);
-
-    // Look at the 300 chars before this URL for context/label
-    const before = textBody.substring(Math.max(0, idx - 300), idx);
-    const segments = before.split('|').filter(s => s.trim());
-    const lastSegment = segments[segments.length - 1]?.trim() || '';
-    const prevSegment = segments[segments.length - 2]?.trim() || '';
-
-    // Detect category from nearby headings
-    const ctx = before.toLowerCase();
-    if (ctx.includes('tv:') || ctx.includes('tv designs') || ctx.includes('android tv') || ctx.includes('fire tv')) currentCategory = 'tv';
-    else if (ctx.includes('web:') || ctx.includes('web designs')) currentCategory = 'web';
-    else if (ctx.includes('mobile') || ctx.includes('ios') || ctx.includes('android app')) currentCategory = 'mobile';
-
-    // Extract label — use preceding text that's not a URL and not too long
-    let label = '';
-    const candidate = lastSegment.startsWith('http') ? prevSegment : lastSegment;
-    if (candidate && !candidate.startsWith('http') && candidate.length < 80 && candidate.length > 1) {
-      label = candidate.replace(/[-–—:]+$/, '').trim();
+    // Detect category headers like "Web:", "TV:", "Mobile:", "Designs"
+    if (/^(Web|TV|Mobile|mweb and Tablet|Designs):?$/i.test(line)) {
+      if (line.toLowerCase() !== 'designs') {
+        currentCategory = line.replace(/:$/, '');
+      }
+      pendingLabel = '';
+      continue;
     }
-    if (!label) label = `Design ${links.length + 1}`;
 
-    // Determine platform
-    let platform: DesignLink['platform'] = 'generic';
-    if (url.includes('xd.adobe.com')) platform = 'adobe-xd';
-    else if (url.includes('figma.com')) platform = 'figma';
-    else if (url.includes('zeplin.io')) platform = 'zeplin';
+    // Check if this line is a URL
+    const urlMatch = line.match(/https?:\/\/(xd\.adobe\.com\/view|(?:www\.)?figma\.com\/(?:file|proto|design)|app\.zeplin\.io)\/[^\s]+/i);
+    if (urlMatch) {
+      const url = urlMatch[0].replace(/[,;)]+$/, '');
+      if (seen.has(url)) { pendingLabel = ''; continue; }
+      seen.add(url);
 
-    links.push({ url, label, platform, category: currentCategory });
+      // Use pending label, or check if label is in the same line before the URL
+      let label = pendingLabel;
+      if (!label) {
+        const beforeUrl = line.substring(0, line.indexOf(urlMatch[0])).replace(/[-–—:]+$/, '').trim();
+        if (beforeUrl && beforeUrl.length < 60 && !beforeUrl.startsWith('http')) label = beforeUrl;
+      }
+      if (!label) label = `${currentCategory} Design ${links.filter(l => l.category === currentCategory).length + 1}`;
+
+      let platform: DesignLink['platform'] = 'generic';
+      if (url.includes('xd.adobe.com')) platform = 'adobe-xd';
+      else if (url.includes('figma.com')) platform = 'figma';
+      else if (url.includes('zeplin.io')) platform = 'zeplin';
+
+      links.push({ url, label, platform, category: currentCategory });
+      pendingLabel = '';
+    } else if (!line.startsWith('http') && line.length < 80) {
+      // This could be a label for the next URL
+      pendingLabel = line.replace(/[-–—:]+$/, '').trim();
+    }
   }
   return links;
 }
@@ -389,85 +389,83 @@ export default function ConfluencePage() {
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
-            {/* Mockup viewer — embedded prototypes accessible right here */}
-            {designLinks.length > 0 ? (
-              <>
-                {/* Category sections */}
-                {([['web', 'Web', Monitor, 'blue'] as const, ['tv', 'TV', Tv, 'purple'] as const, ['mobile', 'Mobile', Palette, 'emerald'] as const, ['generic', 'Other', Palette, 'zinc'] as const])
-                  .map(([cat, catLabel, CatIcon, color]) => {
-                    const catLinks = designLinks.filter(l => l.category === cat);
-                    if (catLinks.length === 0) return null;
-                    return (
-                      <div key={cat}>
-                        <div className="flex items-center gap-2 mb-4">
-                          <CatIcon className={`h-4 w-4 text-${color}-400`} />
-                          <h3 className="text-sm font-semibold text-foreground">{catLabel} Designs</h3>
-                          <span className="text-xs text-muted-foreground">({catLinks.length})</span>
-                        </div>
-                        <div className="space-y-4">
-                          {catLinks.map((link, i) => (
-                            <div key={i} className="rounded-xl border border-border/40 bg-card/30 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                              {/* Mockup header with name + open externally */}
-                              <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 bg-muted/20">
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className={`w-8 h-8 rounded-lg bg-${color}-500/10 border border-${color}-500/20 flex items-center justify-center flex-shrink-0`}>
-                                    <CatIcon className={`h-4 w-4 text-${color}-400`} />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="text-sm font-medium text-foreground truncate">{link.label}</p>
-                                    <p className="text-[11px] text-muted-foreground">Adobe XD • {catLabel}</p>
-                                  </div>
-                                </div>
-                                <a href={link.url} target="_blank" rel="noopener noreferrer"
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium transition-colors flex-shrink-0">
-                                  <ExternalLink className="h-3 w-3" />
-                                  Open
-                                </a>
-                              </div>
-                              {/* Embedded iframe viewer */}
-                              <div className="relative bg-zinc-950">
-                                <iframe
-                                  src={link.url}
-                                  title={link.label}
-                                  className="w-full border-0"
-                                  style={{ height: '560px' }}
-                                  sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-                                  loading="lazy"
-                                  allowFullScreen
-                                />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-              </>
-            ) : imageAttachments.length > 0 ? (
-              <div>
-                <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-4">
-                  <ImageIcon className="h-4 w-4 text-cyan-400" />
-                  Screenshots
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {imageAttachments.map((att) => (
-                    <div key={att.id}
-                      className="group relative rounded-xl border border-border/40 bg-card/30 overflow-hidden cursor-pointer hover:border-primary/50 transition-all hover:shadow-lg"
-                      onClick={() => setLightboxImage(att)}>
-                      <div className="aspect-video bg-zinc-900 overflow-hidden">
-                        <img src={att.downloadUrl} alt={att.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      </div>
-                      <div className="p-3 flex items-center justify-between">
-                        <p className="text-xs text-muted-foreground truncate flex-1">{att.title}</p>
-                        <Maximize2 className="h-3.5 w-3.5 text-muted-foreground/50 group-hover:text-primary transition-colors" />
-                      </div>
+          <div className="space-y-8">
+            {/* Full-page mockup viewer overlay */}
+            {lightboxImage && (
+              <div className="fixed inset-0 z-[100] bg-background flex flex-col">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border/40 bg-muted/30">
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setLightboxImage(null)} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+                      <X className="h-5 w-5" />
+                    </button>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{lightboxImage.title}</p>
+                      <p className="text-xs text-muted-foreground">Adobe XD Prototype</p>
                     </div>
-                  ))}
+                  </div>
+                  <a href={lightboxImage.downloadUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium transition-colors">
+                    <ExternalLink className="h-3 w-3" />
+                    Open in new tab
+                  </a>
+                </div>
+                <div className="flex-1 bg-zinc-950">
+                  <iframe
+                    src={`${lightboxImage.downloadUrl}?fullscreen`}
+                    title={lightboxImage.title}
+                    className="w-full h-full border-0"
+                    sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+                    allowFullScreen
+                  />
                 </div>
               </div>
+            )}
+
+            {/* Mockup cards grouped by category */}
+            {designLinks.length > 0 ? (
+              <>
+                {Object.entries(
+                  designLinks.reduce((acc, link) => {
+                    if (!acc[link.category]) acc[link.category] = [];
+                    acc[link.category].push(link);
+                    return acc;
+                  }, {} as Record<string, DesignLink[]>)
+                ).map(([category, catLinks]) => (
+                  <div key={category}>
+                    <div className="flex items-center gap-2 mb-4">
+                      {category.toLowerCase().includes('tv') ? <Tv className="h-4 w-4 text-purple-400" /> :
+                       category.toLowerCase().includes('mobile') ? <Palette className="h-4 w-4 text-emerald-400" /> :
+                       <Monitor className="h-4 w-4 text-blue-400" />}
+                      <h3 className="text-sm font-semibold text-foreground">{category}</h3>
+                      <Badge variant="secondary" className="text-[10px] h-5 px-1.5">{catLinks.length}</Badge>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {catLinks.map((link, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setLightboxImage({ id: String(i), title: link.label, mediaType: 'text/html', downloadUrl: link.url })}
+                          className="group text-left p-4 rounded-xl border border-border/40 bg-card/30 hover:bg-muted/40 hover:border-primary/40 hover:shadow-lg transition-all"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center mt-0.5">
+                              <Palette className="h-4 w-4 text-primary" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors line-clamp-1">
+                                {link.label}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
+                                {link.platform === 'adobe-xd' ? 'Adobe XD' : link.platform} • {category}
+                              </p>
+                            </div>
+                            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-primary flex-shrink-0 mt-1 transition-colors" />
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </>
             ) : (
               <div className="text-center py-16 rounded-2xl border border-border/30 bg-card/20">
                 <Palette className="h-12 w-12 text-muted-foreground/20 mx-auto mb-3" />
