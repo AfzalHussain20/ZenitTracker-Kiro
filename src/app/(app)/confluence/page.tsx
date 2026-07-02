@@ -135,61 +135,78 @@ function extractDesignLinks(body: string): DesignLink[] {
   const seen = new Set<string>();
   const links: DesignLink[] = [];
 
-  // Convert body to plain text lines
+  // FIRST PASS: extract links that have anchor text (the proper names)
+  // Pattern: <a href="https://xd.adobe.com/view/...">Link Text</a>
+  const anchorRegex = /<a[^>]*href=["'](https?:\/\/(?:xd\.adobe\.com\/view|(?:www\.)?figma\.com\/(?:file|proto|design)|app\.zeplin\.io)\/[^"']+)["'][^>]*>([^<]+)<\/a>/gi;
+  let match;
+
+  // Determine current category from context — parse the whole body structure
   const textBody = body.replace(/<[^>]+>/g, '|');
   const lines = textBody.split('|').map(s => s.trim()).filter(Boolean);
 
+  // Build category map: find where "Web:", "TV:", "Mobile:" headers appear relative to URLs
   let currentCategory = 'General';
-  let pendingLabel = '';
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Detect category headers like "Web:", "TV:", "Mobile:", "Designs"
-    if (/^(Web|TV|Mobile|mweb and Tablet|Designs):?$/i.test(line)) {
-      if (line.toLowerCase() !== 'designs') {
-        currentCategory = line.replace(/:$/, '');
-      }
-      pendingLabel = '';
-      continue;
+  const urlCategoryMap = new Map<string, string>();
+  for (const line of lines) {
+    if (/^(Web|TV|Mobile|mweb and Tablet):?$/i.test(line) && line.toLowerCase() !== 'designs') {
+      currentCategory = line.replace(/:$/, '');
     }
-
-    // Check if this line is a URL
-    const urlMatch = line.match(/https?:\/\/(xd\.adobe\.com\/view|(?:www\.)?figma\.com\/(?:file|proto|design)|app\.zeplin\.io)\/[^\s]+/i);
+    const urlMatch = line.match(/https?:\/\/xd\.adobe\.com\/view\/[^\s|]+/i);
     if (urlMatch) {
-      const url = urlMatch[0].replace(/[,;)]+$/, '');
-      if (seen.has(url)) { pendingLabel = ''; continue; }
-      seen.add(url);
-
-      // Use pending label, or check if label is in the same line before the URL
-      let label = pendingLabel;
-      if (!label) {
-        const beforeUrl = line.substring(0, line.indexOf(urlMatch[0])).replace(/[-–—:]+$/, '').trim();
-        if (beforeUrl && beforeUrl.length < 60 && !beforeUrl.startsWith('http')) label = beforeUrl;
-      }
-      if (!label) label = `${currentCategory} Design ${links.filter(l => l.category === currentCategory).length + 1}`;
-
-      let platform: DesignLink['platform'] = 'generic';
-      if (url.includes('xd.adobe.com')) platform = 'adobe-xd';
-      else if (url.includes('figma.com')) platform = 'figma';
-      else if (url.includes('zeplin.io')) platform = 'zeplin';
-
-      links.push({ url, label, platform, category: currentCategory });
-      pendingLabel = '';
-    } else if (!line.startsWith('http') && line.length < 80) {
-      // This could be a label for the next URL
-      pendingLabel = line.replace(/[-–—:]+$/, '').trim();
+      urlCategoryMap.set(urlMatch[0].replace(/[|"',;)]+$/, ''), currentCategory);
     }
   }
 
-  // For unnamed links, give them descriptive names per category
-  const catCounters: Record<string, number> = {};
-  for (const link of links) {
-    if (!catCounters[link.category]) catCounters[link.category] = 0;
-    catCounters[link.category]++;
-    if (link.label.match(/Design \d+$/)) {
-      link.label = `${link.category} Prototype ${catCounters[link.category]}`;
+  // Now extract with proper names from anchor tags
+  while ((match = anchorRegex.exec(body)) !== null) {
+    const url = match[1].replace(/[",;)]+$/, '');
+    const anchorText = match[2].trim();
+    if (seen.has(url)) continue;
+    seen.add(url);
+
+    // Use anchor text as the label (this is the actual mockup name!)
+    let label = anchorText;
+    // If anchor text is just the URL itself, fallback
+    if (label.startsWith('http')) label = '';
+
+    const category = urlCategoryMap.get(url) || 'General';
+
+    let platform: DesignLink['platform'] = 'generic';
+    if (url.includes('xd.adobe.com')) platform = 'adobe-xd';
+    else if (url.includes('figma.com')) platform = 'figma';
+    else if (url.includes('zeplin.io')) platform = 'zeplin';
+
+    if (!label) {
+      const catCount = links.filter(l => l.category === category).length + 1;
+      label = `${category} Prototype ${catCount}`;
     }
+
+    links.push({ url, label, platform, category });
+  }
+
+  // SECOND PASS: pick up bare URLs that weren't in anchor tags
+  const bareUrlRegex = /https?:\/\/(?:xd\.adobe\.com\/view|(?:www\.)?figma\.com\/(?:file|proto|design)|app\.zeplin\.io)\/[^\s"<|)]+/gi;
+  let bareMatch;
+  while ((bareMatch = bareUrlRegex.exec(textBody)) !== null) {
+    const url = bareMatch[0].replace(/[|"',;)]+$/, '');
+    if (seen.has(url)) continue;
+    seen.add(url);
+
+    const category = urlCategoryMap.get(url) || 'General';
+    const catCount = links.filter(l => l.category === category).length + 1;
+
+    let platform: DesignLink['platform'] = 'generic';
+    if (url.includes('xd.adobe.com')) platform = 'adobe-xd';
+    else if (url.includes('figma.com')) platform = 'figma';
+
+    // Try to find a label from surrounding text
+    const idx = textBody.indexOf(url.substring(0, 40));
+    const before = idx > 0 ? textBody.substring(Math.max(0, idx - 100), idx) : '';
+    const segs = before.split('|').filter(s => s.trim() && !s.trim().startsWith('http'));
+    const lastSeg = segs[segs.length - 1]?.trim().replace(/[-–—:]+$/, '').trim() || '';
+    const label = (lastSeg && lastSeg.length < 60 && lastSeg.length > 2) ? lastSeg : `${category} Prototype ${catCount}`;
+
+    links.push({ url, label, platform, category });
   }
 
   // Convert /view/ URLs to /embed/ for iframe embedding
@@ -413,7 +430,7 @@ export default function ConfluencePage() {
                 className="prose prose-invert prose-sm sm:prose-base max-w-none
                   [&_table]:w-full [&_table]:border-collapse [&_table]:rounded-lg [&_table]:overflow-hidden [&_table]:text-sm [&_table]:my-6
                   [&_th]:bg-muted/50 [&_th]:border [&_th]:border-border/40 [&_th]:p-3 [&_th]:text-left [&_th]:font-semibold [&_th]:text-foreground
-                  [&_td]:border [&_td]:border-border/40 [&_td]:p-3 [&_td]:text-muted-foreground
+                  [&_td]:border [&_td]:border-border/40 [&_td]:p-3 [&_td]:text-foreground
                   [&_tr:nth-child(even)_td]:bg-muted/10
                   prose-headings:text-foreground prose-headings:font-bold prose-headings:mb-4
                   prose-h1:text-2xl prose-h1:pb-3 prose-h1:border-b prose-h1:border-border/30
