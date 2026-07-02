@@ -2,37 +2,42 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-const CONFLUENCE_BASE = process.env.CONFLUENCE_BASE_URL!;
-const CONFLUENCE_AUTH = () =>
-  Buffer.from(`${process.env.CONFLUENCE_EMAIL}:${process.env.CONFLUENCE_API_TOKEN}`).toString('base64');
-
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const spaceId = searchParams.get('spaceId');
     const query = searchParams.get('q');
 
+    const baseUrl = process.env.CONFLUENCE_BASE_URL;
+    const email = process.env.CONFLUENCE_EMAIL;
+    const token = process.env.CONFLUENCE_API_TOKEN;
+
+    if (!baseUrl || !email || !token) {
+      return NextResponse.json({ error: 'Confluence env vars not configured', pages: [] }, { status: 200 });
+    }
+
+    const authHeader = `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`;
+
     let url: string;
 
     if (query) {
-      // Use CQL search
       const cql = encodeURIComponent(`type=page AND title~"${query}"`);
-      url = `${CONFLUENCE_BASE}/rest/api/content/search?cql=${cql}&limit=30&expand=space,version,body.export_view`;
+      url = `${baseUrl}/rest/api/content/search?cql=${cql}&limit=30&expand=space,version,body.export_view`;
     } else if (spaceId) {
-      // Filter by space using v2 API
-      url = `${CONFLUENCE_BASE}/api/v2/pages?space-id=${spaceId}&limit=30&sort=-modified-date`;
+      url = `${baseUrl}/api/v2/pages?space-id=${spaceId}&limit=30&sort=-modified-date`;
     } else {
-      // Get recent pages
-      url = `${CONFLUENCE_BASE}/api/v2/pages?limit=30&sort=-modified-date`;
+      url = `${baseUrl}/api/v2/pages?limit=30&sort=-modified-date`;
     }
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
     const res = await fetch(url, {
-      headers: {
-        Authorization: `Basic ${CONFLUENCE_AUTH()}`,
-        Accept: 'application/json',
-      },
+      headers: { Authorization: authHeader, Accept: 'application/json' },
       cache: 'no-store',
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

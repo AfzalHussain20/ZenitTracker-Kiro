@@ -2,19 +2,27 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-const CONFLUENCE_BASE = process.env.CONFLUENCE_BASE_URL!;
-const CONFLUENCE_AUTH = () =>
-  Buffer.from(`${process.env.CONFLUENCE_EMAIL}:${process.env.CONFLUENCE_API_TOKEN}`).toString('base64');
-
 export async function GET() {
   try {
-    const res = await fetch(`${CONFLUENCE_BASE}/api/v2/spaces?limit=50`, {
-      headers: {
-        Authorization: `Basic ${CONFLUENCE_AUTH()}`,
-        Accept: 'application/json',
-      },
+    const baseUrl = process.env.CONFLUENCE_BASE_URL;
+    const email = process.env.CONFLUENCE_EMAIL;
+    const token = process.env.CONFLUENCE_API_TOKEN;
+
+    if (!baseUrl || !email || !token) {
+      return NextResponse.json({ error: 'Confluence env vars not configured', spaces: [] });
+    }
+
+    const authHeader = `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    const res = await fetch(`${baseUrl}/api/v2/spaces?limit=50`, {
+      headers: { Authorization: authHeader, Accept: 'application/json' },
       cache: 'no-store',
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -27,12 +35,12 @@ export async function GET() {
       key: s.key,
       name: s.name,
       type: s.type,
-      icon: s.icon?.path ? `${CONFLUENCE_BASE}${s.icon.path}` : null,
+      icon: s.icon?.path ? `${baseUrl}${s.icon.path}` : null,
     }));
 
     return NextResponse.json({ spaces });
   } catch (err: any) {
     console.error('[Confluence Spaces]', err.message);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message, spaces: [] }, { status: 200 });
   }
 }
