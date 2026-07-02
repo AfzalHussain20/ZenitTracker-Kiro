@@ -94,30 +94,31 @@ function cleanStorageFormat(html: string): string {
     // Remove ri:* tags
     .replace(/<ri:[^>]*\/>/gi, '')
     .replace(/<ri:[^>]*>[\s\S]*?<\/ri:[^>]*>/gi, '')
-    // Clean up empty paragraphs
+    // Clean up empty paragraphs and br noise
     .replace(/<p>\s*<\/p>/gi, '')
     .replace(/<p>\s*<br\s*\/?>\s*<\/p>/gi, '');
 
-  // Improve structure: convert sequences of short <p> tags (like lists rendered as paragraphs)
-  // into proper unordered lists for better visual presentation
+  // Ensure tables have proper structure and width
+  cleaned = cleaned.replace(/<table/gi, '<table style="width:100%;border-collapse:collapse"');
+
+  // Add visual section breaks before h1/h2 headings
+  cleaned = cleaned.replace(/(<h[12][^>]*>)/gi, '<hr class="my-8 border-border/30"/>$1');
+  cleaned = cleaned.replace(/^\s*<hr[^>]*\/>/, ''); // remove leading hr
+
+  // Convert sequences of short <p> tags into bullet lists
   cleaned = cleaned.replace(
-    /(<p>[^<]{1,100}<\/p>\s*){4,}/gi,
+    /(<p>[^<]{1,90}<\/p>\s*){4,}/gi,
     (match) => {
-      const items = match.match(/<p>([^<]+)<\/p>/gi);
+      const items = [...match.matchAll(/<p>([^<]+)<\/p>/gi)];
       if (!items || items.length < 4) return match;
-      // Check if these look like list items (short, similar length, no periods)
-      const texts = items.map(i => i.replace(/<\/?p>/gi, '').trim());
+      const texts = items.map(i => i[1].trim()).filter(Boolean);
       const avgLen = texts.reduce((a, t) => a + t.length, 0) / texts.length;
-      if (avgLen > 80) return match; // too long to be list items
+      // Only convert if items are short (look like list items) and don't contain URLs
+      if (avgLen > 80 || texts.some(t => t.includes('http'))) return match;
       const listItems = texts.map(t => `<li>${t}</li>`).join('');
-      return `<ul>${listItems}</ul>`;
+      return `<ul class="list-disc pl-6 space-y-1">${listItems}</ul>`;
     }
   );
-
-  // Add horizontal rules before major headings for visual separation
-  cleaned = cleaned.replace(/(<h[12][^>]*>)/gi, '<hr/>$1');
-  // Remove leading hr if it's the first element
-  cleaned = cleaned.replace(/^\s*<hr\s*\/?>/, '');
 
   return cleaned.trim();
 }
@@ -407,23 +408,27 @@ export default function ConfluencePage() {
         {/* Tab Content */}
         {activeTab === 'document' ? (
           <div className="rounded-2xl border border-border/40 bg-card/30 backdrop-blur-sm shadow-sm">
-            <div className="p-6 md:p-10 lg:p-12">
+            <div className="p-6 md:p-10 lg:p-12 overflow-x-auto">
               <article
                 className="prose prose-invert prose-sm sm:prose-base max-w-none
-                  prose-headings:text-foreground prose-headings:font-bold prose-headings:border-b prose-headings:border-border/20 prose-headings:pb-3 prose-headings:mb-5
-                  prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-h2:mt-10 prose-h3:mt-8
-                  prose-p:text-muted-foreground prose-p:leading-[1.8] prose-p:mb-4
+                  [&_table]:w-full [&_table]:border-collapse [&_table]:rounded-lg [&_table]:overflow-hidden [&_table]:text-sm [&_table]:my-6
+                  [&_th]:bg-muted/50 [&_th]:border [&_th]:border-border/40 [&_th]:p-3 [&_th]:text-left [&_th]:font-semibold [&_th]:text-foreground
+                  [&_td]:border [&_td]:border-border/40 [&_td]:p-3 [&_td]:text-muted-foreground
+                  [&_tr:nth-child(even)_td]:bg-muted/10
+                  prose-headings:text-foreground prose-headings:font-bold prose-headings:mb-4
+                  prose-h1:text-2xl prose-h1:pb-3 prose-h1:border-b prose-h1:border-border/30
+                  prose-h2:text-xl prose-h2:mt-10 prose-h2:pb-2 prose-h2:border-b prose-h2:border-border/20
+                  prose-h3:text-lg prose-h3:mt-8
+                  prose-p:text-muted-foreground prose-p:leading-[1.75] prose-p:mb-3
                   prose-a:text-primary prose-a:underline prose-a:underline-offset-2 hover:prose-a:text-primary/80
                   prose-strong:text-foreground prose-strong:font-semibold
                   prose-code:text-orange-300 prose-code:bg-orange-500/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
                   prose-pre:bg-zinc-900/80 prose-pre:border prose-pre:border-border/50 prose-pre:rounded-xl prose-pre:p-4
-                  prose-table:border-collapse prose-table:rounded-xl prose-table:overflow-hidden prose-table:w-full
-                  prose-th:border prose-th:border-border/40 prose-th:p-3.5 prose-th:bg-muted/40 prose-th:text-foreground prose-th:font-semibold prose-th:text-sm prose-th:text-left
-                  prose-td:border prose-td:border-border/40 prose-td:p-3.5 prose-td:text-sm
-                  prose-li:text-muted-foreground prose-li:mb-1.5 prose-li:leading-relaxed
-                  prose-ul:space-y-1 prose-ol:space-y-1
+                  prose-li:text-muted-foreground prose-li:mb-1 prose-li:leading-relaxed
+                  [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1 [&_ul]:my-4
+                  [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:space-y-1 [&_ol]:my-4
                   prose-img:rounded-xl prose-img:shadow-lg prose-img:border prose-img:border-border/20
-                  prose-hr:border-border/20 prose-hr:my-8"
+                  [&_hr]:border-border/20 [&_hr]:my-8"
                 dangerouslySetInnerHTML={{ __html: cleanStorageFormat(selectedPage.body) }}
               />
             </div>
@@ -454,6 +459,7 @@ export default function ConfluencePage() {
                     src={lightboxImage.downloadUrl}
                     title={lightboxImage.title}
                     className="w-full h-full border-0"
+                    allow="fullscreen"
                     allowFullScreen
                   />
                 </div>
