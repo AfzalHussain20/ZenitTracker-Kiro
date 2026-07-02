@@ -180,6 +180,24 @@ function extractDesignLinks(body: string): DesignLink[] {
       pendingLabel = line.replace(/[-–—:]+$/, '').trim();
     }
   }
+
+  // For unnamed links, give them descriptive names per category
+  const catCounters: Record<string, number> = {};
+  for (const link of links) {
+    if (!catCounters[link.category]) catCounters[link.category] = 0;
+    catCounters[link.category]++;
+    if (link.label.match(/Design \d+$/)) {
+      link.label = `${link.category} Prototype ${catCounters[link.category]}`;
+    }
+  }
+
+  // Convert /view/ URLs to /embed/ for iframe embedding
+  for (const link of links) {
+    if (link.url.includes('/view/')) {
+      link.url = link.url.replace('/view/', '/embed/');
+    }
+  }
+
   return links;
 }
 
@@ -412,7 +430,35 @@ export default function ConfluencePage() {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* Full-page mockup viewer - opens in new tab since XD blocks iframes */}
+            {/* Full-page mockup viewer overlay — uses /embed/ URL which Adobe allows */}
+            {lightboxImage && (
+              <div className="fixed inset-0 z-[100] bg-background flex flex-col">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border/40 bg-muted/20">
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setLightboxImage(null)} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+                      <X className="h-5 w-5" />
+                    </button>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{lightboxImage.title}</p>
+                      <p className="text-xs text-muted-foreground">Adobe XD Prototype</p>
+                    </div>
+                  </div>
+                  <a href={lightboxImage.downloadUrl.replace('/embed/', '/view/')} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium transition-colors">
+                    <ExternalLink className="h-3 w-3" />
+                    Open in new tab
+                  </a>
+                </div>
+                <div className="flex-1">
+                  <iframe
+                    src={lightboxImage.downloadUrl}
+                    title={lightboxImage.title}
+                    className="w-full h-full border-0"
+                    allowFullScreen
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Mockup cards grouped by category */}
             {designLinks.length > 0 ? (
@@ -434,11 +480,9 @@ export default function ConfluencePage() {
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {catLinks.map((link, i) => (
-                        <a
+                        <button
                           key={i}
-                          href={link.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          onClick={() => setLightboxImage({ id: String(i), title: link.label, mediaType: 'text/html', downloadUrl: link.url })}
                           className="group text-left p-4 rounded-xl border border-border/40 bg-card/30 hover:bg-muted/40 hover:border-primary/40 hover:shadow-lg transition-all"
                         >
                           <div className="flex items-start gap-3">
@@ -450,12 +494,12 @@ export default function ConfluencePage() {
                                 {link.label}
                               </p>
                               <p className="text-[11px] text-muted-foreground mt-0.5">
-                                {link.platform === 'adobe-xd' ? 'Adobe XD' : link.platform} • {category} • Opens in new tab
+                                {link.platform === 'adobe-xd' ? 'Adobe XD' : link.platform} • {category} • Click to preview
                               </p>
                             </div>
-                            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-primary flex-shrink-0 mt-1 transition-colors" />
+                            <Maximize2 className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-primary flex-shrink-0 mt-1 transition-colors" />
                           </div>
-                        </a>
+                        </button>
                       ))}
                     </div>
                   </div>
