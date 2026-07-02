@@ -13,7 +13,7 @@ export async function middleware(request: NextRequest) {
   const publicRoutes = ['/login', '/signup', '/forgot-password'];
 
   // Routes that start with these prefixes are always public (no auth needed)
-  const publicPrefixes = ['/scan/', '/api/keepr/', '/api/jira/', '/api/confluence/', '/api/org/', '/api/geo', '/api/billing/', '/landing'];
+  const publicPrefixes = ['/scan/', '/api/keepr/', '/api/jira/', '/api/confluence/', '/api/ai/', '/api/org/', '/api/geo', '/api/billing/', '/landing'];
   const isPublicPrefix = publicPrefixes.some(prefix => pathname.startsWith(prefix));
 
   const isPublicRoute = publicRoutes.includes(pathname) || isPublicPrefix;

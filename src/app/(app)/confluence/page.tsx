@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import ChatPanel from '@/components/ChatPanel';
 import {
   Search,
   ArrowLeft,
@@ -548,6 +549,13 @@ export default function ConfluencePage() {
             )}
           </div>
         )}
+
+        {/* AI Chat Panel — floating, available on both tabs */}
+        <ChatPanel
+          pageId={selectedPage.id}
+          pageTitle={selectedPage.title}
+          onJumpToSection={(section) => { setActiveTab('document'); }}
+        />
       </div>
     );
   }
