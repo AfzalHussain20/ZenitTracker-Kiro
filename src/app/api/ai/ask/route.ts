@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
       });
     } catch (providerErr: any) {
       console.error(`${provider.name} provider error:`, providerErr.message);
-      return NextResponse.json({ error: 'AI request failed: ' + providerErr.message }, { status: 502 });
+      return NextResponse.json({ answer: providerErr.message || 'AI request failed. Please try again.' });
     }
 
     // Extract cited section if present
@@ -89,6 +89,6 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     console.error('Error in /api/ai/ask:', err.message);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ answer: 'Something went wrong: ' + (err.message || 'Unknown error. Please try again.') });
   }
 }

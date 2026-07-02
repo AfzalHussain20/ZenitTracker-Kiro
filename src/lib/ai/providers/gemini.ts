@@ -34,7 +34,11 @@ export const geminiProvider: AIProvider = {
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Gemini API error (${response.status}): ${errText}`);
+      const errJson = JSON.parse(errText).error || {};
+      if (response.status === 429) {
+        return { answer: "The AI service is temporarily rate-limited. Please wait a minute and try again." };
+      }
+      throw new Error(`Gemini API error (${response.status}): ${errJson.message || errText}`);
     }
 
     const data = await response.json();
