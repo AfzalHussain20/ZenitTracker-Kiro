@@ -78,10 +78,10 @@ function formatDate(dateStr: string | null): string {
   });
 }
 
-// Strip Confluence storage format macros for clean HTML rendering
+// Strip Confluence storage format macros for clean HTML rendering + restructure
 function cleanStorageFormat(html: string): string {
   if (!html) return '';
-  return html
+  let cleaned = html
     // Remove structured macros entirely
     .replace(/<ac:structured-macro[^>]*>[\s\S]*?<\/ac:structured-macro>/gi, '')
     // Remove ac:* tags but keep inner content
@@ -96,8 +96,30 @@ function cleanStorageFormat(html: string): string {
     .replace(/<ri:[^>]*>[\s\S]*?<\/ri:[^>]*>/gi, '')
     // Clean up empty paragraphs
     .replace(/<p>\s*<\/p>/gi, '')
-    // Keep everything else as-is for prose rendering
-    .trim();
+    .replace(/<p>\s*<br\s*\/?>\s*<\/p>/gi, '');
+
+  // Improve structure: convert sequences of short <p> tags (like lists rendered as paragraphs)
+  // into proper unordered lists for better visual presentation
+  cleaned = cleaned.replace(
+    /(<p>[^<]{1,100}<\/p>\s*){4,}/gi,
+    (match) => {
+      const items = match.match(/<p>([^<]+)<\/p>/gi);
+      if (!items || items.length < 4) return match;
+      // Check if these look like list items (short, similar length, no periods)
+      const texts = items.map(i => i.replace(/<\/?p>/gi, '').trim());
+      const avgLen = texts.reduce((a, t) => a + t.length, 0) / texts.length;
+      if (avgLen > 80) return match; // too long to be list items
+      const listItems = texts.map(t => `<li>${t}</li>`).join('');
+      return `<ul>${listItems}</ul>`;
+    }
+  );
+
+  // Add horizontal rules before major headings for visual separation
+  cleaned = cleaned.replace(/(<h[12][^>]*>)/gi, '<hr/>$1');
+  // Remove leading hr if it's the first element
+  cleaned = cleaned.replace(/^\s*<hr\s*\/?>/, '');
+
+  return cleaned.trim();
 }
 
 // ─── Extract design/mockup URLs from the page body ───────────────────────────
@@ -390,36 +412,7 @@ export default function ConfluencePage() {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* Full-page mockup viewer overlay */}
-            {lightboxImage && (
-              <div className="fixed inset-0 z-[100] bg-background flex flex-col">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-border/40 bg-muted/30">
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => setLightboxImage(null)} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
-                      <X className="h-5 w-5" />
-                    </button>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{lightboxImage.title}</p>
-                      <p className="text-xs text-muted-foreground">Adobe XD Prototype</p>
-                    </div>
-                  </div>
-                  <a href={lightboxImage.downloadUrl} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium transition-colors">
-                    <ExternalLink className="h-3 w-3" />
-                    Open in new tab
-                  </a>
-                </div>
-                <div className="flex-1 bg-zinc-950">
-                  <iframe
-                    src={`${lightboxImage.downloadUrl}?fullscreen`}
-                    title={lightboxImage.title}
-                    className="w-full h-full border-0"
-                    sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-                    allowFullScreen
-                  />
-                </div>
-              </div>
-            )}
+            {/* Full-page mockup viewer - opens in new tab since XD blocks iframes */}
 
             {/* Mockup cards grouped by category */}
             {designLinks.length > 0 ? (
@@ -441,9 +434,11 @@ export default function ConfluencePage() {
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {catLinks.map((link, i) => (
-                        <button
+                        <a
                           key={i}
-                          onClick={() => setLightboxImage({ id: String(i), title: link.label, mediaType: 'text/html', downloadUrl: link.url })}
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="group text-left p-4 rounded-xl border border-border/40 bg-card/30 hover:bg-muted/40 hover:border-primary/40 hover:shadow-lg transition-all"
                         >
                           <div className="flex items-start gap-3">
@@ -455,12 +450,12 @@ export default function ConfluencePage() {
                                 {link.label}
                               </p>
                               <p className="text-[11px] text-muted-foreground mt-0.5">
-                                {link.platform === 'adobe-xd' ? 'Adobe XD' : link.platform} • {category}
+                                {link.platform === 'adobe-xd' ? 'Adobe XD' : link.platform} • {category} • Opens in new tab
                               </p>
                             </div>
                             <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-primary flex-shrink-0 mt-1 transition-colors" />
                           </div>
-                        </button>
+                        </a>
                       ))}
                     </div>
                   </div>
