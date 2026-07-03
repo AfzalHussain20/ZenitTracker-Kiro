@@ -289,27 +289,49 @@ function validateTestCaseEntry(entry: unknown): GeneratedTestCase | null {
 
 /**
  * Parses AI JSON response with validation, discarding malformed entries.
- * Attempts direct JSON.parse first, then falls back to regex extraction
- * of JSON arrays from the response string.
+ * Handles: raw JSON, markdown code fences, thinking blocks, and mixed content.
  */
 export function parseTestCaseResponse(raw: string): GeneratedTestCase[] {
   if (!raw || typeof raw !== 'string') return [];
+
+  // Strip markdown code fences (```json ... ``` or ``` ... ```)
+  let cleaned = raw.trim();
+  
+  // Remove thinking blocks (Gemini 2.5 sometimes includes <think>...</think>)
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  
+  // Remove markdown code fences
+  cleaned = cleaned.replace(/```json\s*/gi, '').replace(/```\s*/gi, '');
+  cleaned = cleaned.trim();
 
   let parsed: unknown;
 
   // Attempt 1: Direct JSON parse
   try {
-    parsed = JSON.parse(raw.trim());
+    parsed = JSON.parse(cleaned);
   } catch {
-    // Attempt 2: Regex extraction of JSON array from response
-    const arrayMatch = raw.match(/\[[\s\S]*\]/);
+    // Attempt 2: Regex extraction of JSON array from the cleaned response
+    const arrayMatch = cleaned.match(/\[\s*\{[\s\S]*\}\s*\]/);
     if (arrayMatch) {
       try {
         parsed = JSON.parse(arrayMatch[0]);
       } catch {
-        return [];
+        // Attempt 3: Try from original raw (maybe cleaning broke something)
+        const rawMatch = raw.match(/\[\s*\{[\s\S]*\}\s*\]/);
+        if (rawMatch) {
+          try {
+            parsed = JSON.parse(rawMatch[0]);
+          } catch {
+            console.error('[parseTestCaseResponse] All parse attempts failed. Raw first 500 chars:', raw.substring(0, 500));
+            return [];
+          }
+        } else {
+          console.error('[parseTestCaseResponse] No JSON array found. Raw first 500 chars:', raw.substring(0, 500));
+          return [];
+        }
       }
     } else {
+      console.error('[parseTestCaseResponse] No JSON array pattern found. Raw first 500 chars:', raw.substring(0, 500));
       return [];
     }
   }
@@ -471,6 +493,7 @@ export async function generateTestCasesForPass(
   );
 
   // Parse and validate the response
+  console.log('[generateTestCasesForPass] Raw AI response length:', result.answer.length, 'chars. First 200:', result.answer.substring(0, 200));
   const parsedCases = parseTestCaseResponse(result.answer);
 
   // For platform passes (web/tv/mobile), accept ALL valid categories
