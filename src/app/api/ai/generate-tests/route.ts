@@ -20,6 +20,44 @@ const PASS_NUMBER_MAP: Record<string, number> = {
   exploratory_more: 3,
 };
 
+/**
+ * Calculates the next Gemini quota reset time.
+ * Gemini free tier resets at midnight Pacific Time (PT).
+ * Returns ISO string in UTC and a human-readable IST string.
+ */
+function getNextResetTime(): { iso: string; readableIST: string } {
+  const now = new Date();
+
+  // PDT is active roughly March second Sunday to November first Sunday
+  const month = now.getUTCMonth(); // 0-indexed
+  const isPDT = month >= 2 && month <= 10; // March through October (approximation)
+  
+  const resetHourUTC = isPDT ? 7 : 8; // midnight PT in UTC
+
+  // Find next reset
+  const nextReset = new Date(now);
+  nextReset.setUTCHours(resetHourUTC, 0, 0, 0);
+  
+  if (now >= nextReset) {
+    // Already past today's reset, next one is tomorrow
+    nextReset.setUTCDate(nextReset.getUTCDate() + 1);
+  }
+
+  // Format for IST (UTC+5:30)
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(nextReset.getTime() + istOffset);
+  const hours = istDate.getUTCHours();
+  const minutes = istDate.getUTCMinutes();
+  const day = istDate.getUTCDate();
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthName = monthNames[istDate.getUTCMonth()];
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const h12 = hours % 12 || 12;
+  const readableIST = `${day} ${monthName}, ${h12}:${minutes.toString().padStart(2, '0')} ${ampm} IST`;
+
+  return { iso: nextReset.toISOString(), readableIST };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body: GenerateTestsRequest = await req.json();
@@ -127,9 +165,14 @@ export async function POST(req: NextRequest) {
 
       // Handle rate limit errors
       if (errorMessage.includes('429')) {
+        const { iso, readableIST } = getNextResetTime();
         return NextResponse.json(
-          { error: 'AI rate limited. Wait 30s and try again.' },
-          { status: 429, headers: { 'Retry-After': '30' } }
+          { 
+            error: `AI generation limit reached. Quota resets on ${readableIST}.`,
+            resetTime: iso,
+            resetTimeReadable: readableIST,
+          },
+          { status: 429, headers: { 'Retry-After': '60' } }
         );
       }
 

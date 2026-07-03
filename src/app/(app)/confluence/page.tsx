@@ -275,6 +275,8 @@ export default function ConfluencePage() {
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [loadingExistingCases, setLoadingExistingCases] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [quotaCooldown, setQuotaCooldown] = useState(false);
+  const quotaCooldownTimer = useRef<NodeJS.Timeout | null>(null);
 
   // ─── Check for Existing Generation on Page Load ─────────────────────────────
   useEffect(() => {
@@ -311,19 +313,7 @@ export default function ConfluencePage() {
 
   // ─── Multi-Batch Generation (3 passes with 70s delays for rate limits) ────
   const handleGenerateTestCases = async () => {
-    if (!selectedPage || isGenerating) return;
-
-    // Pre-check: verify AI quota is available before starting
-    try {
-      const quotaCheck = await fetch('/api/ai/check-quota');
-      const quotaData = await quotaCheck.json();
-      if (!quotaData.available) {
-        setGenerationError(quotaData.reason || 'AI quota not available. Please try again later.');
-        return;
-      }
-    } catch {
-      // If quota check fails, proceed anyway (might work)
-    }
+    if (!selectedPage || isGenerating || quotaCooldown) return;
 
     // Reset state
     setIsGenerating(true);
@@ -378,50 +368,27 @@ export default function ConfluencePage() {
           if (res.status === 400 && errData.error?.includes('No extractable content')) {
             throw new Error('This document has no extractable content. Please ensure the PRD has text content.');
           }
-          // If rate limited, wait and retry once
+          // If rate limited (daily quota exhausted), show professional message and stop
           if (res.status === 429) {
-            // Wait 70 seconds and retry this pass
-            for (let s = 70; s > 0; s--) {
-              setCountdown(s);
-              await new Promise((r) => setTimeout(r, 1000));
+            const resetMsg = errData.resetTimeReadable
+              ? `AI generation limit reached. Quota resets on ${errData.resetTimeReadable}.`
+              : errData.error || 'AI generation limit reached for today.';
+            // Enable 5-minute cooldown on the button
+            setQuotaCooldown(true);
+            if (quotaCooldownTimer.current) clearTimeout(quotaCooldownTimer.current);
+            quotaCooldownTimer.current = setTimeout(() => setQuotaCooldown(false), 5 * 60 * 1000);
+            // If we have partial results from earlier passes, keep them
+            if (allGeneratedCases.length > 0) {
+              setTestCases([...allGeneratedCases]);
+              setGenerationTotal(allGeneratedCases.length);
+              setShowReviewPanel(true);
+              setGenerationComplete(true);
+              setGenerationError(resetMsg);
+              break;
             }
-            setCountdown(0);
-            // Retry
-            const retryRes = await fetch('/api/ai/generate-tests', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                pageId: selectedPage.id,
-                pass,
-                existingTestCases: existingSummary,
-              }),
-            });
-            if (!retryRes.ok) {
-              // Retry also failed — gracefully stop with whatever we have
-              if (allGeneratedCases.length > 0) {
-                // We have results from previous batches, just stop here
-                setTestCases([...allGeneratedCases]);
-                setGenerationTotal(allGeneratedCases.length);
-                setShowReviewPanel(true);
-                setGenerationComplete(true);
-                break;
-              }
-              // No results at all — throw error
-              const retryErr = await retryRes.json().catch(() => ({ error: 'Retry failed' }));
-              throw new Error(retryErr.error || `Pass ${passNum} failed after retry`);
-            }
-            const retryData: GenerateTestsResponse = await retryRes.json();
-            const batchCases: StoredTestCase[] = retryData.testCases.map((tc) => ({
-              ...tc,
-              reviewStatus: 'pending' as const,
-              sourceVerified: true,
-              createdAt: now,
-              updatedAt: now,
-            }));
-            allGeneratedCases.push(...batchCases);
-          } else {
-            throw new Error(errData.error || `Pass ${passNum} failed`);
+            throw new Error(resetMsg);
           }
+          throw new Error(errData.error || `Pass ${passNum} failed`);
         } else {
           const data: GenerateTestsResponse = await res.json();
           const batchCases: StoredTestCase[] = data.testCases.map((tc) => ({
@@ -693,12 +660,12 @@ export default function ConfluencePage() {
             {!showReviewPanel && !isGenerating && (
               <Button
                 onClick={handleGenerateTestCases}
-                disabled={isGenerating || loadingExistingCases}
+                disabled={isGenerating || loadingExistingCases || quotaCooldown}
                 size="sm"
                 className="gap-2"
               >
                 <FlaskConical className="h-4 w-4" />
-                Generate Test Cases
+                {quotaCooldown ? 'Quota Exhausted' : 'Generate Test Cases'}
               </Button>
             )}
             {showReviewPanel && !isGenerating && (
@@ -707,6 +674,7 @@ export default function ConfluencePage() {
                 variant="outline"
                 size="sm"
                 className="gap-2"
+                disabled={quotaCooldown}
               >
                 <RefreshCw className="h-4 w-4" />
                 Regenerate
