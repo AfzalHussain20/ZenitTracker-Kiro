@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
         prdHeadings,
         pass as 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile',
         existingTestCases,
-        { maxTokens: 4096, temperature: 0.4, maxRetries: 1, contextTokenBudget: 8000 },
+        { maxTokens: 8192, temperature: 0.4, maxRetries: 1, contextTokenBudget: 8000 },
         provider
       );
       console.log(`[generate-tests] Pass "${pass}" generated ${testCases.length} test cases using ${provider.name}`);

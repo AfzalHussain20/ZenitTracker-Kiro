@@ -289,19 +289,16 @@ function validateTestCaseEntry(entry: unknown): GeneratedTestCase | null {
 
 /**
  * Parses AI JSON response with validation, discarding malformed entries.
- * Handles: raw JSON, markdown code fences, thinking blocks, and mixed content.
+ * Handles: raw JSON, markdown code fences, truncated JSON arrays.
  */
 export function parseTestCaseResponse(raw: string): GeneratedTestCase[] {
   if (!raw || typeof raw !== 'string') return [];
 
-  // Strip markdown code fences (```json ... ``` or ``` ... ```)
+  // Strip markdown code fences if present
   let cleaned = raw.trim();
-  
-  // Remove thinking blocks (Gemini 2.5 sometimes includes <think>...</think>)
-  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '');
-  
-  // Remove markdown code fences
-  cleaned = cleaned.replace(/```json\s*/gi, '').replace(/```\s*/gi, '');
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+  }
   cleaned = cleaned.trim();
 
   let parsed: unknown;
@@ -309,30 +306,33 @@ export function parseTestCaseResponse(raw: string): GeneratedTestCase[] {
   // Attempt 1: Direct JSON parse
   try {
     parsed = JSON.parse(cleaned);
-  } catch {
-    // Attempt 2: Regex extraction of JSON array from the cleaned response
-    const arrayMatch = cleaned.match(/\[\s*\{[\s\S]*\}\s*\]/);
-    if (arrayMatch) {
+  } catch (directErr) {
+    // Attempt 2: JSON might be truncated — try to fix by finding the last complete object
+    // Find all complete {...} objects in the array
+    const objects: unknown[] = [];
+    const objMatches = cleaned.matchAll(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g);
+    for (const m of objMatches) {
       try {
-        parsed = JSON.parse(arrayMatch[0]);
+        const obj = JSON.parse(m[0]);
+        objects.push(obj);
       } catch {
-        // Attempt 3: Try from original raw (maybe cleaning broke something)
-        const rawMatch = raw.match(/\[\s*\{[\s\S]*\}\s*\]/);
-        if (rawMatch) {
-          try {
-            parsed = JSON.parse(rawMatch[0]);
-          } catch {
-            console.error('[parseTestCaseResponse] All parse attempts failed. Raw first 500 chars:', raw.substring(0, 500));
-            return [];
-          }
-        } else {
-          console.error('[parseTestCaseResponse] No JSON array found. Raw first 500 chars:', raw.substring(0, 500));
-          return [];
-        }
+        // Skip malformed objects
       }
+    }
+
+    if (objects.length > 0) {
+      parsed = objects;
     } else {
-      console.error('[parseTestCaseResponse] No JSON array pattern found. Raw first 500 chars:', raw.substring(0, 500));
-      return [];
+      // Attempt 3: Try wrapping in array brackets if it looks like objects
+      try {
+        // Maybe the response is just missing the closing bracket (truncated)
+        const fixedJson = cleaned.endsWith(']') ? cleaned : cleaned.replace(/,?\s*$/, '') + ']';
+        const reParsed = fixedJson.startsWith('[') ? fixedJson : '[' + fixedJson;
+        parsed = JSON.parse(reParsed);
+      } catch {
+        console.error('[parseTestCaseResponse] All parse attempts failed. Length:', cleaned.length, 'First 100:', cleaned.substring(0, 100));
+        return [];
+      }
     }
   }
 
