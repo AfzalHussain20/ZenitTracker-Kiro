@@ -309,7 +309,7 @@ export default function ConfluencePage() {
     }
   };
 
-  // ─── Multi-Batch Generation (3 passes with 65s delays for rate limits) ────
+  // ─── Multi-Batch Generation (3 passes with 70s delays for rate limits) ────
   const handleGenerateTestCases = async () => {
     if (!selectedPage || isGenerating) return;
 
@@ -368,8 +368,8 @@ export default function ConfluencePage() {
           }
           // If rate limited, wait and retry once
           if (res.status === 429) {
-            // Wait 65 seconds and retry this pass
-            for (let s = 65; s > 0; s--) {
+            // Wait 70 seconds and retry this pass
+            for (let s = 70; s > 0; s--) {
               setCountdown(s);
               await new Promise((r) => setTimeout(r, 1000));
             }
@@ -385,6 +385,16 @@ export default function ConfluencePage() {
               }),
             });
             if (!retryRes.ok) {
+              // Retry also failed — gracefully stop with whatever we have
+              if (allGeneratedCases.length > 0) {
+                // We have results from previous batches, just stop here
+                setTestCases([...allGeneratedCases]);
+                setGenerationTotal(allGeneratedCases.length);
+                setShowReviewPanel(true);
+                setGenerationComplete(true);
+                break;
+              }
+              // No results at all — throw error
               const retryErr = await retryRes.json().catch(() => ({ error: 'Retry failed' }));
               throw new Error(retryErr.error || `Pass ${passNum} failed after retry`);
             }
@@ -417,9 +427,9 @@ export default function ConfluencePage() {
         setGenerationTotal(allGeneratedCases.length);
         setShowReviewPanel(true);
 
-        // Wait 65 seconds between passes (except after the last one)
+        // Wait 70 seconds between passes (except after the last one)
         if (i < passes.length - 1) {
-          for (let s = 65; s > 0; s--) {
+          for (let s = 70; s > 0; s--) {
             setCountdown(s);
             await new Promise((r) => setTimeout(r, 1000));
           }
@@ -695,8 +705,8 @@ export default function ConfluencePage() {
             )}
           </div>
 
-          {/* Generation Error Message */}
-          {generationError && (
+          {/* Generation Error Message — only show if no test cases are displayed */}
+          {generationError && testCases.length === 0 && (
             <div className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400">
               <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
               <div>
