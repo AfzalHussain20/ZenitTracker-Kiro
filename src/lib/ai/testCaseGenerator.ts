@@ -438,7 +438,7 @@ export async function retryWithBackoff<T>(
 export async function generateTestCasesForPass(
   prdText: string,
   prdHeadings: string[],
-  pass: 'functional' | 'negative' | 'exploratory',
+  pass: 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile',
   existingCases: TestCaseSummary[] = [],
   config: GenerationConfig = DEFAULT_GENERATION_CONFIG,
   provider?: AIProvider
@@ -473,17 +473,19 @@ export async function generateTestCasesForPass(
   // Parse and validate the response
   const parsedCases = parseTestCaseResponse(result.answer);
 
-  // Filter to only expected categories for this pass
-  const expectedCategories = PASS_CATEGORIES[pass] || [];
-  const filteredCases = parsedCases.filter((tc) =>
-    expectedCategories.includes(tc.category)
-  );
+  // For platform passes (web/tv/mobile), accept ALL valid categories
+  // For legacy passes (functional/negative/exploratory), filter to expected categories
+  let casesToUse = parsedCases;
+  if (['functional', 'negative', 'exploratory'].includes(pass)) {
+    const expectedCategories = PASS_CATEGORIES[pass] || [];
+    const filteredCases = parsedCases.filter((tc) =>
+      expectedCategories.includes(tc.category)
+    );
+    casesToUse = filteredCases.length > 0 ? filteredCases : parsedCases;
+  }
 
   // Assign proper IDs
-  const casesWithIds = assignTestCaseIds(
-    filteredCases.length > 0 ? filteredCases : parsedCases,
-    pass
-  );
+  const casesWithIds = assignTestCaseIds(casesToUse, pass);
 
   return casesWithIds;
 }

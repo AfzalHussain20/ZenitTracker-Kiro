@@ -113,11 +113,12 @@ export async function POST(req: NextRequest) {
       testCases = await generateTestCasesForPass(
         truncatedText,
         prdHeadings,
-        pass,
+        pass as 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile',
         existingTestCases,
         { maxTokens: 4096, temperature: 0.4, maxRetries: 1, contextTokenBudget: 8000 },
         provider
       );
+      console.log(`[generate-tests] Pass "${pass}" generated ${testCases.length} test cases using ${provider.name}`);
     } catch (aiError: any) {
       const errorMessage = aiError?.message || 'AI generation failed';
 
