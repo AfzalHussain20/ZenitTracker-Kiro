@@ -717,17 +717,24 @@ export default function ConfluencePage() {
             )}
           </div>
 
-          {/* Generation Error Message — only show if no test cases are displayed */}
+          {/* Generation Error / Quota Status Message */}
           {generationError && testCases.length === 0 && (
-            <div className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400">
-              <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-              <div>
-                <p>{generationError}</p>
+            <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center">
+                  <AlertCircle className="h-4 w-4 text-amber-500" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-foreground">{generationError}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Free tier usage is limited. Generation will be available once the quota resets.
+                  </p>
+                </div>
                 <button
                   onClick={() => setGenerationError(null)}
-                  className="text-xs text-red-300 hover:text-red-200 underline mt-1"
+                  className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted/50"
                 >
-                  Dismiss
+                  ✕
                 </button>
               </div>
             </div>
