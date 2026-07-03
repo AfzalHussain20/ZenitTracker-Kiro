@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { extractPlainText, truncateForContext } from '@/lib/ai/extractText';
 import { generateTestCasesForPass, extractHeadings } from '@/lib/ai/testCaseGenerator';
 import { getAIProvider } from '@/lib/ai/providers';
-import type { GenerateTestsRequest, GenerateTestsResponse } from '@/types/test-cases';
+import type { GenerateTestsRequest, GenerateTestsResponse, GenerationPass } from '@/types/test-cases';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Vercel Pro: 60s, Hobby: 10s — set high for Pro users
@@ -15,6 +15,9 @@ const PASS_NUMBER_MAP: Record<string, number> = {
   web: 1,
   tv: 2,
   mobile: 3,
+  functional_sanity: 1,
+  negative_edge: 2,
+  exploratory_more: 3,
 };
 
 export async function POST(req: NextRequest) {
@@ -30,7 +33,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate pass value — support both original and platform-based passes
-    const validPasses = ['functional', 'negative', 'exploratory', 'web', 'tv', 'mobile', 'all'];
+    const validPasses = ['functional', 'negative', 'exploratory', 'web', 'tv', 'mobile', 'all', 'functional_sanity', 'negative_edge', 'exploratory_more'];
     if (!validPasses.includes(pass)) {
       return NextResponse.json(
         { error: `pass must be one of: ${validPasses.join(', ')}` },
@@ -113,7 +116,7 @@ export async function POST(req: NextRequest) {
       testCases = await generateTestCasesForPass(
         truncatedText,
         prdHeadings,
-        pass as 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile',
+        pass as GenerationPass,
         existingTestCases,
         { maxTokens: 8192, temperature: 0.4, maxRetries: 1, contextTokenBudget: 8000 },
         provider

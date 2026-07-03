@@ -37,9 +37,11 @@ export interface TestCaseReviewUpdate {
   editedFields?: Partial<Omit<GeneratedTestCase, 'testcaseId' | 'category'>>;
 }
 
+export type GenerationPass = 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile' | 'all' | 'functional_sanity' | 'negative_edge' | 'exploratory_more';
+
 export interface GenerateTestsRequest {
   pageId: string;
-  pass: 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile' | 'all';
+  pass: GenerationPass;
   existingTestCases?: TestCaseSummary[];
 }
 

@@ -274,6 +274,7 @@ export default function ConfluencePage() {
   const [testCases, setTestCases] = useState<StoredTestCase[]>([]);
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [loadingExistingCases, setLoadingExistingCases] = useState(false);
+  const [countdown, setCountdown] = useState(0);
 
   // ─── Check for Existing Generation on Page Load ─────────────────────────────
   useEffect(() => {
@@ -308,7 +309,7 @@ export default function ConfluencePage() {
     }
   };
 
-  // ─── Single-Call Comprehensive Generation (avoids rate limits) ───────────────
+  // ─── Multi-Batch Generation (3 passes with 65s delays for rate limits) ────
   const handleGenerateTestCases = async () => {
     if (!selectedPage || isGenerating) return;
 
@@ -317,40 +318,119 @@ export default function ConfluencePage() {
     setGenerationComplete(false);
     setGenerationError(null);
     setGenerationPass(1);
-    setGenerationPassName('All Platforms');
+    setGenerationPassName('Functional & Sanity');
     setGenerationTotal(0);
     setShowReviewPanel(false);
+    setTestCases([]);
+    setCountdown(0);
+
+    const allGeneratedCases: StoredTestCase[] = [];
+    const now = new Date();
+
+    // Define 3 passes with different focus areas
+    const passes = [
+      { pass: 'functional_sanity', label: 'Functional & Sanity', passNum: 1 },
+      { pass: 'negative_edge', label: 'Negative & Edge Case', passNum: 2 },
+      { pass: 'exploratory_more', label: 'Exploratory & More', passNum: 3 },
+    ] as const;
 
     try {
-      // Single API call generates ALL test cases for Web + TV + Mobile in one shot
-      // This avoids Gemini free-tier rate limits (only uses 1 request instead of 3)
-      const res = await fetch('/api/ai/generate-tests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pageId: selectedPage.id,
-          pass: 'all',
-          existingTestCases: [],
-        }),
-      });
+      for (let i = 0; i < passes.length; i++) {
+        const { pass, label, passNum } = passes[i];
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: 'Unknown error' }));
-        if (res.status === 400 && errData.error?.includes('No extractable content')) {
-          throw new Error('This document has no extractable content. Please ensure the PRD has text content.');
+        // Update UI for current pass
+        setGenerationPass(passNum);
+        setGenerationPassName(label);
+        setCountdown(0);
+
+        // Build existing cases summary to avoid duplication
+        const existingSummary: TestCaseSummary[] = allGeneratedCases.map((tc) => ({
+          id: tc.testcaseId,
+          scenario: tc.testScenario,
+          category: tc.category,
+        }));
+
+        // Make API call for this pass
+        const res = await fetch('/api/ai/generate-tests', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pageId: selectedPage.id,
+            pass,
+            existingTestCases: existingSummary,
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ error: 'Unknown error' }));
+          if (res.status === 400 && errData.error?.includes('No extractable content')) {
+            throw new Error('This document has no extractable content. Please ensure the PRD has text content.');
+          }
+          // If rate limited, wait and retry once
+          if (res.status === 429) {
+            // Wait 65 seconds and retry this pass
+            for (let s = 65; s > 0; s--) {
+              setCountdown(s);
+              await new Promise((r) => setTimeout(r, 1000));
+            }
+            setCountdown(0);
+            // Retry
+            const retryRes = await fetch('/api/ai/generate-tests', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                pageId: selectedPage.id,
+                pass,
+                existingTestCases: existingSummary,
+              }),
+            });
+            if (!retryRes.ok) {
+              const retryErr = await retryRes.json().catch(() => ({ error: 'Retry failed' }));
+              throw new Error(retryErr.error || `Pass ${passNum} failed after retry`);
+            }
+            const retryData: GenerateTestsResponse = await retryRes.json();
+            const batchCases: StoredTestCase[] = retryData.testCases.map((tc) => ({
+              ...tc,
+              reviewStatus: 'pending' as const,
+              sourceVerified: true,
+              createdAt: now,
+              updatedAt: now,
+            }));
+            allGeneratedCases.push(...batchCases);
+          } else {
+            throw new Error(errData.error || `Pass ${passNum} failed`);
+          }
+        } else {
+          const data: GenerateTestsResponse = await res.json();
+          const batchCases: StoredTestCase[] = data.testCases.map((tc) => ({
+            ...tc,
+            reviewStatus: 'pending' as const,
+            sourceVerified: true,
+            createdAt: now,
+            updatedAt: now,
+          }));
+          allGeneratedCases.push(...batchCases);
         }
-        throw new Error(errData.error || 'Generation failed');
+
+        // Live update: show results immediately after each pass
+        setTestCases([...allGeneratedCases]);
+        setGenerationTotal(allGeneratedCases.length);
+        setShowReviewPanel(true);
+
+        // Wait 65 seconds between passes (except after the last one)
+        if (i < passes.length - 1) {
+          for (let s = 65; s > 0; s--) {
+            setCountdown(s);
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+          setCountdown(0);
+        }
       }
 
-      const data: GenerateTestsResponse = await res.json();
-      const allTestCases = data.testCases;
-      setGenerationTotal(allTestCases.length);
-
-      // ─── Generation complete — show results ────────────────────────────
+      // ─── All passes complete ────────────────────────────────────────────
       setGenerationComplete(true);
 
-      // Guard: if no test cases were generated, show error
-      if (allTestCases.length === 0) {
+      if (allGeneratedCases.length === 0) {
         throw new Error('No test cases could be generated. The AI response may have been empty or malformed. Please try again.');
       }
 
@@ -362,7 +442,7 @@ export default function ConfluencePage() {
         Sanity: 0,
         'Edge Case': 0,
       };
-      for (const tc of allTestCases) {
+      for (const tc of allGeneratedCases) {
         categories[tc.category]++;
       }
 
@@ -370,24 +450,10 @@ export default function ConfluencePage() {
         pageId: selectedPage.id,
         pageTitle: selectedPage.title,
         generatedAt: new Date(),
-        totalCount: allTestCases.length,
+        totalCount: allGeneratedCases.length,
         modelVersion: 'gemini-2.5-flash',
         categories,
       };
-
-      // Convert to StoredTestCase format for immediate display
-      const now = new Date();
-      const storedCases: StoredTestCase[] = allTestCases.map((tc) => ({
-        ...tc,
-        reviewStatus: 'pending' as const,
-        sourceVerified: true,
-        createdAt: now,
-        updatedAt: now,
-      }));
-
-      // Show test cases immediately (don't wait for Firestore)
-      setTestCases(storedCases);
-      setShowReviewPanel(true);
 
       // Try to persist to Firestore in the background (non-blocking)
       try {
@@ -395,7 +461,16 @@ export default function ConfluencePage() {
         const { extractHeadings } = await import('@/lib/ai/testCaseGenerator');
         const plainText = extractPlainText(selectedPage.body || '');
         const prdHeadings = extractHeadings(plainText);
-        await saveGenerationResult(selectedPage.id, allTestCases, metadata, prdHeadings);
+        const allGenerated: GeneratedTestCase[] = allGeneratedCases.map((tc) => ({
+          testcaseId: tc.testcaseId,
+          module: tc.module,
+          priority: tc.priority,
+          testScenario: tc.testScenario,
+          testSteps: tc.testSteps,
+          expectedResult: tc.expectedResult,
+          category: tc.category,
+        }));
+        await saveGenerationResult(selectedPage.id, allGenerated, metadata, prdHeadings);
         // Reload from Firestore to get proper sourceVerified
         const stored = await loadTestCases(selectedPage.id);
         if (stored && stored.length > 0) {
@@ -403,13 +478,13 @@ export default function ConfluencePage() {
         }
       } catch (saveErr) {
         console.warn('Firestore save failed (test cases still shown):', saveErr);
-        // Test cases are already displayed — just can't persist review status
       }
     } catch (err: any) {
       console.error('Test case generation error:', err);
       setGenerationError(err.message || 'Test case generation failed. Please try again.');
     } finally {
       setIsGenerating(false);
+      setCountdown(0);
     }
   };
 
@@ -645,6 +720,7 @@ export default function ConfluencePage() {
               passName={generationPassName}
               totalGenerated={generationTotal}
               isComplete={generationComplete}
+              countdown={countdown}
             />
           </div>
         )}

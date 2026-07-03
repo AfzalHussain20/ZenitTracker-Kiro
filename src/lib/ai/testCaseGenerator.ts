@@ -9,6 +9,7 @@ import type {
   TestCaseCategory,
   TestCaseSummary,
   GenerationConfig,
+  GenerationPass,
 } from '@/types/test-cases';
 
 // ─── Default Generation Configuration ────────────────────────────────────────
@@ -44,7 +45,7 @@ const PASS_CATEGORIES: Record<string, TestCaseCategory[]> = {
 // ─── System Prompt Templates ─────────────────────────────────────────────────
 
 function buildSystemPrompt(
-  pass: 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile' | 'all',
+  pass: GenerationPass,
   headings: string[],
   existingCases: TestCaseSummary[]
 ): string {
@@ -242,6 +243,87 @@ Return ONLY JSON array: ${jsonStructure}
 
 Rules: category="Exploratory" or "Edge Case" or "Sanity", empty testcaseId, P0/P1/P2, 6-10 cases, max 5 steps${existingSummary}`;
 
+    case 'functional_sanity':
+      return `You are an expert senior QA engineer. Generate FUNCTIONAL and SANITY test cases from this PRD.
+Cover ALL 3 platforms: Web (desktop & mobile browsers), TV (Android TV, Fire TV, Apple TV, Samsung Tizen, LG webOS), Mobile (iOS, Android).
+
+Each test case module MUST start with [Web], [TV], or [Mobile] prefix.
+
+Focus areas:
+- Functional: Happy path flows, core feature verification, user journeys
+- Sanity: Basic smoke tests ensuring the app launches, navigates, and displays correctly
+
+Available PRD sections:
+${headingsList}
+
+Return ONLY a valid JSON array (NO markdown, NO code fences):
+${jsonStructure}
+
+CRITICAL RULES:
+- Generate 20-30 test cases
+- Set category to "Functional" or "Sanity" ONLY
+- Leave testcaseId as empty string
+- Priority: P0 = critical/blocker, P1 = major, P2 = minor
+- Module MUST start with [Web], [TV], or [Mobile] prefix
+- Test steps: 3-5 actionable steps each
+- Each test case must be unique and platform-specific
+- Output ONLY the JSON array${existingSummary}`;
+
+    case 'negative_edge':
+      return `You are an expert senior QA engineer. Generate NEGATIVE and EDGE CASE test cases from this PRD.
+Cover ALL 3 platforms: Web (desktop & mobile browsers), TV (Android TV, Fire TV, Apple TV, Samsung Tizen, LG webOS), Mobile (iOS, Android).
+
+Each test case module MUST start with [Web], [TV], or [Mobile] prefix.
+
+Focus areas:
+- Negative Testing: Invalid inputs, error handling, boundary values, broken states, unauthorized access
+- Edge Case Testing: Race conditions, extreme data, unusual workflows, concurrent operations, timeout scenarios
+
+Available PRD sections:
+${headingsList}
+
+Return ONLY a valid JSON array (NO markdown, NO code fences):
+${jsonStructure}
+
+CRITICAL RULES:
+- Generate 20-30 test cases
+- Set category to "Negative" or "Edge Case" ONLY
+- Leave testcaseId as empty string
+- Priority: P0 = critical/blocker, P1 = major, P2 = minor
+- Module MUST start with [Web], [TV], or [Mobile] prefix
+- Test steps: 3-5 actionable steps each
+- Each test case must be unique and platform-specific
+- Output ONLY the JSON array${existingSummary}`;
+
+    case 'exploratory_more':
+      return `You are an expert senior QA engineer. Generate EXPLORATORY test cases and additional coverage from this PRD.
+Cover ALL 3 platforms: Web (desktop & mobile browsers), TV (Android TV, Fire TV, Apple TV, Samsung Tizen, LG webOS), Mobile (iOS, Android).
+
+Each test case module MUST start with [Web], [TV], or [Mobile] prefix.
+
+Focus areas:
+- Exploratory Testing: Unscripted scenarios, unusual user behaviors, creative misuse
+- Integration Testing: Cross-feature interactions, API edge cases, third-party services
+- Performance/Security: Load scenarios, auth bypass attempts, session handling
+- Accessibility: Screen reader flows, keyboard navigation, color contrast scenarios
+- Compatibility: Cross-browser/device/OS specific issues
+
+Available PRD sections:
+${headingsList}
+
+Return ONLY a valid JSON array (NO markdown, NO code fences):
+${jsonStructure}
+
+CRITICAL RULES:
+- Generate 20-30 test cases
+- Set category to "Exploratory", "Functional", "Negative", "Edge Case", or "Sanity"
+- Leave testcaseId as empty string
+- Priority: P0 = critical/blocker, P1 = major, P2 = minor
+- Module MUST start with [Web], [TV], or [Mobile] prefix
+- Test steps: 3-5 actionable steps each
+- Each test case must be unique and platform-specific
+- Output ONLY the JSON array${existingSummary}`;
+
     default:
       return `You are a senior QA engineer. Generate test cases from this PRD.
 Return ONLY JSON array: ${jsonStructure}
@@ -285,6 +367,23 @@ const VALID_CATEGORIES: Set<string> = new Set([
 ]);
 
 /**
+ * Normalizes any non-empty category string to the nearest valid TestCaseCategory.
+ * Instead of rejecting unknown categories, maps them to the closest match.
+ */
+function normalizeCategory(raw: string): TestCaseCategory {
+  const lower = raw.trim().toLowerCase();
+  if (lower.includes('negative') || lower.includes('boundary') || lower.includes('error')) return 'Negative';
+  if (lower.includes('edge') || lower.includes('corner')) return 'Edge Case';
+  if (lower.includes('explor')) return 'Exploratory';
+  if (lower.includes('sanity') || lower.includes('smoke')) return 'Sanity';
+  if (lower.includes('functional') || lower.includes('happy') || lower.includes('positive')) return 'Functional';
+  // Check exact match against valid set (handles already-correct values)
+  if (VALID_CATEGORIES.has(raw.trim())) return raw.trim() as TestCaseCategory;
+  // Default to Functional rather than rejecting
+  return 'Functional';
+}
+
+/**
  * Validates a single test case entry, returning it if valid or null if malformed.
  */
 function validateTestCaseEntry(entry: unknown): GeneratedTestCase | null {
@@ -300,8 +399,9 @@ function validateTestCaseEntry(entry: unknown): GeneratedTestCase | null {
   // Validate priority
   if (typeof obj.priority !== 'string' || !VALID_PRIORITIES.has(obj.priority)) return null;
 
-  // Validate category
-  if (typeof obj.category !== 'string' || !VALID_CATEGORIES.has(obj.category)) return null;
+  // Validate category — accept any non-empty string, then normalize
+  if (typeof obj.category !== 'string' || obj.category.trim() === '') return null;
+  const normalizedCategory = normalizeCategory(obj.category);
 
   // Validate testSteps — must be an array with at least one non-empty string
   if (!Array.isArray(obj.testSteps)) return null;
@@ -317,7 +417,7 @@ function validateTestCaseEntry(entry: unknown): GeneratedTestCase | null {
     testScenario: obj.testScenario.trim(),
     testSteps: validSteps.map((s: string) => s.trim()),
     expectedResult: obj.expectedResult.trim(),
-    category: obj.category as TestCaseCategory,
+    category: normalizedCategory,
   };
 }
 
@@ -494,7 +594,7 @@ export async function retryWithBackoff<T>(
 export async function generateTestCasesForPass(
   prdText: string,
   prdHeadings: string[],
-  pass: 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile' | 'all',
+  pass: GenerationPass,
   existingCases: TestCaseSummary[] = [],
   config: GenerationConfig = DEFAULT_GENERATION_CONFIG,
   provider?: AIProvider

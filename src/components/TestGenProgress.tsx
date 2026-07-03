@@ -1,18 +1,20 @@
 'use client';
 
-import { Loader2, Check } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Loader2, Check, Clock } from 'lucide-react';
 
 interface TestGenProgressProps {
   currentPass: number;    // 1, 2, or 3
-  passName: string;       // "Web", "TV", "Mobile"
+  passName: string;       // "Functional & Sanity", "Negative & Edge Case", "Exploratory & More"
   totalGenerated: number; // running count
   isComplete: boolean;
+  countdown?: number;     // seconds remaining before next batch (0 = not waiting)
 }
 
 const PASSES = [
-  { number: 1, label: 'Web' },
-  { number: 2, label: 'TV' },
-  { number: 3, label: 'Mobile' },
+  { number: 1, label: 'Functional & Sanity' },
+  { number: 2, label: 'Negative & Edge' },
+  { number: 3, label: 'Exploratory & More' },
 ];
 
 export default function TestGenProgress({
@@ -20,8 +22,9 @@ export default function TestGenProgress({
   passName,
   totalGenerated,
   isComplete,
+  countdown = 0,
 }: TestGenProgressProps) {
-  const progress = isComplete ? 100 : ((currentPass - 1) / 3) * 100 + (1 / 3) * 50;
+  const progress = isComplete ? 100 : ((currentPass - 1) / 3) * 100 + (1 / 3) * (countdown > 0 ? 80 : 50);
 
   return (
     <div className="w-full rounded-lg border border-border/50 bg-card/80 px-4 py-2.5 shadow-sm">
@@ -30,13 +33,17 @@ export default function TestGenProgress({
         <div className="flex items-center gap-2 min-w-0">
           {isComplete ? (
             <Check className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+          ) : countdown > 0 ? (
+            <Clock className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
           ) : (
             <Loader2 className="h-3.5 w-3.5 text-primary animate-spin flex-shrink-0" />
           )}
           <span className="text-xs font-medium text-foreground truncate">
             {isComplete
-              ? `Done — ${totalGenerated} test cases`
-              : `Generating ${passName} test cases...`}
+              ? `Done — ${totalGenerated} test cases generated`
+              : countdown > 0
+                ? `Waiting ${countdown}s for rate limit... (batch ${currentPass}/3 complete)`
+                : `Generating batch ${currentPass}/3 — ${passName}...`}
           </span>
         </div>
 
@@ -45,15 +52,18 @@ export default function TestGenProgress({
           {PASSES.map((pass) => {
             const isDone = isComplete || currentPass > pass.number;
             const isActive = !isComplete && currentPass === pass.number;
+            const isWaiting = isActive && countdown > 0;
             return (
               <div key={pass.number} className="flex items-center gap-1">
                 <div
                   className={`h-1.5 w-8 rounded-full transition-all duration-500 ${
                     isDone
                       ? 'bg-green-500'
-                      : isActive
-                        ? 'bg-primary animate-pulse'
-                        : 'bg-muted'
+                      : isWaiting
+                        ? 'bg-amber-500'
+                        : isActive
+                          ? 'bg-primary animate-pulse'
+                          : 'bg-muted'
                   }`}
                 />
                 <span
