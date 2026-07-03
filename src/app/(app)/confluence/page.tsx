@@ -313,6 +313,18 @@ export default function ConfluencePage() {
   const handleGenerateTestCases = async () => {
     if (!selectedPage || isGenerating) return;
 
+    // Pre-check: verify AI quota is available before starting
+    try {
+      const quotaCheck = await fetch('/api/ai/check-quota');
+      const quotaData = await quotaCheck.json();
+      if (!quotaData.available) {
+        setGenerationError(quotaData.reason || 'AI quota not available. Please try again later.');
+        return;
+      }
+    } catch {
+      // If quota check fails, proceed anyway (might work)
+    }
+
     // Reset state
     setIsGenerating(true);
     setGenerationComplete(false);
