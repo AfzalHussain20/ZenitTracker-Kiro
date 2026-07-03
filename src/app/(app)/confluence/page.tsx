@@ -6,11 +6,26 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import ChatPanel from '@/components/ChatPanel';
+import TestGenProgress from '@/components/TestGenProgress';
+import TestCaseReviewPanel from '@/components/TestCaseReviewPanel';
+import {
+  saveGenerationResult,
+  loadTestCases,
+  hasExistingGeneration,
+  deleteGeneration,
+} from '@/lib/ai/testCaseStore';
+import type {
+  GeneratedTestCase,
+  StoredTestCase,
+  GenerationMetadata,
+  TestCaseCategory,
+  TestCaseSummary,
+  GenerateTestsResponse,
+} from '@/types/test-cases';
 import {
   Search,
   ArrowLeft,
   FileText,
-  Image as ImageIcon,
   Calendar,
   X,
   Maximize2,
@@ -20,6 +35,9 @@ import {
   Monitor,
   Tv,
   Palette,
+  FlaskConical,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 
 // Types
@@ -245,6 +263,171 @@ export default function ConfluencePage() {
   const [spacesLoading, setSpacesLoading] = useState(true);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
 
+  // ─── Test Case Generation State ─────────────────────────────────────────────
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationPass, setGenerationPass] = useState(1);
+  const [generationPassName, setGenerationPassName] = useState('Functional');
+  const [generationTotal, setGenerationTotal] = useState(0);
+  const [generationComplete, setGenerationComplete] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [showReviewPanel, setShowReviewPanel] = useState(false);
+  const [testCases, setTestCases] = useState<StoredTestCase[]>([]);
+  const [showRegenConfirm, setShowRegenConfirm] = useState(false);
+  const [loadingExistingCases, setLoadingExistingCases] = useState(false);
+
+  // ─── Check for Existing Generation on Page Load ─────────────────────────────
+  useEffect(() => {
+    if (selectedPage) {
+      checkExistingGeneration(selectedPage.id);
+    } else {
+      // Reset test case state when going back to browse
+      setShowReviewPanel(false);
+      setTestCases([]);
+      setIsGenerating(false);
+      setGenerationComplete(false);
+      setGenerationError(null);
+    }
+  }, [selectedPage]);
+
+  const checkExistingGeneration = async (pageId: string) => {
+    try {
+      setLoadingExistingCases(true);
+      const exists = await hasExistingGeneration(pageId);
+      if (exists) {
+        const existing = await loadTestCases(pageId);
+        if (existing && existing.length > 0) {
+          setTestCases(existing);
+          setShowReviewPanel(true);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to check existing generation:', err);
+    } finally {
+      setLoadingExistingCases(false);
+    }
+  };
+
+  // ─── Multi-Pass Generation Orchestration ────────────────────────────────────
+  const handleGenerateTestCases = async () => {
+    if (!selectedPage || isGenerating) return;
+
+    // Reset state for new generation
+    setIsGenerating(true);
+    setGenerationComplete(false);
+    setGenerationError(null);
+    setGenerationPass(1);
+    setGenerationPassName('Functional');
+    setGenerationTotal(0);
+    setShowReviewPanel(false);
+
+    const allTestCases: GeneratedTestCase[] = [];
+    const passes: Array<{ pass: 'functional' | 'negative' | 'exploratory'; name: string; number: number }> = [
+      { pass: 'functional', name: 'Functional', number: 1 },
+      { pass: 'negative', name: 'Negative', number: 2 },
+      { pass: 'exploratory', name: 'Exploratory', number: 3 },
+    ];
+
+    try {
+      for (const { pass, name, number } of passes) {
+        setGenerationPass(number);
+        setGenerationPassName(name);
+
+        // Build existing test case summaries for dedup
+        const existingTestCases: TestCaseSummary[] = allTestCases.map((tc) => ({
+          id: tc.testcaseId,
+          scenario: tc.testScenario,
+          category: tc.category,
+        }));
+
+        const res = await fetch('/api/ai/generate-tests', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pageId: selectedPage.id,
+            pass,
+            existingTestCases,
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ error: 'Unknown error' }));
+          if (res.status === 400 && errData.error?.includes('No extractable content')) {
+            throw new Error('This document has no extractable content. Please ensure the PRD has text content.');
+          }
+          throw new Error(errData.error || `Generation failed on pass ${number}`);
+        }
+
+        const data: GenerateTestsResponse = await res.json();
+        allTestCases.push(...data.testCases);
+        setGenerationTotal(allTestCases.length);
+      }
+
+      // ─── All passes complete — persist results ────────────────────────────
+      setGenerationComplete(true);
+
+      // Compute category counts
+      const categories: Record<TestCaseCategory, number> = {
+        Functional: 0,
+        Negative: 0,
+        Exploratory: 0,
+        Sanity: 0,
+        'Edge Case': 0,
+      };
+      for (const tc of allTestCases) {
+        categories[tc.category]++;
+      }
+
+      const metadata: GenerationMetadata = {
+        pageId: selectedPage.id,
+        pageTitle: selectedPage.title,
+        generatedAt: new Date(),
+        totalCount: allTestCases.length,
+        modelVersion: 'groq-llama',
+        categories,
+      };
+
+      // Extract headings for sourceVerified computation
+      const { extractPlainText } = await import('@/lib/ai/extractText');
+      const { extractHeadings } = await import('@/lib/ai/testCaseGenerator');
+      const plainText = extractPlainText(selectedPage.body || '');
+      const prdHeadings = extractHeadings(plainText);
+
+      await saveGenerationResult(selectedPage.id, allTestCases, metadata, prdHeadings);
+
+      // Load back the stored version (includes sourceVerified, reviewStatus, etc.)
+      const stored = await loadTestCases(selectedPage.id);
+      if (stored) {
+        setTestCases(stored);
+      }
+      setShowReviewPanel(true);
+    } catch (err: any) {
+      console.error('Test case generation error:', err);
+      setGenerationError(err.message || 'Test case generation failed. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // ─── Regeneration Flow ──────────────────────────────────────────────────────
+  const handleRegenerate = () => {
+    setShowRegenConfirm(true);
+  };
+
+  const confirmRegenerate = async () => {
+    if (!selectedPage) return;
+    setShowRegenConfirm(false);
+    try {
+      await deleteGeneration(selectedPage.id);
+      setTestCases([]);
+      setShowReviewPanel(false);
+      // Trigger new generation
+      handleGenerateTestCases();
+    } catch (err) {
+      console.error('Failed to delete existing generation:', err);
+      setGenerationError('Failed to clear previous results. Please try again.');
+    }
+  };
+
   // Fetch spaces on mount
   useEffect(() => {
     fetchSpaces();
@@ -402,7 +585,105 @@ export default function ConfluencePage() {
               </span>
             )}
           </div>
+
+          {/* Test Case Generation Controls */}
+          <div className="mt-4 flex items-center gap-3 flex-wrap">
+            {!showReviewPanel && !isGenerating && (
+              <Button
+                onClick={handleGenerateTestCases}
+                disabled={isGenerating || loadingExistingCases}
+                size="sm"
+                className="gap-2"
+              >
+                <FlaskConical className="h-4 w-4" />
+                Generate Test Cases
+              </Button>
+            )}
+            {showReviewPanel && !isGenerating && (
+              <Button
+                onClick={handleRegenerate}
+                variant="outline"
+                size="sm"
+                className="gap-2"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Regenerate
+              </Button>
+            )}
+            {loadingExistingCases && (
+              <span className="text-xs text-muted-foreground">Checking for existing test cases...</span>
+            )}
+          </div>
+
+          {/* Generation Error Message */}
+          {generationError && (
+            <div className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400">
+              <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <div>
+                <p>{generationError}</p>
+                <button
+                  onClick={() => setGenerationError(null)}
+                  className="text-xs text-red-300 hover:text-red-200 underline mt-1"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Generation Progress */}
+        {isGenerating && (
+          <div className="mb-6">
+            <TestGenProgress
+              currentPass={generationPass}
+              passName={generationPassName}
+              totalGenerated={generationTotal}
+              isComplete={generationComplete}
+            />
+          </div>
+        )}
+
+        {/* Regeneration Confirmation Dialog */}
+        {showRegenConfirm && (
+          <div className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-card border border-border rounded-xl p-6 max-w-md w-full shadow-2xl">
+              <h3 className="text-base font-semibold text-foreground mb-2">Regenerate Test Cases?</h3>
+              <p className="text-sm text-muted-foreground mb-5">
+                This will delete the existing {testCases.length} test case{testCases.length !== 1 ? 's' : ''} and
+                all review progress. This action cannot be undone.
+              </p>
+              <div className="flex items-center justify-end gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowRegenConfirm(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={confirmRegenerate}
+                >
+                  Regenerate
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Review Panel */}
+        {showReviewPanel && testCases.length > 0 && (
+          <div className="mb-6">
+            <TestCaseReviewPanel
+              pageId={selectedPage.id}
+              pageTitle={selectedPage.title}
+              testCases={testCases}
+              onClose={() => setShowReviewPanel(false)}
+            />
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 border-b border-border/50">
