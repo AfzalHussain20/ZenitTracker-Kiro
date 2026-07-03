@@ -365,6 +365,11 @@ export default function ConfluencePage() {
       // ─── All passes complete — persist results ────────────────────────────
       setGenerationComplete(true);
 
+      // Guard: if no test cases were generated, show error
+      if (allTestCases.length === 0) {
+        throw new Error('No test cases could be generated. The AI response may have been empty or malformed. Please try again.');
+      }
+
       // Compute category counts
       const categories: Record<TestCaseCategory, number> = {
         Functional: 0,
@@ -382,7 +387,7 @@ export default function ConfluencePage() {
         pageTitle: selectedPage.title,
         generatedAt: new Date(),
         totalCount: allTestCases.length,
-        modelVersion: 'groq-llama',
+        modelVersion: 'gemini-2.5-flash',
         categories,
       };
 
