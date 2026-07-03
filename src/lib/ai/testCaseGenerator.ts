@@ -36,12 +36,15 @@ const PASS_CATEGORIES: Record<string, TestCaseCategory[]> = {
   functional: ['Functional'],
   negative: ['Negative'],
   exploratory: ['Exploratory', 'Edge Case', 'Sanity'],
+  web: ['Functional', 'Negative', 'Edge Case'],
+  tv: ['Functional', 'Negative', 'Edge Case'],
+  mobile: ['Functional', 'Negative', 'Edge Case'],
 };
 
 // ─── System Prompt Templates ─────────────────────────────────────────────────
 
 function buildSystemPrompt(
-  pass: 'functional' | 'negative' | 'exploratory',
+  pass: 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile',
   headings: string[],
   existingCases: TestCaseSummary[]
 ): string {
@@ -56,65 +59,99 @@ function buildSystemPrompt(
   const jsonStructure = `[{"testcaseId": "", "module": "...", "priority": "P0|P1|P2", "testScenario": "...", "testSteps": ["1. ...", "2. ..."], "expectedResult": "...", "category": "..."}]`;
 
   switch (pass) {
-    case 'functional':
-      return `You are a senior QA engineer generating test cases from a PRD document.
-Generate FUNCTIONAL/HAPPY-PATH test cases covering normal user flows and expected behavior.
-For each test case, reference the specific PRD section heading in the "module" field.
+    case 'web':
+      return `You are a senior QA engineer generating test cases for WEB platform from a PRD.
+Generate test cases specifically for WEB browser testing (Chrome, Firefox, Safari, Edge).
+Focus on: responsive layouts, browser compatibility, keyboard navigation, form validations, URL routing.
+Reference the specific PRD section heading in the "module" field.
 
 Available PRD sections:
 ${headingsList}
 
-Return ONLY a JSON array with this exact structure (no markdown, no explanation):
+Return ONLY a JSON array (no markdown, no explanation):
 ${jsonStructure}
 
 Rules:
-- Set category to "Functional" for all test cases in this pass
-- Leave testcaseId as empty string (it will be assigned later)
-- Priority P0 = critical path, P1 = important, P2 = nice-to-have
-- Test steps should be clear, numbered actions
-- Expected result should be a verifiable outcome
-- Generate 8-15 test cases covering the main flows${existingSummary}`;
+- Set category to "Functional" for happy paths, "Negative" for error cases, "Edge Case" for browser-specific issues
+- Leave testcaseId empty
+- Priority P0 = critical flows, P1 = important, P2 = nice-to-have
+- Generate 8-12 test cases for web platform
+- Keep test steps concise (max 5 steps each)${existingSummary}`;
+
+    case 'tv':
+      return `You are a senior QA engineer generating test cases for TV/Smart TV/OTT platform from a PRD.
+Generate test cases specifically for TV app testing (remote control navigation, focus management, 10-foot UI).
+Focus on: D-pad navigation, focus states, large screen layouts, playback controls, deep linking, app lifecycle.
+Reference the specific PRD section heading in the "module" field.
+
+Available PRD sections:
+${headingsList}
+
+Return ONLY a JSON array (no markdown, no explanation):
+${jsonStructure}
+
+Rules:
+- Set category to "Functional" for happy paths, "Negative" for error cases, "Edge Case" for TV-specific issues
+- Leave testcaseId empty
+- Priority P0 = critical flows, P1 = important, P2 = nice-to-have
+- Generate 8-12 test cases for TV platform
+- Keep test steps concise (max 5 steps each)${existingSummary}`;
+
+    case 'mobile':
+      return `You are a senior QA engineer generating test cases for MOBILE platform from a PRD.
+Generate test cases specifically for iOS and Android app testing.
+Focus on: touch gestures, orientation changes, push notifications, deep links, offline behavior, app backgrounding.
+Reference the specific PRD section heading in the "module" field.
+
+Available PRD sections:
+${headingsList}
+
+Return ONLY a JSON array (no markdown, no explanation):
+${jsonStructure}
+
+Rules:
+- Set category to "Functional" for happy paths, "Negative" for error cases, "Edge Case" for mobile-specific issues
+- Leave testcaseId empty
+- Priority P0 = critical flows, P1 = important, P2 = nice-to-have
+- Generate 8-12 test cases for mobile platform
+- Keep test steps concise (max 5 steps each)${existingSummary}`;
+
+    case 'functional':
+      return `You are a senior QA engineer. Generate FUNCTIONAL test cases from this PRD.
+Reference PRD section headings in "module" field.
+
+Sections: ${headingsList}
+
+Return ONLY JSON array: ${jsonStructure}
+
+Rules: category="Functional", empty testcaseId, P0/P1/P2 priority, 8-12 cases, max 5 steps each${existingSummary}`;
 
     case 'negative':
-      return `You are a senior QA engineer generating test cases from a PRD document.
-Generate NEGATIVE/BOUNDARY test cases focusing on error conditions and invalid scenarios.
-Focus on: invalid inputs, boundary values, error conditions, permission violations, missing data, timeout scenarios.
-For each test case, reference the specific PRD section heading in the "module" field.
+      return `You are a senior QA engineer. Generate NEGATIVE/BOUNDARY test cases from this PRD.
+Focus on: invalid inputs, errors, edge conditions.
+Reference PRD section headings in "module" field.
 
-Available PRD sections:
-${headingsList}
+Sections: ${headingsList}
 
-Return ONLY a JSON array with this exact structure (no markdown, no explanation):
-${jsonStructure}
+Return ONLY JSON array: ${jsonStructure}
 
-Rules:
-- Set category to "Negative" for all test cases in this pass
-- Leave testcaseId as empty string (it will be assigned later)
-- Priority P0 = security/data-loss risk, P1 = important error handling, P2 = edge-case errors
-- Test steps should include the invalid/boundary input being tested
-- Expected result should describe the correct error handling behavior
-- Generate 6-12 test cases covering error paths${existingSummary}`;
+Rules: category="Negative", empty testcaseId, P0/P1/P2 priority, 6-10 cases, max 5 steps each${existingSummary}`;
 
     case 'exploratory':
-      return `You are a senior QA engineer generating test cases from a PRD document.
-Generate EXPLORATORY, EDGE CASE, and SANITY test cases.
-Focus on: unusual workflows, race conditions, data combinations, stress scenarios, and basic smoke tests.
-For each test case, reference the specific PRD section heading in the "module" field.
+      return `You are a senior QA engineer. Generate EXPLORATORY/EDGE CASE test cases from this PRD.
+Focus on: unusual workflows, race conditions, stress scenarios.
+Reference PRD section headings in "module" field.
 
-Available PRD sections:
-${headingsList}
+Sections: ${headingsList}
 
-Return ONLY a JSON array with this exact structure (no markdown, no explanation):
-${jsonStructure}
+Return ONLY JSON array: ${jsonStructure}
 
-Rules:
-- Set category to one of: "Exploratory", "Edge Case", or "Sanity"
-- "Exploratory" = unusual workflows, creative testing paths
-- "Edge Case" = boundary combinations, race conditions, extreme data
-- "Sanity" = basic smoke tests confirming core functionality works
-- Leave testcaseId as empty string (it will be assigned later)
-- Priority P0 = critical smoke test, P1 = important edge case, P2 = exploratory scenario
-- Generate 6-12 test cases with a mix of categories${existingSummary}`;
+Rules: category="Exploratory" or "Edge Case" or "Sanity", empty testcaseId, P0/P1/P2, 6-10 cases, max 5 steps${existingSummary}`;
+
+    default:
+      return `You are a senior QA engineer. Generate test cases from this PRD.
+Return ONLY JSON array: ${jsonStructure}
+Rules: empty testcaseId, P0/P1/P2, 8-12 cases${existingSummary}`;
   }
 }
 

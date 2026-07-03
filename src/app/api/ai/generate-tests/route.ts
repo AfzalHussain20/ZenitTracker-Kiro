@@ -5,12 +5,16 @@ import { getAIProvider } from '@/lib/ai/providers';
 import type { GenerateTestsRequest, GenerateTestsResponse } from '@/types/test-cases';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Vercel Pro: 60s, Hobby: 10s — set high for Pro users
 
 /** Maps pass name to a numeric pass number for the response. */
 const PASS_NUMBER_MAP: Record<string, number> = {
   functional: 1,
   negative: 2,
   exploratory: 3,
+  web: 1,
+  tv: 2,
+  mobile: 3,
 };
 
 export async function POST(req: NextRequest) {
@@ -25,10 +29,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validate pass value
-    if (!['functional', 'negative', 'exploratory'].includes(pass)) {
+    // Validate pass value — support both original and platform-based passes
+    const validPasses = ['functional', 'negative', 'exploratory', 'web', 'tv', 'mobile'];
+    if (!validPasses.includes(pass)) {
       return NextResponse.json(
-        { error: 'pass must be one of: functional, negative, exploratory' },
+        { error: `pass must be one of: ${validPasses.join(', ')}` },
         { status: 400 }
       );
     }
@@ -40,23 +45,38 @@ export async function POST(req: NextRequest) {
 
     if (!baseUrl || !email || !token) {
       return NextResponse.json(
-        { error: 'Confluence not configured' },
+        { error: 'Confluence not configured. Check CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN env vars.' },
         { status: 500 }
       );
     }
 
+    // Ensure base URL doesn't have trailing slash
+    const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
     const authHeader = `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`;
-    const pageRes = await fetch(
-      `${baseUrl}/api/v2/pages/${pageId}?body-format=storage`,
-      {
-        headers: { Authorization: authHeader, Accept: 'application/json' },
-        cache: 'no-store',
-      }
-    );
+
+    let pageRes;
+    try {
+      pageRes = await fetch(
+        `${cleanBaseUrl}/api/v2/pages/${pageId}?body-format=storage`,
+        {
+          headers: { Authorization: authHeader, Accept: 'application/json' },
+          cache: 'no-store',
+          signal: AbortSignal.timeout(8000), // 8s timeout for Confluence fetch
+        }
+      );
+    } catch (fetchErr: any) {
+      console.error('[generate-tests] Confluence fetch error:', fetchErr.message);
+      return NextResponse.json(
+        { error: `Failed to reach Confluence: ${fetchErr.message}` },
+        { status: 502 }
+      );
+    }
 
     if (!pageRes.ok) {
+      const errText = await pageRes.text().catch(() => '');
+      console.error('[generate-tests] Confluence API error:', pageRes.status, errText.substring(0, 200));
       return NextResponse.json(
-        { error: 'Failed to fetch Confluence page' },
+        { error: `Confluence returned ${pageRes.status}. Check page ID and credentials.` },
         { status: pageRes.status === 404 ? 404 : 502 }
       );
     }
@@ -82,7 +102,8 @@ export async function POST(req: NextRequest) {
     }
 
     const prdHeadings = extractHeadings(plainText);
-    const truncatedText = truncateForContext(plainText, 16000);
+    // Keep context small for faster Gemini response (critical for Vercel 10s timeout)
+    const truncatedText = truncateForContext(plainText, 8000);
 
     // ─── Generate test cases for the specified pass ───────────────────────
     const provider = getAIProvider();
@@ -94,7 +115,7 @@ export async function POST(req: NextRequest) {
         prdHeadings,
         pass,
         existingTestCases,
-        { maxTokens: 8192, temperature: 0.4, maxRetries: 3, contextTokenBudget: 16000 },
+        { maxTokens: 4096, temperature: 0.4, maxRetries: 1, contextTokenBudget: 8000 },
         provider
       );
     } catch (aiError: any) {
@@ -103,18 +124,14 @@ export async function POST(req: NextRequest) {
       // Handle rate limit errors
       if (errorMessage.includes('429')) {
         return NextResponse.json(
-          { error: 'AI provider rate limit exceeded. Please try again later.' },
-          {
-            status: 429,
-            headers: { 'Retry-After': '30' },
-          }
+          { error: 'AI rate limited. Wait 30s and try again.' },
+          { status: 429, headers: { 'Retry-After': '30' } }
         );
       }
 
-      // Handle other AI failures as 502 Bad Gateway
-      console.error('[generate-tests] AI provider error:', errorMessage);
+      console.error('[generate-tests] AI error:', errorMessage);
       return NextResponse.json(
-        { error: 'AI generation failed. Please try again.' },
+        { error: `AI generation failed: ${errorMessage.substring(0, 100)}` },
         { status: 502 }
       );
     }
@@ -129,9 +146,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(response);
   } catch (err: any) {
-    console.error('[generate-tests] Unexpected error:', err.message);
+    console.error('[generate-tests] Unexpected error:', err.message, err.stack);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: `Server error: ${err.message?.substring(0, 100)}` },
       { status: 500 }
     );
   }

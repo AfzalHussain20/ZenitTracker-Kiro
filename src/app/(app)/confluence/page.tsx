@@ -316,15 +316,15 @@ export default function ConfluencePage() {
     setGenerationComplete(false);
     setGenerationError(null);
     setGenerationPass(1);
-    setGenerationPassName('Functional');
+    setGenerationPassName('Web');
     setGenerationTotal(0);
     setShowReviewPanel(false);
 
     const allTestCases: GeneratedTestCase[] = [];
-    const passes: Array<{ pass: 'functional' | 'negative' | 'exploratory'; name: string; number: number }> = [
-      { pass: 'functional', name: 'Functional', number: 1 },
-      { pass: 'negative', name: 'Negative', number: 2 },
-      { pass: 'exploratory', name: 'Exploratory', number: 3 },
+    const passes: Array<{ pass: 'web' | 'tv' | 'mobile'; name: string; number: number }> = [
+      { pass: 'web', name: 'Web', number: 1 },
+      { pass: 'tv', name: 'TV', number: 2 },
+      { pass: 'mobile', name: 'Mobile', number: 3 },
     ];
 
     try {
