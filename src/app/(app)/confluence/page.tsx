@@ -308,69 +308,45 @@ export default function ConfluencePage() {
     }
   };
 
-  // ─── Multi-Pass Generation Orchestration ────────────────────────────────────
+  // ─── Single-Call Comprehensive Generation (avoids rate limits) ───────────────
   const handleGenerateTestCases = async () => {
     if (!selectedPage || isGenerating) return;
 
-    // Reset state for new generation
+    // Reset state
     setIsGenerating(true);
     setGenerationComplete(false);
     setGenerationError(null);
     setGenerationPass(1);
-    setGenerationPassName('Web');
+    setGenerationPassName('All Platforms');
     setGenerationTotal(0);
     setShowReviewPanel(false);
 
-    const allTestCases: GeneratedTestCase[] = [];
-    const passes: Array<{ pass: 'web' | 'tv' | 'mobile'; name: string; number: number }> = [
-      { pass: 'web', name: 'Web', number: 1 },
-      { pass: 'tv', name: 'TV', number: 2 },
-      { pass: 'mobile', name: 'Mobile', number: 3 },
-    ];
-
     try {
-      for (const { pass, name, number } of passes) {
-        setGenerationPass(number);
-        setGenerationPassName(name);
+      // Single API call generates ALL test cases for Web + TV + Mobile in one shot
+      // This avoids Gemini free-tier rate limits (only uses 1 request instead of 3)
+      const res = await fetch('/api/ai/generate-tests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pageId: selectedPage.id,
+          pass: 'all',
+          existingTestCases: [],
+        }),
+      });
 
-        // Add delay between passes to avoid rate limits
-        if (number > 1) {
-          await new Promise((r) => setTimeout(r, 2000));
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Unknown error' }));
+        if (res.status === 400 && errData.error?.includes('No extractable content')) {
+          throw new Error('This document has no extractable content. Please ensure the PRD has text content.');
         }
-
-        // Build existing test case summaries for dedup (only send scenario text, not full objects)
-        const existingTestCases: TestCaseSummary[] = allTestCases.slice(-10).map((tc) => ({
-          id: tc.testcaseId,
-          scenario: tc.testScenario,
-          category: tc.category,
-        }));
-
-        const res = await fetch('/api/ai/generate-tests', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pageId: selectedPage.id,
-            pass,
-            existingTestCases,
-          }),
-        });
-
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({ error: 'Unknown error' }));
-          if (res.status === 400 && errData.error?.includes('No extractable content')) {
-            throw new Error('This document has no extractable content. Please ensure the PRD has text content.');
-          }
-          // Don't fail entirely on one pass error — continue with others
-          console.warn(`Pass "${name}" failed: ${errData.error}. Continuing...`);
-          continue;
-        }
-
-        const data: GenerateTestsResponse = await res.json();
-        allTestCases.push(...data.testCases);
-        setGenerationTotal(allTestCases.length);
+        throw new Error(errData.error || 'Generation failed');
       }
 
-      // ─── All passes complete — persist results ────────────────────────────
+      const data: GenerateTestsResponse = await res.json();
+      const allTestCases = data.testCases;
+      setGenerationTotal(allTestCases.length);
+
+      // ─── Generation complete — show results ────────────────────────────
       setGenerationComplete(true);
 
       // Guard: if no test cases were generated, show error

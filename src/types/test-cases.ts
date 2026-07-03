@@ -39,7 +39,7 @@ export interface TestCaseReviewUpdate {
 
 export interface GenerateTestsRequest {
   pageId: string;
-  pass: 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile';
+  pass: 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile' | 'all';
   existingTestCases?: TestCaseSummary[];
 }
 

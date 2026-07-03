@@ -44,7 +44,7 @@ const PASS_CATEGORIES: Record<string, TestCaseCategory[]> = {
 // ─── System Prompt Templates ─────────────────────────────────────────────────
 
 function buildSystemPrompt(
-  pass: 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile',
+  pass: 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile' | 'all',
   headings: string[],
   existingCases: TestCaseSummary[]
 ): string {
@@ -71,6 +71,40 @@ function buildSystemPrompt(
 - Edge Case Testing: Unusual scenarios, race conditions, extreme data`;
 
   switch (pass) {
+    case 'all':
+      return `You are an expert senior QA engineer. Generate a COMPREHENSIVE set of test cases covering ALL platforms (Web, TV, Mobile) and ALL testing types from this PRD.
+
+You MUST generate test cases for EACH of these 3 platforms:
+1. WEB (Chrome, Firefox, Safari, Edge - desktop & mobile browsers)
+2. TV (Android TV, Fire TV, Apple TV, Samsung Tizen, LG webOS, Roku - remote/D-pad navigation)
+3. MOBILE (iOS iPhone/iPad, Android phones/tablets - touch, gestures, offline)
+
+For EACH platform, cover these testing types:
+- Functional: Happy path, core feature verification
+- Negative: Invalid inputs, error states, boundary values
+- UI/UX: Layout, navigation, accessibility
+- Integration: Cross-feature, API, third-party interactions
+- Edge Case: Race conditions, extreme data, unusual workflows
+- Sanity: Basic smoke tests
+
+Each test case MUST include a "platform" indicator in the module field like "[Web] Module Name" or "[TV] Module Name" or "[Mobile] Module Name".
+
+Available PRD sections:
+${headingsList}
+
+Return ONLY a valid JSON array (NO markdown, NO code fences, NO explanation before/after):
+${jsonStructure}
+
+CRITICAL RULES:
+- Generate AT LEAST 60 test cases total (20+ per platform)
+- Set category to: "Functional", "Negative", "Edge Case", or "Sanity"
+- Leave testcaseId as empty string
+- Priority: P0 = critical/blocker, P1 = major, P2 = minor
+- Module MUST start with [Web], [TV], or [Mobile] prefix
+- Test steps: 3-5 actionable steps each
+- Each test case must be unique and platform-specific
+- Output ONLY the JSON array, nothing else${existingSummary}`;
+
     case 'web':
       return `You are a senior QA engineer generating COMPREHENSIVE test cases for WEB platform from a PRD.
 Generate ALL possible test cases for WEB browser testing covering every scenario in the PRD.
@@ -460,7 +494,7 @@ export async function retryWithBackoff<T>(
 export async function generateTestCasesForPass(
   prdText: string,
   prdHeadings: string[],
-  pass: 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile',
+  pass: 'functional' | 'negative' | 'exploratory' | 'web' | 'tv' | 'mobile' | 'all',
   existingCases: TestCaseSummary[] = [],
   config: GenerationConfig = DEFAULT_GENERATION_CONFIG,
   provider?: AIProvider

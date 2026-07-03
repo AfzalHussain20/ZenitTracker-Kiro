@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate pass value — support both original and platform-based passes
-    const validPasses = ['functional', 'negative', 'exploratory', 'web', 'tv', 'mobile'];
+    const validPasses = ['functional', 'negative', 'exploratory', 'web', 'tv', 'mobile', 'all'];
     if (!validPasses.includes(pass)) {
       return NextResponse.json(
         { error: `pass must be one of: ${validPasses.join(', ')}` },
