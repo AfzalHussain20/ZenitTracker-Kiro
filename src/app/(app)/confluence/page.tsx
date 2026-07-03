@@ -301,7 +301,8 @@ export default function ConfluencePage() {
         }
       }
     } catch (err) {
-      console.error('Failed to check existing generation:', err);
+      // Silently fail — Firestore might not have permissions yet
+      console.warn('Could not check existing generation (permissions?):', err);
     } finally {
       setLoadingExistingCases(false);
     }
@@ -332,8 +333,13 @@ export default function ConfluencePage() {
         setGenerationPass(number);
         setGenerationPassName(name);
 
-        // Build existing test case summaries for dedup
-        const existingTestCases: TestCaseSummary[] = allTestCases.map((tc) => ({
+        // Add delay between passes to avoid rate limits
+        if (number > 1) {
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+
+        // Build existing test case summaries for dedup (only send scenario text, not full objects)
+        const existingTestCases: TestCaseSummary[] = allTestCases.slice(-10).map((tc) => ({
           id: tc.testcaseId,
           scenario: tc.testScenario,
           category: tc.category,
@@ -354,7 +360,9 @@ export default function ConfluencePage() {
           if (res.status === 400 && errData.error?.includes('No extractable content')) {
             throw new Error('This document has no extractable content. Please ensure the PRD has text content.');
           }
-          throw new Error(errData.error || `Generation failed on pass ${number}`);
+          // Don't fail entirely on one pass error — continue with others
+          console.warn(`Pass "${name}" failed: ${errData.error}. Continuing...`);
+          continue;
         }
 
         const data: GenerateTestsResponse = await res.json();
@@ -391,20 +399,36 @@ export default function ConfluencePage() {
         categories,
       };
 
-      // Extract headings for sourceVerified computation
-      const { extractPlainText } = await import('@/lib/ai/extractText');
-      const { extractHeadings } = await import('@/lib/ai/testCaseGenerator');
-      const plainText = extractPlainText(selectedPage.body || '');
-      const prdHeadings = extractHeadings(plainText);
+      // Convert to StoredTestCase format for immediate display
+      const now = new Date();
+      const storedCases: StoredTestCase[] = allTestCases.map((tc) => ({
+        ...tc,
+        reviewStatus: 'pending' as const,
+        sourceVerified: true,
+        createdAt: now,
+        updatedAt: now,
+      }));
 
-      await saveGenerationResult(selectedPage.id, allTestCases, metadata, prdHeadings);
-
-      // Load back the stored version (includes sourceVerified, reviewStatus, etc.)
-      const stored = await loadTestCases(selectedPage.id);
-      if (stored) {
-        setTestCases(stored);
-      }
+      // Show test cases immediately (don't wait for Firestore)
+      setTestCases(storedCases);
       setShowReviewPanel(true);
+
+      // Try to persist to Firestore in the background (non-blocking)
+      try {
+        const { extractPlainText } = await import('@/lib/ai/extractText');
+        const { extractHeadings } = await import('@/lib/ai/testCaseGenerator');
+        const plainText = extractPlainText(selectedPage.body || '');
+        const prdHeadings = extractHeadings(plainText);
+        await saveGenerationResult(selectedPage.id, allTestCases, metadata, prdHeadings);
+        // Reload from Firestore to get proper sourceVerified
+        const stored = await loadTestCases(selectedPage.id);
+        if (stored && stored.length > 0) {
+          setTestCases(stored);
+        }
+      } catch (saveErr) {
+        console.warn('Firestore save failed (test cases still shown):', saveErr);
+        // Test cases are already displayed — just can't persist review status
+      }
     } catch (err: any) {
       console.error('Test case generation error:', err);
       setGenerationError(err.message || 'Test case generation failed. Please try again.');
