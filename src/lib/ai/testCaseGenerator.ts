@@ -58,63 +58,123 @@ function buildSystemPrompt(
 
   const jsonStructure = `[{"testcaseId": "", "module": "...", "priority": "P0|P1|P2", "testScenario": "...", "testSteps": ["1. ...", "2. ..."], "expectedResult": "...", "category": "..."}]`;
 
+  const allTestingTypes = `Cover ALL these testing types:
+- Functional Testing: Happy path flows, feature verification
+- Negative Testing: Invalid inputs, error handling, boundary values
+- UI/UX Testing: Layout, navigation, visual consistency, accessibility
+- Integration Testing: Cross-feature interactions, API integrations
+- Performance Testing: Load time, responsiveness, memory usage
+- Security Testing: Auth bypass, input injection, session handling
+- Compatibility Testing: Platform-specific device/OS variations
+- Regression Testing: Existing features still work after changes
+- Sanity Testing: Basic smoke tests for core flows
+- Edge Case Testing: Unusual scenarios, race conditions, extreme data`;
+
   switch (pass) {
     case 'web':
-      return `You are a senior QA engineer generating test cases for WEB platform from a PRD.
-Generate test cases specifically for WEB browser testing (Chrome, Firefox, Safari, Edge).
-Focus on: responsive layouts, browser compatibility, keyboard navigation, form validations, URL routing.
+      return `You are a senior QA engineer generating COMPREHENSIVE test cases for WEB platform from a PRD.
+Generate ALL possible test cases for WEB browser testing covering every scenario in the PRD.
+Platforms: Chrome, Firefox, Safari, Edge on Desktop and Mobile browsers.
+
+${allTestingTypes}
+
+Web-specific focus areas:
+- Responsive design (desktop, tablet, mobile viewports)
+- Cross-browser compatibility
+- Keyboard navigation and accessibility (WCAG)
+- Form validations and submissions
+- URL routing and deep linking
+- Page load performance
+- Cookie/localStorage handling
+- Network error states
+
 Reference the specific PRD section heading in the "module" field.
 
 Available PRD sections:
 ${headingsList}
 
-Return ONLY a JSON array (no markdown, no explanation):
+Return ONLY a JSON array (no markdown, no explanation, no code fences):
 ${jsonStructure}
 
 Rules:
-- Set category to "Functional" for happy paths, "Negative" for error cases, "Edge Case" for browser-specific issues
-- Leave testcaseId empty
-- Priority P0 = critical flows, P1 = important, P2 = nice-to-have
-- Generate 8-12 test cases for web platform
-- Keep test steps concise (max 5 steps each)${existingSummary}`;
+- Set category to one of: "Functional", "Negative", "Edge Case", "Sanity"
+- Leave testcaseId as empty string
+- Priority P0 = critical/blocker, P1 = major, P2 = minor
+- Generate 25-35 test cases covering EVERY feature and scenario in the PRD for web
+- Each test case must be unique and specific (not generic)
+- Test steps should be actionable (3-6 steps each)${existingSummary}`;
 
     case 'tv':
-      return `You are a senior QA engineer generating test cases for TV/Smart TV/OTT platform from a PRD.
-Generate test cases specifically for TV app testing (remote control navigation, focus management, 10-foot UI).
-Focus on: D-pad navigation, focus states, large screen layouts, playback controls, deep linking, app lifecycle.
+      return `You are a senior QA engineer generating COMPREHENSIVE test cases for TV/Smart TV/OTT platform from a PRD.
+Generate ALL possible test cases for TV app testing covering every scenario in the PRD.
+Platforms: Android TV, Fire TV, Apple TV, Samsung Tizen, LG webOS, Roku.
+
+${allTestingTypes}
+
+TV-specific focus areas:
+- D-pad/Remote control navigation (Up/Down/Left/Right/OK/Back)
+- Focus management and visual focus indicators
+- 10-foot UI readability and layout
+- Video/Audio playback controls
+- Deep linking from external sources
+- App lifecycle (background, resume, cold start)
+- Low memory/resource constraints
+- HDMI-CEC interactions
+- Multiple user profiles
+- Parental controls
+
 Reference the specific PRD section heading in the "module" field.
 
 Available PRD sections:
 ${headingsList}
 
-Return ONLY a JSON array (no markdown, no explanation):
+Return ONLY a JSON array (no markdown, no explanation, no code fences):
 ${jsonStructure}
 
 Rules:
-- Set category to "Functional" for happy paths, "Negative" for error cases, "Edge Case" for TV-specific issues
-- Leave testcaseId empty
-- Priority P0 = critical flows, P1 = important, P2 = nice-to-have
-- Generate 8-12 test cases for TV platform
-- Keep test steps concise (max 5 steps each)${existingSummary}`;
+- Set category to one of: "Functional", "Negative", "Edge Case", "Sanity"
+- Leave testcaseId as empty string
+- Priority P0 = critical/blocker, P1 = major, P2 = minor
+- Generate 25-35 test cases covering EVERY feature and scenario in the PRD for TV
+- Each test case must be unique and specific (not generic)
+- Test steps should be actionable (3-6 steps each)${existingSummary}`;
 
     case 'mobile':
-      return `You are a senior QA engineer generating test cases for MOBILE platform from a PRD.
-Generate test cases specifically for iOS and Android app testing.
-Focus on: touch gestures, orientation changes, push notifications, deep links, offline behavior, app backgrounding.
+      return `You are a senior QA engineer generating COMPREHENSIVE test cases for MOBILE platform from a PRD.
+Generate ALL possible test cases for iOS and Android app testing covering every scenario in the PRD.
+Platforms: iOS (iPhone, iPad), Android (phones, tablets), various OS versions.
+
+${allTestingTypes}
+
+Mobile-specific focus areas:
+- Touch gestures (tap, swipe, pinch, long press)
+- Screen orientation changes (portrait/landscape)
+- Push notifications (foreground, background, killed state)
+- Deep links and universal links
+- Offline/poor network behavior
+- App backgrounding and foregrounding
+- Battery and memory optimization
+- Permission dialogs (camera, location, notifications)
+- Keyboard handling and input methods
+- Accessibility (VoiceOver, TalkBack)
+- App install, update, and uninstall flows
+- Multi-tasking and split screen
+
 Reference the specific PRD section heading in the "module" field.
 
 Available PRD sections:
 ${headingsList}
 
-Return ONLY a JSON array (no markdown, no explanation):
+Return ONLY a JSON array (no markdown, no explanation, no code fences):
 ${jsonStructure}
 
 Rules:
-- Set category to "Functional" for happy paths, "Negative" for error cases, "Edge Case" for mobile-specific issues
-- Leave testcaseId empty
-- Priority P0 = critical flows, P1 = important, P2 = nice-to-have
-- Generate 8-12 test cases for mobile platform
-- Keep test steps concise (max 5 steps each)${existingSummary}`;
+- Set category to one of: "Functional", "Negative", "Edge Case", "Sanity"
+- Leave testcaseId as empty string
+- Priority P0 = critical/blocker, P1 = major, P2 = minor
+- Generate 25-35 test cases covering EVERY feature and scenario in the PRD for mobile
+- Each test case must be unique and specific (not generic)
+- Test steps should be actionable (3-6 steps each)${existingSummary}`;
 
     case 'functional':
       return `You are a senior QA engineer. Generate FUNCTIONAL test cases from this PRD.
