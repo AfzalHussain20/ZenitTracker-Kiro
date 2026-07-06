@@ -168,10 +168,10 @@ export default function TestSessionResultPage() {
         </div>
 
         {/* ─── Chart + Breakdown ─── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
           {/* Donut chart */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-            className="rounded-2xl border border-border bg-card p-6">
+            className="lg:col-span-2 rounded-2xl border border-border bg-card p-6">
             <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-primary" /> Distribution
             </h3>
@@ -199,28 +199,34 @@ export default function TestSessionResultPage() {
 
           {/* Test bed breakdown */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
-            className="lg:col-span-2 rounded-2xl border border-border bg-card p-6">
+            className="lg:col-span-3 rounded-2xl border border-border bg-card p-6">
             <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
               <Layers className="w-4 h-4 text-primary" /> Module Breakdown
             </h3>
-            <div className="space-y-3">
-              {bedStats.map((s, i) => {
+            <div className="space-y-4">
+              {bedStats.map((s) => {
                 const rate = s.total > 0 ? Math.round((s.pass / s.total) * 100) : 0;
                 return (
-                  <div key={s.bed} className="group">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-medium text-foreground">{s.bed}</span>
-                      <div className="flex items-center gap-3 text-[10px] tabular-nums">
-                        <span className="text-emerald-600 font-semibold">{s.pass}P</span>
-                        <span className="text-red-600 font-semibold">{s.fail}F</span>
-                        <span className="text-muted-foreground">{s.na}S</span>
-                        <span className="text-foreground font-bold">{rate}%</span>
+                  <div key={s.bed} className="rounded-xl border border-border bg-muted/30 p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+                          <Layers className="w-3 h-3 text-primary" />
+                        </div>
+                        <span className="text-sm font-medium text-foreground">{s.bed}</span>
+                        <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{s.total} cases</span>
                       </div>
+                      <span className={cn('text-sm font-bold tabular-nums', rate >= 80 ? 'text-emerald-600' : rate >= 50 ? 'text-amber-600' : 'text-red-600')}>{rate}%</span>
                     </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden flex">
+                    <div className="h-3 bg-muted rounded-full overflow-hidden flex">
                       {s.pass > 0 && <div className="h-full bg-emerald-500 transition-all" style={{ width: `${(s.pass / s.total) * 100}%` }} />}
                       {s.fail > 0 && <div className="h-full bg-red-500 transition-all" style={{ width: `${(s.fail / s.total) * 100}%` }} />}
                       {s.na > 0 && <div className="h-full bg-slate-300 dark:bg-slate-600 transition-all" style={{ width: `${(s.na / s.total) * 100}%` }} />}
+                    </div>
+                    <div className="flex items-center gap-4 mt-2 text-[11px]">
+                      <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500" /><span className="text-muted-foreground">Pass</span><span className="font-semibold text-foreground">{s.pass}</span></span>
+                      <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-muted-foreground">Fail</span><span className="font-semibold text-foreground">{s.fail}</span></span>
+                      <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-slate-400" /><span className="text-muted-foreground">Skip</span><span className="font-semibold text-foreground">{s.na}</span></span>
                     </div>
                   </div>
                 );
