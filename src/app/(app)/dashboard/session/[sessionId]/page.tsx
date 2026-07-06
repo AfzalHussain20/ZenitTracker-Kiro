@@ -38,11 +38,13 @@ const naReasonOptions = [
   "Third-party integration unavailable (payment gateway, CDN, etc.)",
   "Other",
 ];
+
 const incompleteReasonOptions = [
   "Session paused", "Blocked by bug", "Time constraints", "Environment unavailable", "Other",
 ];
 
 // ─── Hooks ───────────────────────────────────────────────────────────────────
+
 function useTimer(currentIndex: number) {
   const [seconds, setSeconds] = useState(0);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -60,6 +62,7 @@ function useJiraFetch(bugId: string) {
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     setBugTitle(null); setFetchError(null);
     const trimmed = bugId?.trim() || '';
@@ -76,23 +79,29 @@ function useJiraFetch(bugId: string) {
     }, 500);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [bugId]);
+
   return { bugTitle, fetching, fetchError };
 }
 
 function useSwipe(onLeft: () => void, onRight: () => void) {
   const touchStart = useRef<{ x: number; y: number } | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => { touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; };
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
   const onTouchEnd = (e: React.TouchEvent) => {
     if (!touchStart.current) return;
     const dx = e.changedTouches[0].clientX - touchStart.current.x;
     const dy = e.changedTouches[0].clientY - touchStart.current.y;
-    if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) { dx > 0 ? onRight() : onLeft(); }
+    if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      dx > 0 ? onRight() : onLeft();
+    }
     touchStart.current = null;
   };
   return { onTouchStart, onTouchEnd };
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
+
 export default function TestSessionPage() {
   const params = useParams();
   const router = useRouter();
@@ -142,18 +151,29 @@ export default function TestSessionPage() {
     try {
       const res = await fetch('/api/jira/create-issue', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ testCaseName: tc.testCaseTitle, testerName: session.userName, steps: tc.testSteps, expected: tc.expectedResult, actual: bugDesc || tc.actualResult || 'Not recorded', platform: session.platformDetails.platformName }),
+        body: JSON.stringify({
+          testCaseName: tc.testCaseTitle, testerName: session.userName,
+          steps: tc.testSteps, expected: tc.expectedResult,
+          actual: bugDesc || tc.actualResult || 'Not recorded',
+          platform: session.platformDetails.platformName,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Jira error');
-      setJiraIssueKey(data.issueKey); setJiraIssueLink(data.issueLink); setBugId(data.issueKey);
+      setJiraIssueKey(data.issueKey);
+      setJiraIssueLink(data.issueLink);
+      setBugId(data.issueKey);
       toast({ title: `Created ${data.issueKey}` });
-    } catch (e: any) { toast({ title: 'Jira Error', description: e.message, variant: 'destructive' }); }
-    finally { setJiraPushing(false); }
+    } catch (e: any) {
+      toast({ title: 'Jira Error', description: e.message, variant: 'destructive' });
+    } finally { setJiraPushing(false); }
   };
 
-  // Entrance
-  useEffect(() => { const t = setTimeout(() => setShowEntrance(false), 1600); return () => clearTimeout(t); }, []);
+  // Entrance animation
+  useEffect(() => {
+    const t = setTimeout(() => setShowEntrance(false), 1600);
+    return () => clearTimeout(t);
+  }, []);
 
   // Load session
   useEffect(() => {
@@ -167,7 +187,13 @@ export default function TestSessionPage() {
         if (!snap.exists() || snap.data()?.userId !== user.uid) { router.replace('/dashboard'); return; }
         setSessionCollection(ref.path.startsWith('sessions/') ? 'sessions' : 'testSessions');
         const data = snap.data();
-        const parsed: TestSession = { id: snap.id, ...data, createdAt: (data.createdAt as Timestamp)?.toDate?.() ?? new Date(), testCases: (data.testCases || []).map((tc: any) => ({ ...tc, lastModified: (tc.lastModified as Timestamp)?.toDate?.() ?? new Date() })) } as TestSession;
+        const parsed: TestSession = {
+          id: snap.id, ...data,
+          createdAt: (data.createdAt as Timestamp)?.toDate?.() ?? new Date(),
+          testCases: (data.testCases || []).map((tc: any) => ({
+            ...tc, lastModified: (tc.lastModified as Timestamp)?.toDate?.() ?? new Date()
+          }))
+        } as TestSession;
         if (parsed.status === 'Completed') { router.replace(`/dashboard/session/${sessionId}/results`); return; }
         setSession(parsed);
         const first = parsed.testCases.findIndex(tc => tc.status === 'Untested');
@@ -178,7 +204,10 @@ export default function TestSessionPage() {
   }, [sessionId, user, router, toast]);
 
   // Reset on index change
-  useEffect(() => { setVerdict(null); setJiraIssueKey(null); setJiraIssueLink(null); setBugId(''); setBugDesc(''); setNaReason(''); }, [currentIndex]);
+  useEffect(() => {
+    setVerdict(null); setJiraIssueKey(null); setJiraIssueLink(null);
+    setBugId(''); setBugDesc(''); setNaReason('');
+  }, [currentIndex]);
 
   // Firestore sync
   const handleUpdate = useCallback(async (data: Partial<TestSession>) => {
@@ -191,7 +220,10 @@ export default function TestSessionPage() {
   const handleComplete = async (reason?: string) => {
     if (!session) return;
     const remaining = session.testCases.filter(t => t.status === 'Untested').length;
-    await handleUpdate({ status: remaining > 0 ? 'Aborted' : 'Completed', updatedAt: new Date(), completedAt: new Date(), reasonForIncompletion: reason });
+    await handleUpdate({
+      status: remaining > 0 ? 'Aborted' : 'Completed',
+      updatedAt: new Date(), completedAt: new Date(), reasonForIncompletion: reason,
+    });
     router.replace(`/dashboard/session/${sessionId}/results`);
   };
 
@@ -218,23 +250,43 @@ export default function TestSessionPage() {
       total: updated.length,
     };
     await handleUpdate({ testCases: updated, summary, updatedAt: new Date() });
-    setTimeout(() => { if (currentIndex < updated.length - 1) setCurrentIndex(i => i + 1); else setCompleteOpen(true); }, 400);
+    setTimeout(() => {
+      if (currentIndex < updated.length - 1) setCurrentIndex(i => i + 1);
+      else setCompleteOpen(true);
+    }, 400);
     setFailOpen(false); setNaOpen(false);
   }, [session, currentIndex, handleUpdate]);
 
-  // Keyboard shortcuts — ONLY when no dialog is open
+  // Keyboard shortcuts — FIXED: preventDefault BEFORE action, check anyDialogOpen
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Block ALL shortcuts when any dialog/drawer is open
       if (anyDialogOpen) return;
+
       const t = e.target as HTMLElement;
       if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable) return;
+
       switch (e.key.toLowerCase()) {
-        case 'p': e.preventDefault(); markStatus('Pass'); break;
-        case 'f': e.preventDefault(); setFailOpen(true); break;
-        case 'n': e.preventDefault(); setNaOpen(true); break;
-        case 'arrowleft': e.preventDefault(); goPrev(); break;
-        case 'arrowright': e.preventDefault(); goNext(); break;
+        case 'p':
+          e.preventDefault();
+          markStatus('Pass');
+          break;
+        case 'f':
+          e.preventDefault();
+          setFailOpen(true);
+          break;
+        case 'n':
+          e.preventDefault();
+          setNaOpen(true);
+          break;
+        case 'arrowleft':
+          e.preventDefault();
+          goPrev();
+          break;
+        case 'arrowright':
+          e.preventDefault();
+          goNext();
+          break;
       }
     };
     window.addEventListener('keydown', handler);
@@ -251,11 +303,12 @@ export default function TestSessionPage() {
   };
   const saveField = () => session && handleUpdate({ testCases: session.testCases });
 
-  // Loading
+  // Loading state
   if (isLoading) return (
     <div className="fixed inset-0 bg-background flex items-center justify-center">
-      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center gap-4">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center">
+      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+        className="flex flex-col items-center gap-4">
+        <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
           <Loader2 className="w-6 h-6 text-primary animate-spin" />
         </div>
         <p className="text-sm text-muted-foreground font-medium">Loading session...</p>
@@ -264,7 +317,7 @@ export default function TestSessionPage() {
   );
   if (!session) return null;
 
-  // Derived
+  // Derived data
   const tc = session.testCases[currentIndex];
   const untestedCount = session.testCases.filter(t => t.status === 'Untested').length;
   const passCount = session.testCases.filter(t => t.status === 'Pass').length;
@@ -281,29 +334,32 @@ export default function TestSessionPage() {
   });
 
   return (
-    <div className="fixed inset-0 bg-[#0a0a0b] text-white flex flex-col overflow-hidden">
+    <div className="fixed inset-0 bg-background text-foreground flex flex-col overflow-hidden">
 
-      {/* ─── Entrance ─── */}
+      {/* ─── Entrance Animation ─── */}
       <AnimatePresence>
         {showEntrance && (
           <motion.div initial={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}
-            className="fixed inset-0 z-[200] bg-[#0a0a0b] flex items-center justify-center">
+            className="fixed inset-0 z-[200] bg-background flex items-center justify-center">
             <motion.div initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: 'spring', damping: 20 }} className="flex flex-col items-center gap-5">
+              transition={{ type: 'spring', damping: 20 }}
+              className="flex flex-col items-center gap-5">
               <div className="relative">
-                <motion.div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-violet-500/20 to-blue-500/20 border border-white/10 flex items-center justify-center"
-                  animate={{ boxShadow: ['0 0 30px rgba(139,92,246,0.2)', '0 0 60px rgba(139,92,246,0.4)', '0 0 30px rgba(139,92,246,0.2)'] }}
+                <motion.div
+                  className="w-20 h-20 rounded-3xl bg-primary/10 border border-primary/20 flex items-center justify-center"
+                  animate={{ boxShadow: ['0 0 30px hsl(var(--primary)/0.1)', '0 0 60px hsl(var(--primary)/0.2)', '0 0 30px hsl(var(--primary)/0.1)'] }}
                   transition={{ duration: 2, repeat: Infinity }}>
-                  <Zap className="w-9 h-9 text-violet-400" />
+                  <Zap className="w-9 h-9 text-primary" />
                 </motion.div>
               </div>
               <div className="text-center">
-                <h2 className="text-xl font-bold text-white">{session.platformDetails.platformName}</h2>
-                <p className="text-sm text-white/50 mt-1">{total} test cases ready</p>
+                <h2 className="text-xl font-bold text-foreground">{session.platformDetails.platformName}</h2>
+                <p className="text-sm text-muted-foreground mt-1">{total} test cases ready</p>
               </div>
-              <motion.div className="w-48 h-0.5 bg-white/10 rounded-full overflow-hidden">
-                <motion.div className="h-full bg-gradient-to-r from-violet-500 to-blue-500 rounded-full"
-                  initial={{ width: '0%' }} animate={{ width: '100%' }} transition={{ duration: 1.4, ease: 'easeInOut' }} />
+              <motion.div className="w-48 h-0.5 bg-muted rounded-full overflow-hidden">
+                <motion.div className="h-full bg-primary rounded-full"
+                  initial={{ width: '0%' }} animate={{ width: '100%' }}
+                  transition={{ duration: 1.4, ease: 'easeInOut' }} />
               </motion.div>
             </motion.div>
           </motion.div>
@@ -311,59 +367,63 @@ export default function TestSessionPage() {
       </AnimatePresence>
 
       {/* ─── Header ─── */}
-      <header className="shrink-0 h-14 border-b border-white/[0.06] bg-[#0a0a0b]/95 backdrop-blur-xl z-30 flex items-center px-4 gap-3">
+      <header className="shrink-0 h-14 border-b border-border bg-background/95 backdrop-blur-xl z-30 flex items-center px-4 gap-3">
         <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard')}
-          className="h-8 w-8 rounded-lg text-white/60 hover:text-white hover:bg-white/5">
+          className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted">
           <ChevronLeft className="w-4 h-4" />
         </Button>
 
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500/20 to-blue-500/20 border border-white/10 flex items-center justify-center">
-            <Zap className="w-3.5 h-3.5 text-violet-400" />
+          <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+            <Zap className="w-3.5 h-3.5 text-primary" />
           </div>
-          <span className="text-sm font-medium text-white/80 truncate hidden sm:block">{session.platformDetails.platformName}</span>
+          <span className="text-sm font-medium text-foreground/80 truncate hidden sm:block">
+            {session.platformDetails.platformName}
+          </span>
         </div>
 
-        {/* Progress */}
+        {/* Progress bar */}
         <div className="flex-1 flex items-center gap-3 mx-4">
-          <div className="flex-1 h-1 bg-white/[0.06] rounded-full overflow-hidden max-w-sm">
-            <motion.div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-blue-500"
+          <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden max-w-sm">
+            <motion.div className="h-full rounded-full bg-primary"
               animate={{ width: `${progress}%` }} transition={{ duration: 0.5, ease: 'easeOut' }} />
           </div>
-          <span className="text-[11px] font-semibold text-white/40 tabular-nums">{progress}%</span>
+          <span className="text-[11px] font-semibold text-muted-foreground tabular-nums">{progress}%</span>
         </div>
 
         {/* Stats pills */}
         <div className="hidden md:flex items-center gap-1.5">
-          <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span className="text-[10px] font-bold text-emerald-400 tabular-nums">{passCount}</span>
+          <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{passCount}</span>
           </div>
-          <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-500/10 border border-red-500/20">
-            <div className="w-1.5 h-1.5 rounded-full bg-red-400" />
-            <span className="text-[10px] font-bold text-red-400 tabular-nums">{failCount}</span>
+          <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20">
+            <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+            <span className="text-[10px] font-bold text-red-600 dark:text-red-400 tabular-nums">{failCount}</span>
           </div>
-          <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/5 border border-white/10">
-            <div className="w-1.5 h-1.5 rounded-full bg-white/40" />
-            <span className="text-[10px] font-bold text-white/40 tabular-nums">{naCount}</span>
+          <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-muted border border-border">
+            <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
+            <span className="text-[10px] font-bold text-muted-foreground tabular-nums">{naCount}</span>
           </div>
-          <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-violet-500/10 border border-violet-500/20">
-            <span className="text-[10px] font-bold text-violet-400 tabular-nums">{untestedCount} left</span>
+          <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-primary/5 border border-primary/20">
+            <span className="text-[10px] font-bold text-primary tabular-nums">{untestedCount} left</span>
           </div>
         </div>
 
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="icon" onClick={() => setShowShortcuts(s => !s)}
-            className="h-8 w-8 rounded-lg text-white/40 hover:text-white hover:bg-white/5 hidden sm:flex">
+            className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted hidden sm:flex">
             <Keyboard className="w-3.5 h-3.5" />
           </Button>
           <Button variant="ghost" size="icon" onClick={() => setDrawerOpen(true)}
-            className="h-8 w-8 rounded-lg text-white/40 hover:text-white hover:bg-white/5">
+            className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted">
             <Menu className="w-4 h-4" />
           </Button>
           <Button size="sm" onClick={() => setCompleteOpen(true)}
             className={cn('rounded-lg px-3 text-[11px] font-semibold h-7 ml-1',
-              untestedCount === 0 ? 'bg-emerald-500 hover:bg-emerald-600 text-white border-0' : 'bg-white/5 hover:bg-white/10 text-white/70 border border-white/10')}>
+              untestedCount === 0
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-0'
+                : 'bg-muted hover:bg-muted/80 text-muted-foreground border border-border')}>
             {untestedCount === 0 ? 'Finish' : 'End'}
           </Button>
         </div>
@@ -373,12 +433,12 @@ export default function TestSessionPage() {
       <AnimatePresence>
         {showShortcuts && (
           <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}
-            className="absolute top-16 right-4 z-40 bg-[#1a1a1d] border border-white/10 rounded-xl p-3 shadow-2xl">
+            className="absolute top-16 right-4 z-40 bg-card border border-border rounded-xl p-3 shadow-lg">
             <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px]">
               {[['P', 'Pass'], ['F', 'Fail'], ['N', 'N/A'], ['←', 'Prev'], ['→', 'Next']].map(([k, v]) => (
                 <div key={k} className="flex items-center gap-2">
-                  <kbd className="px-1.5 py-0.5 rounded bg-white/10 border border-white/10 font-mono text-white/70">{k}</kbd>
-                  <span className="text-white/50">{v}</span>
+                  <kbd className="px-1.5 py-0.5 rounded bg-muted border border-border font-mono text-muted-foreground">{k}</kbd>
+                  <span className="text-muted-foreground">{v}</span>
                 </div>
               ))}
             </div>
@@ -395,28 +455,28 @@ export default function TestSessionPage() {
             className="w-full max-w-[680px]">
 
             {/* Card */}
-            <div className="rounded-2xl border border-white/[0.08] bg-[#111113] overflow-hidden shadow-2xl shadow-black/20">
+            <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
 
               {/* Card header */}
-              <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between">
+              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
                 <div className="flex items-center gap-2.5 flex-wrap">
-                  <span className="text-[10px] font-mono text-white/30 bg-white/[0.04] px-2 py-0.5 rounded-md border border-white/[0.06]">
+                  <span className="text-[10px] font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded-md border border-border">
                     {currentIndex + 1}/{total}
                   </span>
                   {tc?.priority && (
                     <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-md',
-                      tc.priority === 'High' ? 'bg-red-500/15 text-red-400 border border-red-500/20' :
-                      tc.priority === 'Medium' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20' :
-                      'bg-white/5 text-white/50 border border-white/10'
+                      tc.priority === 'High' ? 'bg-red-50 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/20' :
+                      tc.priority === 'Medium' ? 'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20' :
+                      'bg-muted text-muted-foreground border border-border'
                     )}>{tc.priority}</span>
                   )}
                   {tc?.testBed && (
-                    <span className="text-[10px] text-white/40 bg-white/[0.04] px-2 py-0.5 rounded-md border border-white/[0.06]">
+                    <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-md border border-border">
                       {tc.testBed}
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-1.5 text-white/30">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
                   <Clock className="w-3 h-3" />
                   <span className="text-[11px] font-mono tabular-nums">{timer}</span>
                 </div>
@@ -425,7 +485,7 @@ export default function TestSessionPage() {
               {/* Card body */}
               <div className="px-6 py-6 space-y-6">
                 {/* Title */}
-                <h2 className="text-lg font-semibold text-white leading-snug tracking-tight">
+                <h2 className="text-lg font-semibold text-foreground leading-snug tracking-tight">
                   {tc?.testCaseTitle}
                 </h2>
 
@@ -433,19 +493,19 @@ export default function TestSessionPage() {
                 {steps.length > 0 && (
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-2">
-                      <ListChecks className="w-3.5 h-3.5 text-violet-400" />
-                      <span className="text-[11px] font-semibold text-white/40 uppercase tracking-wider">Steps</span>
+                      <ListChecks className="w-3.5 h-3.5 text-primary" />
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Steps</span>
                     </div>
                     <div className="space-y-1.5 pl-1">
                       {steps.map((step, i) => (
                         <motion.div key={i}
                           initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: i * 0.03 }}
-                          className="flex gap-3 items-start py-2 px-3 rounded-lg hover:bg-white/[0.02] transition-colors">
-                          <span className="shrink-0 w-5 h-5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[10px] font-bold flex items-center justify-center mt-0.5">
+                          className="flex gap-3 items-start py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors">
+                          <span className="shrink-0 w-5 h-5 rounded-md bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold flex items-center justify-center mt-0.5">
                             {i + 1}
                           </span>
-                          <p className="text-[13px] text-white/70 leading-relaxed">{step.replace(/^\d+[\.\)]\s*/, '')}</p>
+                          <p className="text-[13px] text-foreground/70 leading-relaxed">{step.replace(/^\d+[\.\)]\s*/, '')}</p>
                         </motion.div>
                       ))}
                     </div>
@@ -455,72 +515,89 @@ export default function TestSessionPage() {
                 {/* Expected */}
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
-                    <Target className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-[11px] font-semibold text-white/40 uppercase tracking-wider">Expected</span>
+                    <Target className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Expected</span>
                   </div>
-                  <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/[0.04] px-4 py-3">
-                    <p className="text-[13px] text-white/70 leading-relaxed whitespace-pre-wrap">{tc?.expectedResult || 'Not defined'}</p>
+                  <div className="rounded-xl border border-emerald-200 dark:border-emerald-500/15 bg-emerald-50 dark:bg-emerald-500/[0.04] px-4 py-3">
+                    <p className="text-[13px] text-foreground/70 leading-relaxed whitespace-pre-wrap">{tc?.expectedResult || 'Not defined'}</p>
                   </div>
                 </div>
 
-                {/* Actual */}
+                {/* Actual result */}
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
-                    <Bug className="w-3.5 h-3.5 text-white/30" />
-                    <span className="text-[11px] font-semibold text-white/40 uppercase tracking-wider">Actual Result</span>
+                    <Bug className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Actual Result</span>
                   </div>
                   <Textarea placeholder="What happened..."
-                    value={tc?.actualResult || ''} onChange={e => patchField('actualResult', e.target.value)} onBlur={saveField}
-                    className="resize-none h-20 text-[13px] bg-white/[0.03] border-white/[0.08] text-white/80 placeholder:text-white/20 rounded-xl focus:border-violet-500/30 focus:ring-1 focus:ring-violet-500/20" />
+                    value={tc?.actualResult || ''}
+                    onChange={e => patchField('actualResult', e.target.value)}
+                    onBlur={saveField}
+                    className="resize-none h-20 text-[13px] bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 rounded-xl focus:border-primary/30 focus:ring-1 focus:ring-primary/20" />
                 </div>
               </div>
 
               {/* Verdict buttons */}
-              <div className="px-6 py-5 border-t border-white/[0.06] bg-white/[0.01]">
+              <div className="px-6 py-5 border-t border-border bg-muted/30">
                 <div className="grid grid-cols-3 gap-3">
+                  {/* Pass button */}
                   <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
                     onClick={() => markStatus('Pass')}
                     className={cn('group relative flex flex-col items-center gap-2 py-4 rounded-xl border transition-all duration-200',
-                      verdict === 'Pass' ? 'border-emerald-500/50 bg-emerald-500/10 shadow-lg shadow-emerald-500/10' : 'border-white/[0.08] bg-white/[0.02] hover:border-emerald-500/30 hover:bg-emerald-500/5')}>
+                      verdict === 'Pass'
+                        ? 'border-emerald-500/50 bg-emerald-50 dark:bg-emerald-500/10 shadow-lg shadow-emerald-500/10'
+                        : 'border-border bg-card hover:border-emerald-300 dark:hover:border-emerald-500/30 hover:bg-emerald-50/50 dark:hover:bg-emerald-500/5')}>
                     <div className={cn('w-10 h-10 rounded-full flex items-center justify-center transition-all',
-                      verdict === 'Pass' ? 'bg-emerald-500/20' : 'bg-white/[0.04] group-hover:bg-emerald-500/10')}>
-                      <CheckCircle2 className={cn('w-5 h-5 transition-colors', verdict === 'Pass' ? 'text-emerald-400' : 'text-white/40 group-hover:text-emerald-400')} />
+                      verdict === 'Pass' ? 'bg-emerald-100 dark:bg-emerald-500/20' : 'bg-muted group-hover:bg-emerald-100 dark:group-hover:bg-emerald-500/10')}>
+                      <CheckCircle2 className={cn('w-5 h-5 transition-colors',
+                        verdict === 'Pass' ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground group-hover:text-emerald-600 dark:group-hover:text-emerald-400')} />
                     </div>
-                    <span className={cn('text-xs font-semibold', verdict === 'Pass' ? 'text-emerald-400' : 'text-white/50 group-hover:text-emerald-400')}>Pass</span>
-                    <kbd className="text-[9px] font-mono text-white/20 bg-white/[0.04] border border-white/[0.06] px-1.5 py-0.5 rounded">P</kbd>
+                    <span className={cn('text-xs font-semibold',
+                      verdict === 'Pass' ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground group-hover:text-emerald-600 dark:group-hover:text-emerald-400')}>Pass</span>
+                    <kbd className="text-[9px] font-mono text-muted-foreground/50 bg-muted border border-border px-1.5 py-0.5 rounded">P</kbd>
                   </motion.button>
 
+                  {/* Fail button */}
                   <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
                     onClick={() => setFailOpen(true)}
                     className={cn('group relative flex flex-col items-center gap-2 py-4 rounded-xl border transition-all duration-200',
-                      verdict === 'Fail' ? 'border-red-500/50 bg-red-500/10 shadow-lg shadow-red-500/10' : 'border-white/[0.08] bg-white/[0.02] hover:border-red-500/30 hover:bg-red-500/5')}>
+                      verdict === 'Fail'
+                        ? 'border-red-500/50 bg-red-50 dark:bg-red-500/10 shadow-lg shadow-red-500/10'
+                        : 'border-border bg-card hover:border-red-300 dark:hover:border-red-500/30 hover:bg-red-50/50 dark:hover:bg-red-500/5')}>
                     <div className={cn('w-10 h-10 rounded-full flex items-center justify-center transition-all',
-                      verdict === 'Fail' ? 'bg-red-500/20' : 'bg-white/[0.04] group-hover:bg-red-500/10')}>
-                      <XCircle className={cn('w-5 h-5 transition-colors', verdict === 'Fail' ? 'text-red-400' : 'text-white/40 group-hover:text-red-400')} />
+                      verdict === 'Fail' ? 'bg-red-100 dark:bg-red-500/20' : 'bg-muted group-hover:bg-red-100 dark:group-hover:bg-red-500/10')}>
+                      <XCircle className={cn('w-5 h-5 transition-colors',
+                        verdict === 'Fail' ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground group-hover:text-red-600 dark:group-hover:text-red-400')} />
                     </div>
-                    <span className={cn('text-xs font-semibold', verdict === 'Fail' ? 'text-red-400' : 'text-white/50 group-hover:text-red-400')}>Fail</span>
-                    <kbd className="text-[9px] font-mono text-white/20 bg-white/[0.04] border border-white/[0.06] px-1.5 py-0.5 rounded">F</kbd>
+                    <span className={cn('text-xs font-semibold',
+                      verdict === 'Fail' ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground group-hover:text-red-600 dark:group-hover:text-red-400')}>Fail</span>
+                    <kbd className="text-[9px] font-mono text-muted-foreground/50 bg-muted border border-border px-1.5 py-0.5 rounded">F</kbd>
                   </motion.button>
 
+                  {/* N/A (Skip) button */}
                   <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
                     onClick={() => setNaOpen(true)}
                     className={cn('group relative flex flex-col items-center gap-2 py-4 rounded-xl border transition-all duration-200',
-                      verdict === 'N/A' ? 'border-white/20 bg-white/[0.06]' : 'border-white/[0.08] bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.04]')}>
+                      verdict === 'N/A'
+                        ? 'border-border bg-muted/80'
+                        : 'border-border bg-card hover:border-border hover:bg-muted/50')}>
                     <div className={cn('w-10 h-10 rounded-full flex items-center justify-center transition-all',
-                      verdict === 'N/A' ? 'bg-white/10' : 'bg-white/[0.04] group-hover:bg-white/[0.06]')}>
-                      <SkipForward className={cn('w-5 h-5 transition-colors', verdict === 'N/A' ? 'text-white/60' : 'text-white/30 group-hover:text-white/50')} />
+                      verdict === 'N/A' ? 'bg-muted' : 'bg-muted group-hover:bg-muted/80')}>
+                      <SkipForward className={cn('w-5 h-5 transition-colors',
+                        verdict === 'N/A' ? 'text-foreground/60' : 'text-muted-foreground group-hover:text-foreground/60')} />
                     </div>
-                    <span className={cn('text-xs font-semibold', verdict === 'N/A' ? 'text-white/60' : 'text-white/40 group-hover:text-white/50')}>Skip</span>
-                    <kbd className="text-[9px] font-mono text-white/20 bg-white/[0.04] border border-white/[0.06] px-1.5 py-0.5 rounded">N</kbd>
+                    <span className={cn('text-xs font-semibold',
+                      verdict === 'N/A' ? 'text-foreground/60' : 'text-muted-foreground group-hover:text-foreground/60')}>Skip</span>
+                    <kbd className="text-[9px] font-mono text-muted-foreground/50 bg-muted border border-border px-1.5 py-0.5 rounded">N</kbd>
                   </motion.button>
                 </div>
               </div>
             </div>
 
-            {/* Navigation */}
+            {/* Dot navigation */}
             <div className="flex items-center justify-between mt-5 px-1">
               <Button variant="ghost" size="sm" disabled={currentIndex === 0} onClick={goPrev}
-                className="rounded-lg text-xs text-white/40 hover:text-white hover:bg-white/5 disabled:opacity-20 gap-1.5">
+                className="rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-20 gap-1.5">
                 <ChevronLeft className="w-3.5 h-3.5" /> Prev
               </Button>
               <div className="flex items-center gap-1">
@@ -529,12 +606,15 @@ export default function TestSessionPage() {
                   return (
                     <button key={idx} onClick={() => setCurrentIndex(idx)}
                       className={cn('w-1.5 h-1.5 rounded-full transition-all',
-                        idx === currentIndex ? 'w-4 bg-violet-400' : session.testCases[idx]?.status === 'Pass' ? 'bg-emerald-500' : session.testCases[idx]?.status.includes('Fail') ? 'bg-red-500' : 'bg-white/15 hover:bg-white/30')} />
+                        idx === currentIndex ? 'w-4 bg-primary' :
+                        session.testCases[idx]?.status === 'Pass' ? 'bg-emerald-500' :
+                        session.testCases[idx]?.status.includes('Fail') ? 'bg-red-500' :
+                        'bg-muted-foreground/20 hover:bg-muted-foreground/40')} />
                   );
                 })}
               </div>
               <Button variant="ghost" size="sm" disabled={currentIndex === total - 1} onClick={goNext}
-                className="rounded-lg text-xs text-white/40 hover:text-white hover:bg-white/5 disabled:opacity-20 gap-1.5">
+                className="rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-20 gap-1.5">
                 Next <ChevronRight className="w-3.5 h-3.5" />
               </Button>
             </div>
@@ -548,31 +628,33 @@ export default function TestSessionPage() {
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setDrawerOpen(false)}
-              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
+              className="fixed inset-0 z-40 bg-black/40 dark:bg-black/60 backdrop-blur-sm" />
             <motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className="fixed right-0 top-0 bottom-0 z-50 w-80 max-w-[85vw] bg-[#111113] border-l border-white/[0.06] flex flex-col">
-              <div className="flex items-center justify-between px-4 py-4 border-b border-white/[0.06]">
+              className="fixed right-0 top-0 bottom-0 z-50 w-80 max-w-[85vw] bg-card border-l border-border flex flex-col">
+              <div className="flex items-center justify-between px-4 py-4 border-b border-border">
                 <div>
-                  <p className="text-sm font-semibold text-white">Test Cases</p>
-                  <p className="text-[10px] text-white/40">{total} total · {untestedCount} remaining</p>
+                  <p className="text-sm font-semibold text-foreground">Test Cases</p>
+                  <p className="text-[10px] text-muted-foreground">{total} total · {untestedCount} remaining</p>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => setDrawerOpen(false)} className="h-7 w-7 text-white/40 hover:text-white hover:bg-white/5">
+                <Button variant="ghost" size="icon" onClick={() => setDrawerOpen(false)}
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted">
                   <X className="w-4 h-4" />
                 </Button>
               </div>
-              <div className="px-3 py-2 border-b border-white/[0.04]">
+              <div className="px-3 py-2 border-b border-border">
                 <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30" />
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                   <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search..."
-                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg text-white placeholder:text-white/20 focus:outline-none focus:border-violet-500/30" />
+                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-muted/50 border border-border rounded-lg text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/30" />
                 </div>
               </div>
-              <div className="flex gap-1 px-3 py-2 border-b border-white/[0.04]">
+
+              <div className="flex gap-1 px-3 py-2 border-b border-border">
                 {[{ key: 'all', label: 'All' }, { key: 'Untested', label: 'Todo' }, { key: 'Pass', label: 'Pass' }, { key: 'fail', label: 'Fail' }].map(f => (
                   <button key={f.key} onClick={() => setFilterStatus(f.key)}
                     className={cn('text-[10px] font-semibold px-2.5 py-1 rounded-md transition-colors',
-                      filterStatus === f.key ? 'bg-violet-500/20 text-violet-300' : 'text-white/30 hover:text-white/50 hover:bg-white/5')}>
+                      filterStatus === f.key ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted')}>
                     {f.label}
                   </button>
                 ))}
@@ -583,20 +665,21 @@ export default function TestSessionPage() {
                   if (casesInBed.length === 0) return null;
                   return (
                     <div key={bed}>
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-white/20 px-2 py-1">{bed}</p>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 px-2 py-1">{bed}</p>
                       {casesInBed.map(t => {
                         const idx = session.testCases.findIndex(x => x.id === t.id);
                         const active = idx === currentIndex;
-                        const dot = t.status === 'Pass' ? 'bg-emerald-400' : t.status.includes('Fail') ? 'bg-red-400' : t.status === 'N/A' ? 'bg-white/30' : 'bg-white/10';
+                        const dot = t.status === 'Pass' ? 'bg-emerald-500' : t.status.includes('Fail') ? 'bg-red-500' : t.status === 'N/A' ? 'bg-muted-foreground/40' : 'bg-muted-foreground/15';
                         return (
                           <button key={t.id} onClick={() => { setCurrentIndex(idx); setDrawerOpen(false); }}
                             className={cn('w-full flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-all',
-                              active ? 'bg-violet-500/10 border border-violet-500/20' : 'hover:bg-white/[0.03] border border-transparent')}>
+                              active ? 'bg-primary/5 border border-primary/20' : 'hover:bg-muted/50 border border-transparent')}>
                             <div className={cn('mt-1.5 w-2 h-2 rounded-full shrink-0', dot)} />
                             <div className="min-w-0 flex-1">
-                              <p className={cn('text-[11px] leading-snug line-clamp-2', active ? 'text-white font-medium' : 'text-white/50')}>{t.testCaseTitle}</p>
+                              <p className={cn('text-[11px] leading-snug line-clamp-2',
+                                active ? 'text-foreground font-medium' : 'text-muted-foreground')}>{t.testCaseTitle}</p>
                             </div>
-                            {active && <ArrowRight className="w-3 h-3 text-violet-400 shrink-0 mt-1" />}
+                            {active && <ArrowRight className="w-3 h-3 text-primary shrink-0 mt-1" />}
                           </button>
                         );
                       })}
@@ -611,51 +694,64 @@ export default function TestSessionPage() {
 
       {/* ─── Fail Dialog ─── */}
       <Dialog open={failOpen} onOpenChange={v => { setFailOpen(v); if (!v) { setJiraIssueKey(null); setJiraIssueLink(null); } }}>
-        <DialogContent className="sm:max-w-md bg-[#141416] border-white/[0.08] text-white">
+        <DialogContent className="sm:max-w-md bg-card border-border text-foreground max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-white">
-              <div className="w-7 h-7 rounded-lg bg-red-500/15 border border-red-500/20 flex items-center justify-center">
-                <Bug className="w-3.5 h-3.5 text-red-400" />
+            <DialogTitle className="flex items-center gap-2 text-foreground">
+              <div className="w-7 h-7 rounded-lg bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-500/20 flex items-center justify-center">
+                <Bug className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
               </div>
               Log Bug
             </DialogTitle>
-            <DialogDescription className="text-white/40">Link an existing Jira issue or create a new one.</DialogDescription>
+            <DialogDescription className="text-muted-foreground">
+              Link an existing Jira issue or create a new one.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-3">
             <div className="space-y-2">
-              <label className="text-[11px] font-medium text-white/50">Bug ID</label>
+              <label className="text-[11px] font-medium text-muted-foreground">Bug ID</label>
               <Input placeholder="e.g. SUN-1234" value={bugId}
                 onChange={e => setBugId(e.target.value.toUpperCase())}
-                className="h-10 text-sm font-mono bg-white/[0.03] border-white/[0.1] text-white placeholder:text-white/20 focus:border-violet-500/40 rounded-xl" />
-              {bugFetching && <div className="flex items-center gap-2 text-[11px] text-white/40"><Loader2 className="w-3 h-3 animate-spin" />Looking up {bugId}...</div>}
+                className="h-10 text-sm font-mono bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 focus:border-primary/40 rounded-xl" />
+              {bugFetching && (
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <Loader2 className="w-3 h-3 animate-spin" />Looking up {bugId}...
+                </div>
+              )}
               {bugTitle && !bugFetching && (
                 <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center gap-2 text-[11px] text-emerald-400 bg-emerald-500/[0.06] border border-emerald-500/20 rounded-lg px-3 py-2">
+                  className="flex items-center gap-2 text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/[0.06] border border-emerald-200 dark:border-emerald-500/20 rounded-lg px-3 py-2">
                   <CheckCircle2 className="w-3 h-3 shrink-0" />
                   <span className="truncate">{bugId} — {bugTitle}</span>
                 </motion.div>
               )}
               {bugFetchError && !bugFetching && (
-                <div className="flex items-center gap-2 text-[11px] text-amber-400 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2 text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/[0.06] border border-amber-200 dark:border-amber-500/20 rounded-lg px-3 py-2">
                   <XCircle className="w-3 h-3 shrink-0" /><span>{bugFetchError}</span>
                 </div>
               )}
             </div>
+
             <div className="space-y-2">
-              <label className="text-[11px] font-medium text-white/50">Notes</label>
-              <Textarea placeholder="What went wrong..." value={bugDesc} onChange={e => setBugDesc(e.target.value)}
-                className="resize-none h-20 text-sm bg-white/[0.03] border-white/[0.1] text-white placeholder:text-white/20 rounded-xl focus:border-violet-500/40" />
+              <label className="text-[11px] font-medium text-muted-foreground">Notes</label>
+              <Textarea placeholder="What went wrong..." value={bugDesc}
+                onChange={e => setBugDesc(e.target.value)}
+                className="resize-none h-20 text-sm bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 rounded-xl focus:border-primary/40" />
             </div>
-            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
-              <p className="text-[9px] font-bold text-white/30 uppercase tracking-widest mb-2">Jira</p>
+            <div className="rounded-xl border border-border bg-muted/30 p-3">
+              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Jira</p>
               {jiraIssueKey ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-semibold text-emerald-400">✓ {jiraIssueKey}</span>
-                  {jiraIssueLink && <a href={jiraIssueLink} target="_blank" rel="noopener noreferrer" className="text-[11px] text-violet-400 hover:underline flex items-center gap-1">Open <ExternalLink className="w-3 h-3" /></a>}
+                  <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">✓ {jiraIssueKey}</span>
+                  {jiraIssueLink && (
+                    <a href={jiraIssueLink} target="_blank" rel="noopener noreferrer"
+                      className="text-[11px] text-primary hover:underline flex items-center gap-1">
+                      Open <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
                 </div>
               ) : (
                 <Button size="sm" variant="outline" disabled={jiraPushing} onClick={pushToJira}
-                  className="h-7 text-[11px] gap-1.5 bg-transparent border-white/10 text-white/60 hover:text-white hover:bg-white/5">
+                  className="h-7 text-[11px] gap-1.5 bg-transparent border-border text-muted-foreground hover:text-foreground hover:bg-muted">
                   {jiraPushing ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
                   Create in Jira
                 </Button>
@@ -663,9 +759,11 @@ export default function TestSessionPage() {
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setFailOpen(false)} className="text-white/50 hover:text-white hover:bg-white/5">Cancel</Button>
-            <Button size="sm" onClick={() => markStatus('Fail', { bugId: bugId || undefined, bugDesc: bugDesc || undefined, bugTitle: bugTitle || undefined })}
-              className="bg-red-500 hover:bg-red-600 text-white border-0 rounded-lg">
+            <Button variant="ghost" size="sm" onClick={() => setFailOpen(false)}
+              className="text-muted-foreground hover:text-foreground hover:bg-muted">Cancel</Button>
+            <Button size="sm"
+              onClick={() => markStatus('Fail', { bugId: bugId || undefined, bugDesc: bugDesc || undefined, bugTitle: bugTitle || undefined })}
+              className="bg-red-600 hover:bg-red-700 text-white border-0 rounded-lg">
               Confirm Fail
             </Button>
           </DialogFooter>
@@ -674,23 +772,27 @@ export default function TestSessionPage() {
 
       {/* ─── N/A Dialog ─── */}
       <Dialog open={naOpen} onOpenChange={setNaOpen}>
-        <DialogContent className="sm:max-w-sm bg-[#141416] border-white/[0.08] text-white">
+        <DialogContent className="sm:max-w-sm bg-card border-border text-foreground max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-white">Skip Test Case</DialogTitle>
-            <DialogDescription className="text-white/40">Why is this not applicable?</DialogDescription>
+            <DialogTitle className="text-foreground">Skip Test Case</DialogTitle>
+            <DialogDescription className="text-muted-foreground">Why is this not applicable?</DialogDescription>
           </DialogHeader>
           <Select onValueChange={setNaReason}>
-            <SelectTrigger className="bg-white/[0.03] border-white/[0.1] text-white rounded-xl">
+            <SelectTrigger className="bg-muted/50 border-border text-foreground rounded-xl">
               <SelectValue placeholder="Select reason..." />
             </SelectTrigger>
-            <SelectContent className="bg-[#1a1a1d] border-white/[0.1]">
-              {naReasonOptions.map(r => <SelectItem key={r} value={r} className="text-white/70 focus:text-white focus:bg-white/5">{r}</SelectItem>)}
+            <SelectContent className="bg-card border-border">
+              {naReasonOptions.map(r => (
+                <SelectItem key={r} value={r} className="text-foreground/70 focus:text-foreground focus:bg-muted">{r}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <DialogFooter className="mt-2 gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setNaOpen(false)} className="text-white/50 hover:text-white hover:bg-white/5">Cancel</Button>
-            <Button size="sm" disabled={!naReason} onClick={() => markStatus('N/A', { naReason })}
-              className="bg-white/10 hover:bg-white/15 text-white border border-white/10 rounded-lg disabled:opacity-30">
+            <Button variant="ghost" size="sm" onClick={() => setNaOpen(false)}
+              className="text-muted-foreground hover:text-foreground hover:bg-muted">Cancel</Button>
+            <Button size="sm" disabled={!naReason}
+              onClick={() => markStatus('N/A', { naReason })}
+              className="bg-muted hover:bg-muted/80 text-foreground border border-border rounded-lg disabled:opacity-30">
               Confirm Skip
             </Button>
           </DialogFooter>
@@ -699,27 +801,34 @@ export default function TestSessionPage() {
 
       {/* ─── Complete Dialog ─── */}
       <Dialog open={completeOpen} onOpenChange={setCompleteOpen}>
-        <DialogContent className="sm:max-w-sm bg-[#141416] border-white/[0.08] text-white">
+        <DialogContent className="sm:max-w-sm bg-card border-border text-foreground max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-white">{untestedCount === 0 ? 'Session Complete' : 'End Session?'}</DialogTitle>
-            <DialogDescription className="text-white/40">
-              {untestedCount === 0 ? 'All cases executed. Generate the report.' : `${untestedCount} cases remain untested.`}
+            <DialogTitle className="text-foreground">
+              {untestedCount === 0 ? 'Session Complete' : 'End Session?'}
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {untestedCount === 0
+                ? 'All cases executed. Generate the report.'
+                : `${untestedCount} cases remain untested.`}
             </DialogDescription>
           </DialogHeader>
           {untestedCount > 0 && (
             <Select onValueChange={setIncompleteReason}>
-              <SelectTrigger className="bg-white/[0.03] border-white/[0.1] text-white rounded-xl">
+              <SelectTrigger className="bg-muted/50 border-border text-foreground rounded-xl">
                 <SelectValue placeholder="Reason..." />
               </SelectTrigger>
-              <SelectContent className="bg-[#1a1a1d] border-white/[0.1]">
-                {incompleteReasonOptions.map(r => <SelectItem key={r} value={r} className="text-white/70 focus:text-white focus:bg-white/5">{r}</SelectItem>)}
+              <SelectContent className="bg-card border-border">
+                {incompleteReasonOptions.map(r => (
+                  <SelectItem key={r} value={r} className="text-foreground/70 focus:text-foreground focus:bg-muted">{r}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           )}
           <DialogFooter className="mt-2 gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setCompleteOpen(false)} className="text-white/50 hover:text-white hover:bg-white/5">Cancel</Button>
+            <Button variant="ghost" size="sm" onClick={() => setCompleteOpen(false)}
+              className="text-muted-foreground hover:text-foreground hover:bg-muted">Cancel</Button>
             <Button size="sm" onClick={() => handleComplete(incompleteReason)}
-              className="bg-emerald-500 hover:bg-emerald-600 text-white border-0 rounded-lg">
+              className="bg-emerald-600 hover:bg-emerald-700 text-white border-0 rounded-lg">
               Generate Report
             </Button>
           </DialogFooter>
