@@ -234,6 +234,8 @@ export default function TestSessionPage() {
     const currentTc = session.testCases[currentIndex];
     if (!currentTc) return;
     setVerdict(base);
+
+    // Save any pending actual result before marking
     const updated = [...session.testCases];
     updated[currentIndex] = {
       ...currentTc, status: base, lastModified: new Date(),
@@ -254,7 +256,7 @@ export default function TestSessionPage() {
     setTimeout(() => {
       if (currentIndex < updated.length - 1) setCurrentIndex(i => i + 1);
       else setCompleteOpen(true);
-    }, 400);
+    }, 300);
     setFailOpen(false); setNaOpen(false);
   }, [session, currentIndex, handleUpdate]);
 
@@ -703,22 +705,24 @@ export default function TestSessionPage() {
       </Dialog>
 
       {/* ─── N/A Dialog ─── */}
-      <Dialog open={naOpen} onOpenChange={setNaOpen}>
+      <Dialog open={naOpen} onOpenChange={v => { setNaOpen(v); if (!v) setNaReason(''); }}>
         <DialogContent className="sm:max-w-sm bg-card border-border text-foreground max-h-[85vh] overflow-y-auto rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-foreground">Skip Test Case</DialogTitle>
             <DialogDescription className="text-muted-foreground">Why is this not applicable?</DialogDescription>
           </DialogHeader>
-          <Select onValueChange={setNaReason}>
-            <SelectTrigger className="bg-muted/50 border-border text-foreground rounded-xl">
-              <SelectValue placeholder="Select reason..." />
-            </SelectTrigger>
-            <SelectContent className="bg-card border-border">
-              {naReasonOptions.map(r => (
-                <SelectItem key={r} value={r} className="text-foreground/70 focus:text-foreground focus:bg-muted">{r}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {naOpen && (
+            <Select value={naReason} onValueChange={setNaReason}>
+              <SelectTrigger className="bg-muted/50 border-border text-foreground rounded-xl">
+                <SelectValue placeholder="Select reason..." />
+              </SelectTrigger>
+              <SelectContent className="bg-card border-border">
+                {naReasonOptions.map(r => (
+                  <SelectItem key={r} value={r} className="text-foreground/70 focus:text-foreground focus:bg-muted">{r}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <DialogFooter className="mt-2 gap-2">
             <Button variant="ghost" size="sm" onClick={() => setNaOpen(false)}
               className="text-muted-foreground hover:text-foreground hover:bg-muted">Cancel</Button>

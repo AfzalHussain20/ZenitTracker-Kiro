@@ -32,6 +32,18 @@ function KpiCard({ title, value, subtitle, icon: Icon, color, delay }: {
   title: string; value: string | number; subtitle: string;
   icon: any; color: string; delay: number;
 }) {
+  const iconBgMap: Record<string, string> = {
+    'bg-emerald-500': 'bg-emerald-50 dark:bg-emerald-500/10',
+    'bg-red-500': 'bg-red-50 dark:bg-red-500/10',
+    'bg-blue-500': 'bg-blue-50 dark:bg-blue-500/10',
+    'bg-violet-500': 'bg-violet-50 dark:bg-violet-500/10',
+  };
+  const iconTextMap: Record<string, string> = {
+    'bg-emerald-500': 'text-emerald-600 dark:text-emerald-400',
+    'bg-red-500': 'text-red-600 dark:text-red-400',
+    'bg-blue-500': 'text-blue-600 dark:text-blue-400',
+    'bg-violet-500': 'text-violet-600 dark:text-violet-400',
+  };
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
@@ -44,8 +56,8 @@ function KpiCard({ title, value, subtitle, icon: Icon, color, delay }: {
           <p className="text-3xl font-bold text-foreground mt-1 tabular-nums">{value}</p>
           <p className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</p>
         </div>
-        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', color.replace('bg-', 'bg-').replace('-500', '-50') + ' dark:bg-opacity-10')}>
-          <Icon className={cn('w-5 h-5', color.replace('bg-', 'text-').replace('-500', '-600'))} />
+        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', iconBgMap[color] || 'bg-muted')}>
+          <Icon className={cn('w-5 h-5', iconTextMap[color] || 'text-muted-foreground')} />
         </div>
       </div>
     </motion.div>
@@ -56,11 +68,12 @@ export default function TestSessionResultPage() {
   const params = useParams();
   const router = useRouter();
   const sessionId = params.sessionId as string;
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [session, setSession] = useState<TestSession | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!sessionId || !user) return;
     (async () => {
       setLoading(true);
@@ -80,9 +93,9 @@ export default function TestSessionResultPage() {
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     })();
-  }, [sessionId, user]);
+  }, [sessionId, user, authLoading]);
 
-  if (loading) return (
+  if (loading || authLoading) return (
     <div className="h-screen flex items-center justify-center bg-background">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-3">
         <Loader2 className="animate-spin w-8 h-8 text-primary" />
@@ -101,9 +114,11 @@ export default function TestSessionResultPage() {
   const executed = passed + failed + na;
   const executionRate = total > 0 ? Math.round((executed / total) * 100) : 0;
 
-  const duration = session.createdAt && session.completedAt
-    ? formatDistanceStrict(session.completedAt as Date, session.createdAt as Date)
-    : "—";
+  const createdDate = getValidDate(session.createdAt);
+  const completedDate = getValidDate(session.completedAt);
+  const duration = createdDate && completedDate
+    ? formatDistanceStrict(completedDate, createdDate)
+    : "In progress";
 
   const chartData = [
     { name: 'Passed', value: passed, color: '#10b981' },
@@ -144,14 +159,25 @@ export default function TestSessionResultPage() {
             </div>
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{session.platformDetails.platformName} — Test Report</h1>
             <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1 flex-wrap">
-              <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" />{session.createdAt ? format(session.createdAt as Date, 'MMM dd, yyyy') : '—'}</span>
+              <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" />{createdDate ? format(createdDate, 'MMM dd, yyyy') : '—'}</span>
               <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{duration}</span>
               <span className="flex items-center gap-1">Tester: <span className="text-foreground font-medium">{session.userName}</span></span>
             </div>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => window.print()} className="text-xs"><Printer className="w-3.5 h-3.5 mr-1.5" />Print</Button>
-            <Button size="sm" className="text-xs bg-primary hover:bg-primary/90"><Download className="w-3.5 h-3.5 mr-1.5" />Export</Button>
+            <Button size="sm" className="text-xs bg-primary hover:bg-primary/90" onClick={() => {
+              if (!session) return;
+              const rows = [['#', 'Test Case', 'Module', 'Priority', 'Status', 'Bug ID', 'Bug Title', 'Notes'].join(',')];
+              session.testCases.forEach((tc, i) => {
+                rows.push([i + 1, `"${tc.testCaseTitle.replace(/"/g, '""')}"`, tc.testBed, tc.priority || '', tc.status, tc.bugId || '', tc.bugTitle || '', `"${(tc.notes || tc.naReason || tc.actualResult || '').replace(/"/g, '""')}"`].join(','));
+              });
+              const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url; a.download = `${session.platformDetails.platformName}_Report_${session.id.substring(0,8)}.csv`;
+              a.click(); URL.revokeObjectURL(url);
+            }}><Download className="w-3.5 h-3.5 mr-1.5" />Export CSV</Button>
           </div>
         </motion.header>
 
@@ -163,7 +189,7 @@ export default function TestSessionResultPage() {
             icon={Bug} color="bg-red-500" delay={0.15} />
           <KpiCard title="Execution" value={`${executionRate}%`} subtitle={`${executed} of ${total} run`}
             icon={Target} color="bg-blue-500" delay={0.2} />
-          <KpiCard title="Duration" value={duration} subtitle={session.createdAt ? format(session.createdAt as Date, 'h:mm a') + ' start' : '—'}
+          <KpiCard title="Duration" value={duration} subtitle={createdDate ? format(createdDate, 'h:mm a') + ' start' : '—'}
             icon={Clock} color="bg-violet-500" delay={0.25} />
         </div>
 
