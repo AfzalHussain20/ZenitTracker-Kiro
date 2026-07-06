@@ -639,19 +639,21 @@ export default function TestSessionPage() {
 
       {/* ─── Fail Dialog ─── */}
       <Dialog open={failOpen} onOpenChange={v => { setFailOpen(v); if (!v) { setJiraIssueKey(null); setJiraIssueLink(null); } }}>
-        <DialogContent className="sm:max-w-[420px] bg-card border-border text-foreground rounded-2xl p-5 gap-3">
-          <DialogHeader className="space-y-1">
-            <DialogTitle className="flex items-center gap-2 text-foreground text-base">
-              <div className="w-6 h-6 rounded-md bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-500/20 flex items-center justify-center">
-                <Bug className="w-3 h-3 text-red-600 dark:text-red-400" />
-              </div>
-              Log Bug
-            </DialogTitle>
-            <DialogDescription className="text-muted-foreground text-xs">
-              Link a Jira issue or create new.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
+        <DialogContent className="sm:max-w-[480px] lg:max-w-[520px] bg-card border-border text-foreground rounded-2xl p-0 gap-0 max-h-[90vh] flex flex-col">
+          <div className="px-5 pt-5 pb-3 shrink-0">
+            <DialogHeader className="space-y-1">
+              <DialogTitle className="flex items-center gap-2 text-foreground text-base">
+                <div className="w-6 h-6 rounded-md bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-500/20 flex items-center justify-center">
+                  <Bug className="w-3 h-3 text-red-600 dark:text-red-400" />
+                </div>
+                Log Bug
+              </DialogTitle>
+              <DialogDescription className="text-muted-foreground text-xs">
+                Link a Jira issue or create new.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="flex-1 overflow-y-auto px-5 pb-3 space-y-3 min-h-0">
             <div className="space-y-1.5">
               <label className="text-[11px] font-medium text-muted-foreground">Bug ID</label>
               <Input placeholder="e.g. SUN-1234" value={bugId}
@@ -693,14 +695,14 @@ export default function TestSessionPage() {
               )}
             </div>
           </div>
-          <DialogFooter className="gap-2 pt-1">
+          <div className="shrink-0 px-5 py-3 border-t border-border flex justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={() => setFailOpen(false)} className="h-8 text-xs text-muted-foreground hover:text-foreground">Cancel</Button>
             <Button size="sm"
               onClick={() => markStatus('Fail', { bugId: bugId || undefined, bugDesc: bugDesc || undefined, bugTitle: bugTitle || undefined })}
               className="h-8 text-xs bg-red-600 hover:bg-red-700 text-white border-0 rounded-lg px-4">
               Confirm Fail
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
