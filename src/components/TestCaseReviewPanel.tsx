@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   X,
   Check,
@@ -14,7 +14,10 @@ import {
   AlertTriangle,
   Filter,
   ExternalLink,
+  Rocket,
+  UploadCloud,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import type {
   StoredTestCase,
   TestCaseCategory,
@@ -44,6 +47,8 @@ interface TestCaseReviewPanelProps {
   pageTitle: string;
   testCases: StoredTestCase[];
   onClose: () => void;
+  onImportToSession?: () => void;
+  onTestCasesImported?: (imported: StoredTestCase[]) => void;
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────────
@@ -66,8 +71,11 @@ export default function TestCaseReviewPanel({
   pageTitle,
   testCases: initialTestCases,
   onClose,
+  onImportToSession,
+  onTestCasesImported,
 }: TestCaseReviewPanelProps) {
   // ─── State ───────────────────────────────────────────────────────────────────
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [testCases, setTestCases] = useState<StoredTestCase[]>(initialTestCases);
   const [activeTab, setActiveTab] = useState<TestCaseCategory>('Functional');
   const [sortColumn, setSortColumn] = useState<SortColumn>('testcaseId');
@@ -210,6 +218,67 @@ export default function TestCaseReviewPanel({
     downloadBlob(blob, filename);
   }, [testCases, pageTitle]);
 
+  const handleImportExcel = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const buffer = await file.arrayBuffer();
+        const wb = XLSX.read(buffer, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows: Record<string, string>[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        const now = new Date();
+        const imported: StoredTestCase[] = rows.map((row, idx) => {
+          const id = String(row['Testcase ID'] || row['testcaseId'] || `IMP-${idx + 1}`);
+          const module = String(row['Module'] || row['Test Bed'] || row['testBed'] || 'General');
+          const rawPriority = String(row['Priority'] || 'P1').toUpperCase();
+          const priority: Priority = rawPriority === 'P0' || rawPriority === 'HIGH'
+            ? 'P0'
+            : rawPriority === 'P2' || rawPriority === 'LOW'
+              ? 'P2'
+              : 'P1';
+          const testScenario = String(row['Test Scenario'] || row['Test Case'] || row['testCaseTitle'] || `Test Case ${idx + 1}`);
+          const stepsRaw = String(row['Test Steps'] || row['testSteps'] || '');
+          const testSteps = stepsRaw.split('\n').filter((s) => s.trim() !== '');
+          const expectedResult = String(row['Expected Result'] || row['expectedResult'] || '');
+          const rawCategory = String(row['Category'] || 'Functional');
+          const category = (['Functional', 'Negative', 'Exploratory', 'Sanity', 'Edge Case'].includes(rawCategory)
+            ? rawCategory
+            : 'Functional') as TestCaseCategory;
+
+          return {
+            testcaseId: id,
+            module,
+            priority,
+            testScenario,
+            testSteps: testSteps.length > 0 ? testSteps : ['Execute the test'],
+            expectedResult,
+            category,
+            reviewStatus: 'pending' as const,
+            editedFields: undefined,
+            sourceVerified: false,
+            createdAt: now,
+            updatedAt: now,
+          };
+        });
+
+        if (imported.length > 0) {
+          const merged = [...testCases, ...imported];
+          setTestCases(merged);
+          if (onTestCasesImported) {
+            onTestCasesImported(merged);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to import Excel file:', err);
+      }
+      // Reset input so re-selecting same file works
+      e.target.value = '';
+    },
+    [testCases, onTestCasesImported]
+  );
+
   // ─── Sort Icon Helper ────────────────────────────────────────────────────────
 
   const SortIcon = ({ column }: { column: SortColumn }) => {
@@ -234,6 +303,22 @@ export default function TestCaseReviewPanel({
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {/* Import from Excel */}
+          <input
+            type="file"
+            ref={importInputRef}
+            accept=".xlsx,.xls,.csv"
+            onChange={handleImportExcel}
+            className="hidden"
+          />
+          <button
+            onClick={() => importInputRef.current?.click()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted/50 transition-colors"
+            title="Import test cases from Excel"
+          >
+            <UploadCloud className="h-3.5 w-3.5 text-emerald-600" />
+            Import
+          </button>
           {/* Export buttons */}
           <button
             onClick={handleExportExcel}
@@ -251,6 +336,17 @@ export default function TestCaseReviewPanel({
             <FileText className="h-3.5 w-3.5 text-blue-600" />
             CSV
           </button>
+          {/* Run as Session */}
+          {onImportToSession && (
+            <button
+              onClick={onImportToSession}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary transition-colors"
+              title="Import to Test Session for execution"
+            >
+              <Rocket className="h-3.5 w-3.5" />
+              Run as Session
+            </button>
+          )}
           <button
             onClick={onClose}
             className="p-1.5 rounded-md hover:bg-muted/50 transition-colors"

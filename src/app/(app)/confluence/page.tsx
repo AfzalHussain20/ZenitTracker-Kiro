@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -251,6 +253,9 @@ function extractDesignLinks(body: string): DesignLink[] {
 }
 
 export default function ConfluencePage() {
+  const router = useRouter();
+  const { user, displayName } = useAuth();
+
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [pages, setPages] = useState<PageSummary[]>([]);
   const [selectedPage, setSelectedPage] = useState<PageDetail | null>(null);
@@ -494,6 +499,75 @@ export default function ConfluencePage() {
     } catch (err) {
       console.error('Failed to delete existing generation:', err);
       setGenerationError('Failed to clear previous results. Please try again.');
+    }
+  };
+
+  // ─── Import to Test Session (creates a Firestore session and navigates) ────
+  const handleImportToSession = async () => {
+    if (!user || !selectedPage || testCases.length === 0) return;
+
+    try {
+      const { collection, doc, setDoc, Timestamp } = await import('firebase/firestore');
+      const { db } = await import('@/lib/firebaseConfig');
+      if (!db) throw new Error('Firestore not initialized');
+
+      // Convert StoredTestCase[] → TestCase[] (session format)
+      // Only include non-rejected test cases
+      const sessionTestCases = testCases
+        .filter((tc) => tc.reviewStatus !== 'rejected')
+        .map((tc, idx) => ({
+          id: `session-tc-${idx}`,
+          orderIndex: idx,
+          testBed: tc.editedFields?.module ?? tc.module,
+          testCaseTitle: tc.editedFields?.testScenario ?? tc.testScenario,
+          testSteps: (tc.editedFields?.testSteps ?? tc.testSteps).join('\n'),
+          expectedResult: tc.editedFields?.expectedResult ?? tc.expectedResult,
+          actualResult: '',
+          notes: '',
+          status: 'Untested' as const,
+          priority: (tc.editedFields?.priority ?? tc.priority) === 'P0'
+            ? 'High' as const
+            : (tc.editedFields?.priority ?? tc.priority) === 'P1'
+              ? 'Medium' as const
+              : 'Low' as const,
+          lastModified: Timestamp.now(),
+        }));
+
+      if (sessionTestCases.length === 0) {
+        setGenerationError('No test cases to import (all were rejected).');
+        return;
+      }
+
+      const sessionsCol = collection(db, 'sessions');
+      const sessionRef = doc(sessionsCol);
+
+      const session = {
+        id: sessionRef.id,
+        userId: user.uid,
+        userName: displayName || user.email?.split('@')[0] || 'Tester',
+        platformDetails: {
+          platformName: 'Other' as const,
+          customPlatformName: `AI Generated - ${selectedPage.title}`,
+        },
+        testCases: sessionTestCases,
+        status: 'In Progress',
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        summary: {
+          total: sessionTestCases.length,
+          pass: 0,
+          fail: 0,
+          na: 0,
+          untested: sessionTestCases.length,
+          failKnown: 0,
+        },
+      };
+
+      await setDoc(sessionRef, session);
+      router.push(`/dashboard/session/${sessionRef.id}`);
+    } catch (err: any) {
+      console.error('Failed to create test session:', err);
+      setGenerationError('Failed to create test session: ' + (err.message || 'Unknown error'));
     }
   };
 
@@ -796,6 +870,8 @@ export default function ConfluencePage() {
               pageTitle={selectedPage.title}
               testCases={testCases}
               onClose={() => setShowReviewPanel(false)}
+              onImportToSession={handleImportToSession}
+              onTestCasesImported={(imported) => setTestCases(imported)}
             />
           </div>
         )}
