@@ -106,7 +106,7 @@ export default function TestSessionPage() {
   const params = useParams();
   const router = useRouter();
   const sessionId = params.sessionId as string;
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
 
   const [session, setSession] = useState<TestSession | null>(null);
@@ -177,7 +177,8 @@ export default function TestSessionPage() {
 
   // Load session
   useEffect(() => {
-    if (!sessionId || !user) return;
+    if (authLoading) return; // Wait for auth to resolve
+    if (!sessionId || !user) { router.replace('/dashboard'); return; }
     (async () => {
       setIsLoading(true);
       try {
@@ -201,7 +202,7 @@ export default function TestSessionPage() {
       } catch { toast({ title: 'Error', description: 'Failed to load session.', variant: 'destructive' }); }
       finally { setIsLoading(false); }
     })();
-  }, [sessionId, user, router, toast]);
+  }, [sessionId, user, authLoading, router, toast]);
 
   // Reset on index change
   useEffect(() => {
@@ -304,7 +305,7 @@ export default function TestSessionPage() {
   const saveField = () => session && handleUpdate({ testCases: session.testCases });
 
   // Loading state
-  if (isLoading) return (
+  if (isLoading || authLoading) return (
     <div className="fixed inset-0 bg-background flex items-center justify-center">
       <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
         className="flex flex-col items-center gap-4">
@@ -447,19 +448,19 @@ export default function TestSessionPage() {
       </AnimatePresence>
 
       {/* ─── Main Card Area ─── */}
-      <div className="flex-1 flex items-start justify-center overflow-y-auto py-8 px-4" {...swipeHandlers}>
+      <div className="flex-1 flex flex-col items-center min-h-0 px-4 py-4" {...swipeHandlers}>
         <AnimatePresence mode="wait">
           <motion.div key={tc?.id || currentIndex}
             initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
             transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-[680px]">
+            className="w-full max-w-[680px] flex flex-col min-h-0 flex-1">
 
-            {/* Card */}
-            <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
+            {/* Card — scrollable body, fixed footer */}
+            <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm flex flex-col min-h-0 flex-1">
 
-              {/* Card header */}
-              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-                <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Card header — always visible */}
+              <div className="px-5 py-3 border-b border-border flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded-md border border-border">
                     {currentIndex + 1}/{total}
                   </span>
@@ -471,9 +472,7 @@ export default function TestSessionPage() {
                     )}>{tc.priority}</span>
                   )}
                   {tc?.testBed && (
-                    <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-md border border-border">
-                      {tc.testBed}
-                    </span>
+                    <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-md border border-border">{tc.testBed}</span>
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -482,139 +481,83 @@ export default function TestSessionPage() {
                 </div>
               </div>
 
-              {/* Card body */}
-              <div className="px-6 py-6 space-y-6">
-                {/* Title */}
-                <h2 className="text-lg font-semibold text-foreground leading-snug tracking-tight">
-                  {tc?.testCaseTitle}
-                </h2>
+              {/* Card body — scrollable */}
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0">
+                <h2 className="text-base font-semibold text-foreground leading-snug">{tc?.testCaseTitle}</h2>
 
-                {/* Steps */}
                 {steps.length > 0 && (
-                  <div className="space-y-2.5">
+                  <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                       <ListChecks className="w-3.5 h-3.5 text-primary" />
-                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Steps</span>
+                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Steps</span>
                     </div>
-                    <div className="space-y-1.5 pl-1">
+                    <div className="space-y-1">
                       {steps.map((step, i) => (
-                        <motion.div key={i}
-                          initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: i * 0.03 }}
-                          className="flex gap-3 items-start py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors">
-                          <span className="shrink-0 w-5 h-5 rounded-md bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold flex items-center justify-center mt-0.5">
-                            {i + 1}
-                          </span>
+                        <div key={i} className="flex gap-2.5 items-start py-1.5 px-2.5 rounded-lg hover:bg-muted/50 transition-colors">
+                          <span className="shrink-0 w-4 h-4 rounded bg-primary/10 border border-primary/20 text-primary text-[9px] font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
                           <p className="text-[13px] text-foreground/70 leading-relaxed">{step.replace(/^\d+[\.\)]\s*/, '')}</p>
-                        </motion.div>
+                        </div>
                       ))}
                     </div>
                   </div>
                 )}
 
-                {/* Expected */}
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <div className="flex items-center gap-2">
                     <Target className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Expected</span>
+                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Expected</span>
                   </div>
-                  <div className="rounded-xl border border-emerald-200 dark:border-emerald-500/15 bg-emerald-50 dark:bg-emerald-500/[0.04] px-4 py-3">
+                  <div className="rounded-lg border border-emerald-200 dark:border-emerald-500/15 bg-emerald-50 dark:bg-emerald-500/[0.04] px-3 py-2">
                     <p className="text-[13px] text-foreground/70 leading-relaxed whitespace-pre-wrap">{tc?.expectedResult || 'Not defined'}</p>
                   </div>
                 </div>
 
-                {/* Actual result */}
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <div className="flex items-center gap-2">
                     <Bug className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Actual Result</span>
+                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Actual</span>
                   </div>
                   <Textarea placeholder="What happened..."
-                    value={tc?.actualResult || ''}
-                    onChange={e => patchField('actualResult', e.target.value)}
-                    onBlur={saveField}
-                    className="resize-none h-20 text-[13px] bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 rounded-xl focus:border-primary/30 focus:ring-1 focus:ring-primary/20" />
+                    value={tc?.actualResult || ''} onChange={e => patchField('actualResult', e.target.value)} onBlur={saveField}
+                    rows={2}
+                    className="resize-none text-[13px] bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 rounded-lg focus:border-primary/30 focus:ring-1 focus:ring-primary/20 min-h-0" />
                 </div>
               </div>
 
-              {/* Verdict buttons */}
-              <div className="px-6 py-5 border-t border-border bg-muted/30">
-                <div className="grid grid-cols-3 gap-3">
-                  {/* Pass button */}
-                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-                    onClick={() => markStatus('Pass')}
-                    className={cn('group relative flex flex-col items-center gap-2 py-4 rounded-xl border transition-all duration-200',
-                      verdict === 'Pass'
-                        ? 'border-emerald-500/50 bg-emerald-50 dark:bg-emerald-500/10 shadow-lg shadow-emerald-500/10'
-                        : 'border-border bg-card hover:border-emerald-300 dark:hover:border-emerald-500/30 hover:bg-emerald-50/50 dark:hover:bg-emerald-500/5')}>
-                    <div className={cn('w-10 h-10 rounded-full flex items-center justify-center transition-all',
-                      verdict === 'Pass' ? 'bg-emerald-100 dark:bg-emerald-500/20' : 'bg-muted group-hover:bg-emerald-100 dark:group-hover:bg-emerald-500/10')}>
-                      <CheckCircle2 className={cn('w-5 h-5 transition-colors',
-                        verdict === 'Pass' ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground group-hover:text-emerald-600 dark:group-hover:text-emerald-400')} />
-                    </div>
-                    <span className={cn('text-xs font-semibold',
-                      verdict === 'Pass' ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground group-hover:text-emerald-600 dark:group-hover:text-emerald-400')}>Pass</span>
-                    <kbd className="text-[9px] font-mono text-muted-foreground/50 bg-muted border border-border px-1.5 py-0.5 rounded">P</kbd>
+              {/* Verdict buttons — always visible at bottom */}
+              <div className="px-5 py-3 border-t border-border bg-muted/30 shrink-0">
+                <div className="grid grid-cols-3 gap-2">
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => markStatus('Pass')}
+                    className={cn('flex items-center justify-center gap-2 py-2.5 rounded-xl border transition-all',
+                      verdict === 'Pass' ? 'border-emerald-500/50 bg-emerald-50 dark:bg-emerald-500/10' : 'border-border bg-card hover:border-emerald-300 hover:bg-emerald-50/50')}>
+                    <CheckCircle2 className={cn('w-4 h-4', verdict === 'Pass' ? 'text-emerald-600' : 'text-muted-foreground')} />
+                    <span className={cn('text-xs font-semibold', verdict === 'Pass' ? 'text-emerald-600' : 'text-muted-foreground')}>Pass</span>
                   </motion.button>
-
-                  {/* Fail button */}
-                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-                    onClick={() => setFailOpen(true)}
-                    className={cn('group relative flex flex-col items-center gap-2 py-4 rounded-xl border transition-all duration-200',
-                      verdict === 'Fail'
-                        ? 'border-red-500/50 bg-red-50 dark:bg-red-500/10 shadow-lg shadow-red-500/10'
-                        : 'border-border bg-card hover:border-red-300 dark:hover:border-red-500/30 hover:bg-red-50/50 dark:hover:bg-red-500/5')}>
-                    <div className={cn('w-10 h-10 rounded-full flex items-center justify-center transition-all',
-                      verdict === 'Fail' ? 'bg-red-100 dark:bg-red-500/20' : 'bg-muted group-hover:bg-red-100 dark:group-hover:bg-red-500/10')}>
-                      <XCircle className={cn('w-5 h-5 transition-colors',
-                        verdict === 'Fail' ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground group-hover:text-red-600 dark:group-hover:text-red-400')} />
-                    </div>
-                    <span className={cn('text-xs font-semibold',
-                      verdict === 'Fail' ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground group-hover:text-red-600 dark:group-hover:text-red-400')}>Fail</span>
-                    <kbd className="text-[9px] font-mono text-muted-foreground/50 bg-muted border border-border px-1.5 py-0.5 rounded">F</kbd>
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => setFailOpen(true)}
+                    className={cn('flex items-center justify-center gap-2 py-2.5 rounded-xl border transition-all',
+                      verdict === 'Fail' ? 'border-red-500/50 bg-red-50 dark:bg-red-500/10' : 'border-border bg-card hover:border-red-300 hover:bg-red-50/50')}>
+                    <XCircle className={cn('w-4 h-4', verdict === 'Fail' ? 'text-red-600' : 'text-muted-foreground')} />
+                    <span className={cn('text-xs font-semibold', verdict === 'Fail' ? 'text-red-600' : 'text-muted-foreground')}>Fail</span>
                   </motion.button>
-
-                  {/* N/A (Skip) button */}
-                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-                    onClick={() => setNaOpen(true)}
-                    className={cn('group relative flex flex-col items-center gap-2 py-4 rounded-xl border transition-all duration-200',
-                      verdict === 'N/A'
-                        ? 'border-border bg-muted/80'
-                        : 'border-border bg-card hover:border-border hover:bg-muted/50')}>
-                    <div className={cn('w-10 h-10 rounded-full flex items-center justify-center transition-all',
-                      verdict === 'N/A' ? 'bg-muted' : 'bg-muted group-hover:bg-muted/80')}>
-                      <SkipForward className={cn('w-5 h-5 transition-colors',
-                        verdict === 'N/A' ? 'text-foreground/60' : 'text-muted-foreground group-hover:text-foreground/60')} />
-                    </div>
-                    <span className={cn('text-xs font-semibold',
-                      verdict === 'N/A' ? 'text-foreground/60' : 'text-muted-foreground group-hover:text-foreground/60')}>Skip</span>
-                    <kbd className="text-[9px] font-mono text-muted-foreground/50 bg-muted border border-border px-1.5 py-0.5 rounded">N</kbd>
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => setNaOpen(true)}
+                    className={cn('flex items-center justify-center gap-2 py-2.5 rounded-xl border transition-all',
+                      verdict === 'N/A' ? 'border-border bg-muted/80' : 'border-border bg-card hover:bg-muted/50')}>
+                    <SkipForward className={cn('w-4 h-4', verdict === 'N/A' ? 'text-foreground/60' : 'text-muted-foreground')} />
+                    <span className={cn('text-xs font-semibold', verdict === 'N/A' ? 'text-foreground/60' : 'text-muted-foreground')}>Skip</span>
                   </motion.button>
                 </div>
               </div>
             </div>
 
-            {/* Dot navigation */}
-            <div className="flex items-center justify-between mt-5 px-1">
+            {/* Navigation — always visible below card */}
+            <div className="flex items-center justify-between mt-3 px-1 shrink-0">
               <Button variant="ghost" size="sm" disabled={currentIndex === 0} onClick={goPrev}
-                className="rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-20 gap-1.5">
+                className="rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-20 gap-1">
                 <ChevronLeft className="w-3.5 h-3.5" /> Prev
               </Button>
-              <div className="flex items-center gap-1">
-                {session.testCases.slice(Math.max(0, currentIndex - 3), Math.min(total, currentIndex + 4)).map((_, i) => {
-                  const idx = Math.max(0, currentIndex - 3) + i;
-                  return (
-                    <button key={idx} onClick={() => setCurrentIndex(idx)}
-                      className={cn('w-1.5 h-1.5 rounded-full transition-all',
-                        idx === currentIndex ? 'w-4 bg-primary' :
-                        session.testCases[idx]?.status === 'Pass' ? 'bg-emerald-500' :
-                        session.testCases[idx]?.status.includes('Fail') ? 'bg-red-500' :
-                        'bg-muted-foreground/20 hover:bg-muted-foreground/40')} />
-                  );
-                })}
-              </div>
+              <span className="text-[11px] text-muted-foreground tabular-nums">{currentIndex + 1} of {total}</span>
               <Button variant="ghost" size="sm" disabled={currentIndex === total - 1} onClick={goNext}
-                className="rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-20 gap-1.5">
+                className="rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-20 gap-1">
                 Next <ChevronRight className="w-3.5 h-3.5" />
               </Button>
             </div>
