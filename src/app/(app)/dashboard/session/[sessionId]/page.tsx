@@ -694,7 +694,7 @@ export default function TestSessionPage() {
 
       {/* ─── Fail Dialog ─── */}
       <Dialog open={failOpen} onOpenChange={v => { setFailOpen(v); if (!v) { setJiraIssueKey(null); setJiraIssueLink(null); } }}>
-        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md bg-card border-border text-foreground max-h-[85vh] overflow-y-auto rounded-2xl">
+        <DialogContent className="sm:max-w-md bg-card border-border text-foreground max-h-[85vh] overflow-y-auto rounded-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-foreground">
               <div className="w-7 h-7 rounded-lg bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-500/20 flex items-center justify-center">
@@ -772,7 +772,7 @@ export default function TestSessionPage() {
 
       {/* ─── N/A Dialog ─── */}
       <Dialog open={naOpen} onOpenChange={setNaOpen}>
-        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-sm bg-card border-border text-foreground max-h-[85vh] overflow-y-auto rounded-2xl">
+        <DialogContent className="sm:max-w-sm bg-card border-border text-foreground max-h-[85vh] overflow-y-auto rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-foreground">Skip Test Case</DialogTitle>
             <DialogDescription className="text-muted-foreground">Why is this not applicable?</DialogDescription>
@@ -801,7 +801,7 @@ export default function TestSessionPage() {
 
       {/* ─── Complete Dialog ─── */}
       <Dialog open={completeOpen} onOpenChange={setCompleteOpen}>
-        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-sm bg-card border-border text-foreground max-h-[85vh] overflow-y-auto rounded-2xl">
+        <DialogContent className="sm:max-w-sm bg-card border-border text-foreground max-h-[85vh] overflow-y-auto rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-foreground">
               {untestedCount === 0 ? 'Session Complete' : 'End Session?'}
