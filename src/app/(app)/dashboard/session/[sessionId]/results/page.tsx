@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, ArrowLeft, CheckCircle2, XCircle, AlertTriangle, Printer, Download, Clock, BarChart3, Calendar } from 'lucide-react';
+import { Loader2, ArrowLeft, CheckCircle2, XCircle, AlertTriangle, Printer, Download, Clock, BarChart3, Calendar, ExternalLink } from 'lucide-react';
 import { format, formatDistanceStrict } from 'date-fns';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { motion } from 'framer-motion';
@@ -38,8 +38,12 @@ export default function TestSessionResultPage() {
     const fetchSessionData = async () => {
       setLoading(true);
       try {
-        const docRef = doc(db, 'testSessions', sessionId);
-        const snap = await getDoc(docRef);
+        let docRef = doc(db, 'sessions', sessionId);
+        let snap = await getDoc(docRef);
+        if (!snap.exists()) {
+          docRef = doc(db, 'testSessions', sessionId);
+          snap = await getDoc(docRef);
+        }
         if (snap.exists()) {
           const data = snap.data();
           setSession({
@@ -160,7 +164,17 @@ export default function TestSessionResultPage() {
                       <TableCell className="font-mono text-xs text-muted-foreground">{String(i + 1).padStart(2, '0')}</TableCell>
                       <TableCell>
                         <div className="font-medium text-sm">{tc.testCaseTitle}</div>
-                        {tc.bugId && <Badge variant="outline" className="mt-1 text-xs border-red-200 text-red-500">Bug: {tc.bugId}</Badge>}
+                        {tc.bugId && (
+                          <a
+                            href={`https://sunnetwork-techteam-hanqzy91.atlassian.net/browse/${tc.bugId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 mt-1 text-xs text-red-500 hover:text-red-600 hover:underline"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            [{tc.bugId}]{tc.bugTitle ? ` ${tc.bugTitle}` : ''}
+                          </a>
+                        )}
                       </TableCell>
                       <TableCell>
                         {tc.status === 'Pass' && <Badge className="bg-green-100 text-green-700 hover:bg-green-200 border-none px-2 shadow-none"><CheckCircle2 className="w-3 h-3 mr-1" /> Pass</Badge>}

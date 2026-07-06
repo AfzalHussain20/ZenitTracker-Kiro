@@ -22,7 +22,7 @@ export interface PlatformDetails {
   customPlatformName?: string; // If Platform is "Other"
 }
 
-export type TestCaseStatus = "Pass" | "Fail" | "N/A" | "Untested" | "Fail (Known)";
+export type TestCaseStatus = "Pass" | "Fail" | "N/A" | "Untested" | "Fail (Known)"; // "Fail (Known)" kept for legacy data compatibility
 
 export interface TestCase {
   id: string; // Will be a unique ID within the session, e.g., a timestamp-based string
@@ -35,6 +35,7 @@ export interface TestCase {
   notes?: string;
   status: TestCaseStatus;
   bugId?: string; // If status is "Fail" or "Fail (Known)"
+  bugTitle?: string; // Auto-fetched title from Jira
   naReason?: string; // If status is "N/A"
   attachments?: string[]; // URLs to attachments if any
   lastModified: Date | Timestamp;
