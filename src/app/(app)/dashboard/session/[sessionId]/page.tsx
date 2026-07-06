@@ -694,76 +694,65 @@ export default function TestSessionPage() {
 
       {/* ─── Fail Dialog ─── */}
       <Dialog open={failOpen} onOpenChange={v => { setFailOpen(v); if (!v) { setJiraIssueKey(null); setJiraIssueLink(null); } }}>
-        <DialogContent className="sm:max-w-md bg-card border-border text-foreground max-h-[85vh] overflow-y-auto rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-foreground">
-              <div className="w-7 h-7 rounded-lg bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-500/20 flex items-center justify-center">
-                <Bug className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+        <DialogContent className="sm:max-w-[420px] bg-card border-border text-foreground rounded-2xl p-5 gap-3">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="flex items-center gap-2 text-foreground text-base">
+              <div className="w-6 h-6 rounded-md bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-500/20 flex items-center justify-center">
+                <Bug className="w-3 h-3 text-red-600 dark:text-red-400" />
               </div>
               Log Bug
             </DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              Link an existing Jira issue or create a new one.
+            <DialogDescription className="text-muted-foreground text-xs">
+              Link a Jira issue or create new.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-3">
-            <div className="space-y-2">
+          <div className="space-y-3">
+            <div className="space-y-1.5">
               <label className="text-[11px] font-medium text-muted-foreground">Bug ID</label>
               <Input placeholder="e.g. SUN-1234" value={bugId}
                 onChange={e => setBugId(e.target.value.toUpperCase())}
-                className="h-10 text-sm font-mono bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 focus:border-primary/40 rounded-xl" />
+                className="h-9 text-sm font-mono bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 focus:border-primary/40 rounded-lg" />
               {bugFetching && (
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                  <Loader2 className="w-3 h-3 animate-spin" />Looking up {bugId}...
-                </div>
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" />Fetching...</p>
               )}
               {bugTitle && !bugFetching && (
-                <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center gap-2 text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/[0.06] border border-emerald-200 dark:border-emerald-500/20 rounded-lg px-3 py-2">
+                <div className="text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/[0.06] border border-emerald-200 dark:border-emerald-500/20 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
                   <CheckCircle2 className="w-3 h-3 shrink-0" />
                   <span className="truncate">{bugId} — {bugTitle}</span>
-                </motion.div>
-              )}
-              {bugFetchError && !bugFetching && (
-                <div className="flex items-center gap-2 text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/[0.06] border border-amber-200 dark:border-amber-500/20 rounded-lg px-3 py-2">
-                  <XCircle className="w-3 h-3 shrink-0" /><span>{bugFetchError}</span>
                 </div>
               )}
+              {bugFetchError && !bugFetching && (
+                <p className="text-[10px] text-amber-600 flex items-center gap-1.5"><XCircle className="w-3 h-3" />{bugFetchError}</p>
+              )}
             </div>
-
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <label className="text-[11px] font-medium text-muted-foreground">Notes</label>
               <Textarea placeholder="What went wrong..." value={bugDesc}
                 onChange={e => setBugDesc(e.target.value)}
-                className="resize-none h-16 text-sm bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 rounded-xl focus:border-primary/40" />
+                rows={2}
+                className="resize-none text-sm bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 rounded-lg focus:border-primary/40 min-h-0" />
             </div>
-            <div className="rounded-xl border border-border bg-muted/30 p-3">
-              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Jira</p>
+            <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Jira</span>
               {jiraIssueKey ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">✓ {jiraIssueKey}</span>
-                  {jiraIssueLink && (
-                    <a href={jiraIssueLink} target="_blank" rel="noopener noreferrer"
-                      className="text-[11px] text-primary hover:underline flex items-center gap-1">
-                      Open <ExternalLink className="w-3 h-3" />
-                    </a>
-                  )}
+                  <span className="text-[11px] font-semibold text-emerald-600">✓ {jiraIssueKey}</span>
+                  {jiraIssueLink && <a href={jiraIssueLink} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary hover:underline">Open</a>}
                 </div>
               ) : (
                 <Button size="sm" variant="outline" disabled={jiraPushing} onClick={pushToJira}
-                  className="h-7 text-[11px] gap-1.5 bg-transparent border-border text-muted-foreground hover:text-foreground hover:bg-muted">
+                  className="h-6 text-[10px] gap-1 px-2 bg-transparent border-border text-muted-foreground hover:text-foreground">
                   {jiraPushing ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
-                  Create in Jira
+                  Create
                 </Button>
               )}
             </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setFailOpen(false)}
-              className="text-muted-foreground hover:text-foreground hover:bg-muted">Cancel</Button>
+          <DialogFooter className="gap-2 pt-1">
+            <Button variant="ghost" size="sm" onClick={() => setFailOpen(false)} className="h-8 text-xs text-muted-foreground hover:text-foreground">Cancel</Button>
             <Button size="sm"
               onClick={() => markStatus('Fail', { bugId: bugId || undefined, bugDesc: bugDesc || undefined, bugTitle: bugTitle || undefined })}
-              className="bg-red-600 hover:bg-red-700 text-white border-0 rounded-lg">
+              className="h-8 text-xs bg-red-600 hover:bg-red-700 text-white border-0 rounded-lg px-4">
               Confirm Fail
             </Button>
           </DialogFooter>
