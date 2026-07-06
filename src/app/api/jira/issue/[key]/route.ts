@@ -1,8 +1,5 @@
 import { NextResponse } from 'next/server';
 
-const JIRA_BASE = process.env.JIRA_BASE_URL!;
-const JIRA_AUTH = () => Buffer.from(`${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64');
-
 export async function GET(
   _req: Request,
   { params }: { params: { key: string } }
@@ -10,23 +7,45 @@ export async function GET(
   try {
     const issueKey = params.key;
 
-    if (!issueKey || !/^[A-Z]+-\d+$/.test(issueKey)) {
-      return NextResponse.json({ error: 'Invalid issue key format' }, { status: 400 });
+    if (!issueKey || !/^[A-Z]{2,10}-\d+$/.test(issueKey)) {
+      return NextResponse.json({ error: 'Invalid issue key format. Expected: ABC-123' }, { status: 400 });
     }
 
-    const response = await fetch(`${JIRA_BASE}/rest/api/3/issue/${issueKey}?fields=summary,status,priority,assignee`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Basic ${JIRA_AUTH()}`,
-        Accept: 'application/json',
-      },
-    });
+    const JIRA_BASE = process.env.JIRA_BASE_URL;
+    const JIRA_EMAIL = process.env.JIRA_EMAIL;
+    const JIRA_TOKEN = process.env.JIRA_API_TOKEN;
+
+    if (!JIRA_BASE || !JIRA_EMAIL || !JIRA_TOKEN) {
+      return NextResponse.json({ error: 'Jira credentials not configured' }, { status: 503 });
+    }
+
+    const auth = Buffer.from(`${JIRA_EMAIL}:${JIRA_TOKEN}`).toString('base64');
+
+    const response = await fetch(
+      `${JIRA_BASE}/rest/api/3/issue/${issueKey}?fields=summary,status,priority,assignee`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Basic ${auth}`,
+          Accept: 'application/json',
+        },
+        // Don't cache — always fetch fresh
+        cache: 'no-store',
+      }
+    );
 
     if (!response.ok) {
       if (response.status === 404) {
-        return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
+        return NextResponse.json({ error: `Issue ${issueKey} not found` }, { status: 404 });
       }
-      return NextResponse.json({ error: 'Failed to fetch issue' }, { status: response.status });
+      if (response.status === 401 || response.status === 403) {
+        return NextResponse.json({ error: 'Jira authentication failed' }, { status: 401 });
+      }
+      const text = await response.text().catch(() => '');
+      return NextResponse.json(
+        { error: `Jira responded with ${response.status}`, details: text },
+        { status: response.status }
+      );
     }
 
     const data = await response.json();
@@ -41,6 +60,6 @@ export async function GET(
     });
   } catch (err: any) {
     console.error('[Jira] Fetch issue error:', err.message);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: `Server error: ${err.message}` }, { status: 500 });
   }
 }

@@ -65,29 +65,37 @@ function useTimer(currentIndex: number) {
 function useJiraFetch(bugId: string) {
   const [bugTitle, setBugTitle] = useState<string | null>(null);
   const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     setBugTitle(null);
-    if (!bugId || !/^[A-Z]+-\d+$/.test(bugId.trim())) return;
+    setFetchError(null);
+    const trimmed = bugId?.trim() || '';
+    if (!trimmed || !/^[A-Z]{2,10}-\d+$/.test(trimmed)) return;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setFetching(true);
+      setFetchError(null);
       try {
-        const res = await fetch(`/api/jira/issue/${bugId.trim()}`);
+        const res = await fetch(`/api/jira/issue/${encodeURIComponent(trimmed)}`);
         if (res.ok) {
           const data = await res.json();
-          setBugTitle(data.summary);
+          setBugTitle(data.summary || 'Untitled');
+        } else {
+          const errData = await res.json().catch(() => ({ error: 'Unknown error' }));
+          setFetchError(errData.error || `HTTP ${res.status}`);
         }
-      } catch { /* silent */ }
-      finally { setFetching(false); }
-    }, 600);
+      } catch (err: any) {
+        setFetchError('Network error — could not reach Jira');
+      } finally { setFetching(false); }
+    }, 500);
 
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [bugId]);
 
-  return { bugTitle, fetching };
+  return { bugTitle, fetching, fetchError };
 }
 
 // ─── Swipe Hook ──────────────────────────────────────────────────────────────
@@ -149,7 +157,7 @@ export default function TestSessionPage() {
   const [verdict, setVerdict] = useState<'Pass' | 'Fail' | 'N/A' | null>(null);
 
   const timer = useTimer(currentIndex);
-  const { bugTitle, fetching: bugFetching } = useJiraFetch(bugId);
+  const { bugTitle, fetching: bugFetching, fetchError: bugFetchError } = useJiraFetch(bugId);
 
   const goNext = useCallback(() => {
     if (session && currentIndex < session.testCases.length - 1) setCurrentIndex(i => i + 1);
@@ -245,25 +253,6 @@ export default function TestSessionPage() {
     setNaReason('');
   }, [currentIndex]);
 
-  // ─── Keyboard Shortcuts ─────────────────────────────────────────────────────
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (failOpen || naOpen || completeOpen || drawerOpen) return;
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-
-      switch (e.key.toLowerCase()) {
-        case 'p': markStatus('Pass'); break;
-        case 'f': setFailOpen(true); break;
-        case 'n': setNaOpen(true); break;
-        case 'arrowleft': goPrev(); break;
-        case 'arrowright': goNext(); break;
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [failOpen, naOpen, completeOpen, drawerOpen, currentIndex, session]);
-
   // ─── Firestore Sync ─────────────────────────────────────────────────────────
   const handleUpdate = useCallback(async (data: Partial<TestSession>) => {
     try {
@@ -276,8 +265,9 @@ export default function TestSessionPage() {
 
   const handleComplete = async (reason?: string) => {
     if (!session) return;
+    const remaining = session.testCases.filter(t => t.status === 'Untested').length;
     await handleUpdate({
-      status: untestedCount > 0 ? 'Aborted' : 'Completed',
+      status: remaining > 0 ? 'Aborted' : 'Completed',
       updatedAt: new Date(),
       completedAt: new Date(),
       reasonForIncompletion: reason,
@@ -286,19 +276,21 @@ export default function TestSessionPage() {
   };
 
   // ─── Mark Verdict ───────────────────────────────────────────────────────────
-  const markStatus = async (base: 'Pass' | 'Fail' | 'N/A', details?: any) => {
-    if (!session || !tc) return;
+  const markStatus = useCallback(async (base: 'Pass' | 'Fail' | 'N/A', details?: any) => {
+    if (!session) return;
+    const currentTc = session.testCases[currentIndex];
+    if (!currentTc) return;
     setVerdict(base);
     const updated = [...session.testCases];
     updated[currentIndex] = {
-      ...tc,
+      ...currentTc,
       status: base,
       lastModified: new Date(),
       bugId: details?.bugId || null,
       bugTitle: details?.bugTitle || null,
       naReason: details?.naReason || null,
-      notes: details?.bugDesc ? (tc.notes || '') + `\nBug: ${details.bugDesc}` : tc.notes,
-      actualResult: base === 'Pass' ? tc.expectedResult : (tc.actualResult || ''),
+      notes: details?.bugDesc ? (currentTc.notes || '') + `\nBug: ${details.bugDesc}` : currentTc.notes,
+      actualResult: base === 'Pass' ? currentTc.expectedResult : (currentTc.actualResult || ''),
     };
     const summary = {
       pass: updated.filter(t => t.status === 'Pass').length,
@@ -310,15 +302,35 @@ export default function TestSessionPage() {
     };
     await handleUpdate({ testCases: updated, summary, updatedAt: new Date() });
 
-    // Auto-advance
+    // Auto-advance after short delay for visual feedback
     setTimeout(() => {
-      if (currentIndex < session.testCases.length - 1) setCurrentIndex(i => i + 1);
+      if (currentIndex < updated.length - 1) setCurrentIndex(i => i + 1);
       else setCompleteOpen(true);
     }, 350);
 
     setFailOpen(false);
     setNaOpen(false);
-  };
+  }, [session, currentIndex, handleUpdate]);
+
+  // ─── Keyboard Shortcuts ─────────────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (failOpen || naOpen || completeOpen || drawerOpen) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return;
+      if (target.closest('[role="dialog"]')) return;
+
+      switch (e.key.toLowerCase()) {
+        case 'p': markStatus('Pass'); break;
+        case 'f': setFailOpen(true); break;
+        case 'n': setNaOpen(true); break;
+        case 'arrowleft': goPrev(); break;
+        case 'arrowright': goNext(); break;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [failOpen, naOpen, completeOpen, drawerOpen, goPrev, goNext, markStatus]);
 
   const patchField = (field: keyof TestCase, value: string) => {
     if (!session || !tc) return;
@@ -684,34 +696,41 @@ export default function TestSessionPage() {
             <DialogTitle className="flex items-center gap-2">
               <Bug className="w-4 h-4 text-red-500" /> Log Bug
             </DialogTitle>
-            <DialogDescription>Enter a bug ID or create a new Jira issue.</DialogDescription>
+            <DialogDescription>Link an existing bug or create a new one. Both fields are optional.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             {/* Bug ID input with auto-fetch */}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Bug ID</label>
+              <label className="text-xs font-medium text-muted-foreground">Bug ID (auto-fetches from Jira)</label>
               <Input
-                placeholder="e.g. SN-1234"
+                placeholder="e.g. SUN-1234"
                 value={bugId}
                 onChange={e => setBugId(e.target.value.toUpperCase())}
                 className="h-9 text-sm font-mono"
+                autoFocus
               />
               {bugFetching && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="w-3 h-3 animate-spin" /> Fetching...
+                <div className="flex items-center gap-2 text-xs text-muted-foreground animate-pulse">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Looking up {bugId}...
                 </div>
               )}
-              {bugTitle && (
+              {bugTitle && !bugFetching && (
                 <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 border border-emerald-500/20 rounded-lg px-3 py-2">
                   <CheckCircle2 className="w-3 h-3 shrink-0" />
                   <span className="truncate">{bugId} — {bugTitle}</span>
+                </div>
+              )}
+              {bugFetchError && !bugFetching && (
+                <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2">
+                  <XCircle className="w-3 h-3 shrink-0" />
+                  <span className="truncate">Could not fetch: {bugFetchError}</span>
                 </div>
               )}
             </div>
 
             {/* Description */}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Description (optional)</label>
+              <label className="text-xs font-medium text-muted-foreground">Notes (optional)</label>
               <Textarea
                 placeholder="Brief description of the failure..."
                 value={bugDesc}
@@ -722,10 +741,10 @@ export default function TestSessionPage() {
 
             {/* Jira Create */}
             <div className="rounded-xl border border-border bg-muted/30 p-3 space-y-2">
-              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Jira Integration</p>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Create New Jira Bug</p>
               {jiraIssueKey ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-emerald-600">✓ {jiraIssueKey} created</span>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">✓ {jiraIssueKey} created</span>
                   {jiraIssueLink && (
                     <a href={jiraIssueLink} target="_blank" rel="noopener noreferrer"
                       className="text-xs text-primary flex items-center gap-1 hover:underline">
@@ -745,8 +764,7 @@ export default function TestSessionPage() {
           <DialogFooter>
             <Button variant="ghost" size="sm" onClick={() => setFailOpen(false)}>Cancel</Button>
             <Button variant="destructive" size="sm"
-              disabled={!bugId && !bugDesc}
-              onClick={() => markStatus('Fail', { bugId, bugDesc, bugTitle })}>
+              onClick={() => markStatus('Fail', { bugId: bugId || undefined, bugDesc: bugDesc || undefined, bugTitle: bugTitle || undefined })}>
               Confirm Fail
             </Button>
           </DialogFooter>
