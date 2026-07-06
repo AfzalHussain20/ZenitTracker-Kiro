@@ -47,11 +47,16 @@ export function formatTestStepsForExport(steps: string[]): string {
 
 /**
  * Generates an export filename by sanitizing the PRD title.
- * Special characters are replaced with underscores.
+ * Special characters are replaced with underscores, then multiple
+ * consecutive underscores are collapsed into a single one.
  * Pattern: {sanitized_title}_test_cases.{extension}
  */
 export function generateExportFilename(prdTitle: string, extension: string): string {
-  const sanitized = prdTitle.replace(/[^a-zA-Z0-9\s]/g, '_').replace(/\s+/g, '_');
+  const sanitized = prdTitle
+    .replace(/[^a-zA-Z0-9\s]/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')        // Collapse multiple underscores into one
+    .replace(/^_|_$/g, '');     // Trim leading/trailing underscores
   return `${sanitized}_test_cases.${extension}`;
 }
 
@@ -111,7 +116,7 @@ export function generateExcelExport(
 /**
  * Generates a CSV string with all non-rejected test cases.
  * Includes an additional Category column to identify test type.
- * Fields containing commas, newlines, or quotes are properly escaped.
+ * All fields are quoted to handle commas, newlines, quotes, and spaces safely.
  */
 export function generateCsvExport(
   testCases: StoredTestCase[],
@@ -121,10 +126,8 @@ export function generateCsvExport(
   const csvColumns = [...EXPORT_COLUMNS, 'Category'];
 
   const escapeCsvField = (field: string): string => {
-    if (field.includes(',') || field.includes('\n') || field.includes('"')) {
-      return `"${field.replace(/"/g, '""')}"`;
-    }
-    return field;
+    // Always quote fields to safely handle commas, newlines, quotes, and spaces
+    return `"${field.replace(/"/g, '""')}"`;
   };
 
   const headerRow = csvColumns.map(escapeCsvField).join(',');

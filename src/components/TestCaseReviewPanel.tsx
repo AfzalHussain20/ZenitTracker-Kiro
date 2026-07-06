@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   X,
   Check,
@@ -82,6 +82,11 @@ export default function TestCaseReviewPanel({
     testSteps: string;
     expectedResult: string;
   } | null>(null);
+
+  // Sync internal state when parent passes updated test cases (e.g., new batch arrives)
+  useEffect(() => {
+    setTestCases(initialTestCases);
+  }, [initialTestCases]);
 
   // ─── Derived Data ────────────────────────────────────────────────────────────
 

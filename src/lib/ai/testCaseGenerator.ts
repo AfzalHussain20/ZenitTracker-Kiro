@@ -352,14 +352,21 @@ const VALID_CATEGORIES: Set<string> = new Set([
 /**
  * Normalizes any non-empty category string to the nearest valid TestCaseCategory.
  * Instead of rejecting unknown categories, maps them to the closest match.
+ * Performance, Security, Compatibility, Integration, Regression → Edge Case
+ * (since these are specialized testing types that map best to edge-case coverage)
  */
 function normalizeCategory(raw: string): TestCaseCategory {
   const lower = raw.trim().toLowerCase();
   if (lower.includes('negative') || lower.includes('boundary') || lower.includes('error')) return 'Negative';
   if (lower.includes('edge') || lower.includes('corner')) return 'Edge Case';
   if (lower.includes('explor')) return 'Exploratory';
-  if (lower.includes('sanity') || lower.includes('smoke')) return 'Sanity';
+  if (lower.includes('sanity') || lower.includes('smoke') || lower.includes('basic')) return 'Sanity';
   if (lower.includes('functional') || lower.includes('happy') || lower.includes('positive')) return 'Functional';
+  // Specialized testing types → Edge Case (performance, security, compatibility, etc.)
+  if (lower.includes('performance') || lower.includes('security') || lower.includes('compatibility')
+    || lower.includes('integration') || lower.includes('regression') || lower.includes('stress')
+    || lower.includes('load') || lower.includes('ui') || lower.includes('ux')
+    || lower.includes('accessibility')) return 'Edge Case';
   // Check exact match against valid set (handles already-correct values)
   if (VALID_CATEGORIES.has(raw.trim())) return raw.trim() as TestCaseCategory;
   // Default to Functional rather than rejecting
@@ -487,13 +494,18 @@ export function parseTestCaseResponse(raw: string): GeneratedTestCase[] {
  * Assigns IDs with pattern TC_{PREFIX}_{NNN} where PREFIX maps:
  * Functional→FUNC, Negative→NEG, Exploratory→EXP, Edge Case→EDGE, Sanity→SAN
  *
- * Numbers are sequential per category, starting from 001.
+ * Numbers are sequential per category.
+ * @param startCounters - Optional starting counters per prefix to avoid
+ *   duplicate IDs across batches. Keys are prefixes (FUNC, NEG, etc.),
+ *   values are the last used number for that prefix.
+ * @returns Object with the assigned test cases and the updated counters.
  */
 export function assignTestCaseIds(
   testCases: GeneratedTestCase[],
-  pass: string
+  pass: string,
+  startCounters?: Record<string, number>
 ): GeneratedTestCase[] {
-  const counters: Record<string, number> = {};
+  const counters: Record<string, number> = startCounters ? { ...startCounters } : {};
 
   return testCases.map((tc) => {
     const prefix = CATEGORY_PREFIX_MAP[tc.category] || 'FUNC';
@@ -505,6 +517,24 @@ export function assignTestCaseIds(
       testcaseId: `TC_${prefix}_${num}`,
     };
   });
+}
+
+/**
+ * Computes the current ID counters from a set of existing test cases.
+ * Used to continue numbering from where previous batches left off.
+ */
+export function getIdCountersFromCases(testCases: GeneratedTestCase[]): Record<string, number> {
+  const counters: Record<string, number> = {};
+  for (const tc of testCases) {
+    // Extract the number from IDs like TC_FUNC_003
+    const match = tc.testcaseId.match(/^TC_([A-Z]+)_(\d+)$/);
+    if (match) {
+      const prefix = match[1];
+      const num = parseInt(match[2], 10);
+      counters[prefix] = Math.max(counters[prefix] || 0, num);
+    }
+  }
+  return counters;
 }
 
 // ─── Exponential Backoff Retry ───────────────────────────────────────────────
@@ -573,6 +603,7 @@ export async function retryWithBackoff<T>(
  * @param existingCases - Previously generated test cases for deduplication
  * @param config - Generation configuration
  * @param provider - Optional AI provider (defaults to getAIProvider())
+ * @param startCounters - Optional ID counters from previous batches to continue numbering
  */
 export async function generateTestCasesForPass(
   prdText: string,
@@ -580,7 +611,8 @@ export async function generateTestCasesForPass(
   pass: GenerationPass,
   existingCases: TestCaseSummary[] = [],
   config: GenerationConfig = DEFAULT_GENERATION_CONFIG,
-  provider?: AIProvider
+  provider?: AIProvider,
+  startCounters?: Record<string, number>
 ): Promise<GeneratedTestCase[]> {
   if (!prdText || prdText.trim() === '') {
     throw new Error('No extractable content from PRD');
@@ -610,7 +642,6 @@ export async function generateTestCasesForPass(
   );
 
   // Parse and validate the response
-  console.log('[generateTestCasesForPass] Raw AI response length:', result.answer.length, 'chars. First 200:', result.answer.substring(0, 200));
   const parsedCases = parseTestCaseResponse(result.answer);
 
   // For platform passes (web/tv/mobile), accept ALL valid categories
@@ -624,8 +655,8 @@ export async function generateTestCasesForPass(
     casesToUse = filteredCases.length > 0 ? filteredCases : parsedCases;
   }
 
-  // Assign proper IDs
-  const casesWithIds = assignTestCaseIds(casesToUse, pass);
+  // Assign proper IDs (using startCounters to continue numbering from previous batches)
+  const casesWithIds = assignTestCaseIds(casesToUse, pass, startCounters);
 
   return casesWithIds;
 }

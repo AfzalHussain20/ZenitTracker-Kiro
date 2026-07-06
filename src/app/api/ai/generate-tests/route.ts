@@ -5,7 +5,17 @@ import { getAIProvider } from '@/lib/ai/providers';
 import type { GenerateTestsRequest, GenerateTestsResponse, GenerationPass } from '@/types/test-cases';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // Vercel Pro: 60s, Hobby: 10s — set high for Pro users
+
+/**
+ * maxDuration: Set to 60s for Vercel Pro/Team plans.
+ * IMPORTANT: Vercel Hobby plan has a hard 10s function timeout limit.
+ * If deployed to Hobby, generation will time out. Solutions:
+ *   1. Upgrade to Pro plan (recommended for AI features)
+ *   2. Use Edge Runtime with streaming (requires architectural change)
+ *   3. Move AI calls to a separate serverless backend (e.g., AWS Lambda)
+ * The contextTokenBudget is kept at 8000 chars to minimize response time.
+ */
+export const maxDuration = 60;
 
 /** Maps pass name to a numeric pass number for the response. */
 const PASS_NUMBER_MAP: Record<string, number> = {
@@ -149,6 +159,23 @@ export async function POST(req: NextRequest) {
     // ─── Generate test cases for the specified pass ───────────────────────
     const provider = getAIProvider();
 
+    // Compute ID counters from existing test cases to avoid duplicate IDs across batches
+    const existingCounters = existingTestCases.length > 0
+      ? (() => {
+          // Parse TC_PREFIX_NNN patterns from existing case IDs
+          const counters: Record<string, number> = {};
+          for (const tc of existingTestCases) {
+            const match = tc.id.match(/^TC_([A-Z]+)_(\d+)$/);
+            if (match) {
+              const prefix = match[1];
+              const num = parseInt(match[2], 10);
+              counters[prefix] = Math.max(counters[prefix] || 0, num);
+            }
+          }
+          return Object.keys(counters).length > 0 ? counters : undefined;
+        })()
+      : undefined;
+
     let testCases;
     try {
       testCases = await generateTestCasesForPass(
@@ -157,9 +184,9 @@ export async function POST(req: NextRequest) {
         pass as GenerationPass,
         existingTestCases,
         { maxTokens: 8192, temperature: 0.4, maxRetries: 1, contextTokenBudget: 8000 },
-        provider
+        provider,
+        existingCounters
       );
-      console.log(`[generate-tests] Pass "${pass}" generated ${testCases.length} test cases using ${provider.name}`);
     } catch (aiError: any) {
       const errorMessage = aiError?.message || 'AI generation failed';
 
