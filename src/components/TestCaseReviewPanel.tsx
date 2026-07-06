@@ -13,6 +13,7 @@ import {
   FileText,
   AlertTriangle,
   Filter,
+  ExternalLink,
 } from 'lucide-react';
 import type {
   StoredTestCase,
@@ -535,6 +536,16 @@ function TestCaseRow({
               <AlertTriangle className="h-3 w-3 text-yellow-500" />
             </span>
           )}
+        </button>
+        <button
+          onClick={() => {
+            const event = new CustomEvent('open-mockup-preview', { detail: { module: displayModule } });
+            window.dispatchEvent(event);
+          }}
+          className="ml-1 text-[10px] text-primary hover:underline inline-flex items-center gap-0.5"
+          title="Preview mockup"
+        >
+          <ExternalLink className="h-2.5 w-2.5" />
         </button>
       </td>
       <td className="px-3 py-2">

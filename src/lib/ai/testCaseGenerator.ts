@@ -244,85 +244,68 @@ Return ONLY JSON array: ${jsonStructure}
 Rules: category="Exploratory" or "Edge Case" or "Sanity", empty testcaseId, P0/P1/P2, 6-10 cases, max 5 steps${existingSummary}`;
 
     case 'functional_sanity':
-      return `You are an expert senior QA engineer. Generate FUNCTIONAL and SANITY test cases from this PRD.
-Cover ALL 3 platforms: Web (desktop & mobile browsers), TV (Android TV, Fire TV, Apple TV, Samsung Tizen, LG webOS), Mobile (iOS, Android).
+      return `You are a QA engineer. Generate test cases for Web, TV, and Mobile from this PRD.
 
-Each test case module MUST start with [Web], [TV], or [Mobile] prefix.
+IMPORTANT: You MUST distribute test cases across these categories:
+- 10 test cases with category "Functional" (happy path, normal flows)
+- 5 test cases with category "Sanity" (basic smoke tests)
+- 5 test cases with category "Negative" (error handling, invalid inputs)
 
-Focus areas:
-- Functional: Happy path flows, core feature verification, user journeys
-- Sanity: Basic smoke tests ensuring the app launches, navigates, and displays correctly
+For EACH test case, set the module field to include the platform: "[Web] Feature", "[TV] Feature", or "[Mobile] Feature"
 
-Available PRD sections:
-${headingsList}
+PRD Sections: ${headingsList}
 
-Return ONLY a valid JSON array (NO markdown, NO code fences):
+Return ONLY a JSON array (no markdown, no backticks):
 ${jsonStructure}
 
-CRITICAL RULES:
-- Generate 20-30 test cases
-- Set category to "Functional" or "Sanity" ONLY
-- Leave testcaseId as empty string
-- Priority: P0 = critical/blocker, P1 = major, P2 = minor
-- Module MUST start with [Web], [TV], or [Mobile] prefix
-- Test steps: 3-5 actionable steps each
-- Each test case must be unique and platform-specific
-- Output ONLY the JSON array${existingSummary}`;
+Rules:
+- You MUST have exactly these category counts: 10 Functional, 5 Sanity, 5 Negative
+- testcaseId must be empty string
+- Priority: P0=critical, P1=major, P2=minor
+- Test steps: 3-5 clear actions${existingSummary}`;
 
     case 'negative_edge':
-      return `You are an expert senior QA engineer. Generate NEGATIVE and EDGE CASE test cases from this PRD.
-Cover ALL 3 platforms: Web (desktop & mobile browsers), TV (Android TV, Fire TV, Apple TV, Samsung Tizen, LG webOS), Mobile (iOS, Android).
+      return `You are a QA engineer. Generate NEGATIVE and EDGE CASE test cases for Web, TV, and Mobile from this PRD.
 
-Each test case module MUST start with [Web], [TV], or [Mobile] prefix.
+IMPORTANT: You MUST use these categories:
+- 10 test cases with category "Negative" (invalid inputs, error handling, boundary values, permission issues)
+- 10 test cases with category "Edge Case" (race conditions, extreme data, unusual workflows, device-specific quirks)
 
-Focus areas:
-- Negative Testing: Invalid inputs, error handling, boundary values, broken states, unauthorized access
-- Edge Case Testing: Race conditions, extreme data, unusual workflows, concurrent operations, timeout scenarios
+For EACH test case, set the module field to include the platform: "[Web] Feature", "[TV] Feature", or "[Mobile] Feature"
 
-Available PRD sections:
-${headingsList}
+PRD Sections: ${headingsList}
 
-Return ONLY a valid JSON array (NO markdown, NO code fences):
+Return ONLY a JSON array (no markdown, no backticks):
 ${jsonStructure}
 
-CRITICAL RULES:
-- Generate 20-30 test cases
-- Set category to "Negative" or "Edge Case" ONLY
-- Leave testcaseId as empty string
-- Priority: P0 = critical/blocker, P1 = major, P2 = minor
-- Module MUST start with [Web], [TV], or [Mobile] prefix
-- Test steps: 3-5 actionable steps each
-- Each test case must be unique and platform-specific
-- Output ONLY the JSON array${existingSummary}`;
+Rules:
+- You MUST have exactly: 10 Negative, 10 Edge Case
+- testcaseId must be empty string  
+- Priority: P0=critical, P1=major, P2=minor
+- Test steps: 3-5 clear actions
+- Focus on what can go WRONG, not happy paths${existingSummary}`;
 
     case 'exploratory_more':
-      return `You are an expert senior QA engineer. Generate EXPLORATORY test cases and additional coverage from this PRD.
-Cover ALL 3 platforms: Web (desktop & mobile browsers), TV (Android TV, Fire TV, Apple TV, Samsung Tizen, LG webOS), Mobile (iOS, Android).
+      return `You are a QA engineer. Generate EXPLORATORY test cases for Web, TV, and Mobile from this PRD.
 
-Each test case module MUST start with [Web], [TV], or [Mobile] prefix.
+IMPORTANT: You MUST use these categories:
+- 10 test cases with category "Exploratory" (creative testing, unusual user journeys, stress scenarios)
+- 5 test cases with category "Sanity" (additional smoke tests for untested areas)
+- 5 test cases with category "Edge Case" (additional boundary and compatibility tests)
 
-Focus areas:
-- Exploratory Testing: Unscripted scenarios, unusual user behaviors, creative misuse
-- Integration Testing: Cross-feature interactions, API edge cases, third-party services
-- Performance/Security: Load scenarios, auth bypass attempts, session handling
-- Accessibility: Screen reader flows, keyboard navigation, color contrast scenarios
-- Compatibility: Cross-browser/device/OS specific issues
+For EACH test case, set the module field to include the platform: "[Web] Feature", "[TV] Feature", or "[Mobile] Feature"
 
-Available PRD sections:
-${headingsList}
+PRD Sections: ${headingsList}
 
-Return ONLY a valid JSON array (NO markdown, NO code fences):
+Return ONLY a JSON array (no markdown, no backticks):
 ${jsonStructure}
 
-CRITICAL RULES:
-- Generate 20-30 test cases
-- Set category to "Exploratory", "Functional", "Negative", "Edge Case", or "Sanity"
-- Leave testcaseId as empty string
-- Priority: P0 = critical/blocker, P1 = major, P2 = minor
-- Module MUST start with [Web], [TV], or [Mobile] prefix
-- Test steps: 3-5 actionable steps each
-- Each test case must be unique and platform-specific
-- Output ONLY the JSON array${existingSummary}`;
+Rules:
+- You MUST have exactly: 10 Exploratory, 5 Sanity, 5 Edge Case
+- testcaseId must be empty string
+- Priority: P0=critical, P1=major, P2=minor
+- Test steps: 3-5 clear actions
+- Think creatively about unusual scenarios${existingSummary}`;
 
     default:
       return `You are a senior QA engineer. Generate test cases from this PRD.

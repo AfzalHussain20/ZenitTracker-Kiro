@@ -406,9 +406,9 @@ export default function ConfluencePage() {
         setGenerationTotal(allGeneratedCases.length);
         setShowReviewPanel(true);
 
-        // Wait 70 seconds between passes (except after the last one)
+        // Wait 62 seconds between passes (except after the last one)
         if (i < passes.length - 1) {
-          for (let s = 70; s > 0; s--) {
+          for (let s = 62; s > 0; s--) {
             setCountdown(s);
             await new Promise((r) => setTimeout(r, 1000));
           }
@@ -579,6 +579,43 @@ export default function ConfluencePage() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [lightboxImage]);
+
+  // Listen for open-mockup-preview event from TestCaseReviewPanel
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      const moduleName: string = detail?.module || '';
+      if (!selectedPage || !moduleName) return;
+
+      const designLinks = extractDesignLinks(selectedPage.body || '');
+      // Try to match module name to a design link label or category
+      const normalizedModule = moduleName.replace(/^\[(Web|TV|Mobile)\]\s*/i, '').toLowerCase();
+      const match = designLinks.find((link) => {
+        const labelLower = link.label.toLowerCase();
+        const categoryLower = link.category.toLowerCase();
+        return labelLower.includes(normalizedModule) ||
+          normalizedModule.includes(labelLower) ||
+          normalizedModule.includes(categoryLower);
+      });
+
+      if (match) {
+        // Open in lightbox (reuse existing logic)
+        setLightboxImage({ id: 'preview', title: match.label, mediaType: 'text/html', downloadUrl: match.url });
+      } else if (designLinks.length > 0) {
+        // Fallback: try matching by platform prefix
+        const platformMatch = moduleName.match(/^\[(Web|TV|Mobile)\]/i);
+        if (platformMatch) {
+          const platform = platformMatch[1];
+          const platformLink = designLinks.find((link) => link.category.toLowerCase() === platform.toLowerCase());
+          if (platformLink) {
+            setLightboxImage({ id: 'preview', title: platformLink.label, mediaType: 'text/html', downloadUrl: platformLink.url });
+          }
+        }
+      }
+    };
+    window.addEventListener('open-mockup-preview', handler);
+    return () => window.removeEventListener('open-mockup-preview', handler);
+  }, [selectedPage]);
 
   // Find space info for a page
   const getSpaceForPage = (page: PageSummary | PageDetail) => {
