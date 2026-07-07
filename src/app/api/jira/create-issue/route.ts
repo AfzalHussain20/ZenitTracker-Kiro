@@ -10,7 +10,7 @@ export async function POST(req: Request) {
         const {
             title, description, stepsToReproduce, expectedResult, actualResult,
             severity, priority, platform, appVersion, environment,
-            existingInLive, frequency, labels, assigneeAccountId, reportedByName,
+            existingInLive, frequency, labels, assigneeAccountId, componentId, reportedByName,
             // Legacy session page fields
             testCaseName, testerName, steps, expected, actual,
         } = body;
@@ -76,6 +76,7 @@ export async function POST(req: Request) {
             ...(frequency ? { customfield_10202: frequency } : {}),
             ...(labels?.length ? { labels } : {}),
             ...(assigneeAccountId ? { assignee: { accountId: assigneeAccountId } } : {}),
+            ...(componentId ? { components: [{ id: componentId }] } : {}),
         };
 
         const response = await fetch(`${JIRA_BASE}/rest/api/3/issue`, {

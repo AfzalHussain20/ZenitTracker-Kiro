@@ -137,19 +137,24 @@ export default function TestSessionPage() {
   const [jiraExistingInLive, setJiraExistingInLive] = useState('No');
   const [jiraActual, setJiraActual] = useState('');
   const [jiraUsers, setJiraUsers] = useState<{accountId: string; displayName: string}[]>([]);
+  const [jiraComponents, setJiraComponents] = useState<{id: string; name: string}[]>([]);
+  const [jiraComponent, setJiraComponent] = useState('');
 
   const timer = useTimer(currentIndex);
   const { bugTitle, fetching: bugFetching, fetchError: bugFetchError } = useJiraFetch(bugId);
   const anyDialogOpen = failOpen || naOpen || completeOpen || drawerOpen;
 
-  // Fetch Jira users when form opens
+  // Fetch Jira users and components when form opens
   useEffect(() => {
-    if (showJiraForm && jiraUsers.length === 0) {
-      fetch('/api/jira/users').then(r => r.json()).then(d => {
-        if (d.users) setJiraUsers(d.users);
-      }).catch(() => {});
+    if (showJiraForm) {
+      if (jiraUsers.length === 0) {
+        fetch('/api/jira/users').then(r => r.json()).then(d => { if (d.users) setJiraUsers(d.users); }).catch(() => {});
+      }
+      if (jiraComponents.length === 0) {
+        fetch('/api/jira/components').then(r => r.json()).then(d => { if (d.components) setJiraComponents(d.components); }).catch(() => {});
+      }
     }
-  }, [showJiraForm, jiraUsers.length]);
+  }, [showJiraForm, jiraUsers.length, jiraComponents.length]);
 
   // Pre-populate Jira form when it opens
   useEffect(() => {
@@ -767,6 +772,14 @@ export default function TestSessionPage() {
                     </select>
                   </div>
                   <div className="col-span-2 space-y-1.5">
+                    <label className="text-[11px] font-medium text-muted-foreground">Team / Component</label>
+                    <select value={jiraComponent} onChange={e => setJiraComponent(e.target.value)}
+                      className="w-full h-9 text-sm bg-muted/50 border border-border rounded-lg px-2 text-foreground">
+                      <option value="">None</option>
+                      {jiraComponents.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
                     <label className="text-[11px] font-medium text-muted-foreground">Actual Result *</label>
                     <Textarea value={jiraActual} onChange={e => setJiraActual(e.target.value)} rows={2}
                       className="resize-none text-sm bg-muted/50 border-border rounded-lg min-h-0" />
@@ -807,6 +820,7 @@ export default function TestSessionPage() {
                         environment: jiraEnv,
                         existingInLive: jiraExistingInLive,
                         assigneeAccountId: jiraAssignee || undefined,
+                        componentId: jiraComponent || undefined,
                         reportedByName: session.userName,
                         labels: ['zenit-session', tc?.testBed?.toLowerCase().replace(/\s+/g, '-') || 'general'],
                       }),
