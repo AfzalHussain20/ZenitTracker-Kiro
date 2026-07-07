@@ -21,7 +21,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuPortal
 } from '@/components/ui/dropdown-menu';
-import { LogOut, UserCircle, LayoutDashboard, Sun, Moon, Monitor, Settings, ChevronDown, ClipboardList, Info, BookOpen } from 'lucide-react';
+import { LogOut, UserCircle, LayoutDashboard, Sun, Moon, Monitor, Settings, ChevronDown, ClipboardList, Info, BookOpen, Menu, X } from 'lucide-react';
 import { LogoIcon } from '@/components/ui/Logo';
 
 export default function AppHeader() {
@@ -29,6 +29,7 @@ export default function AppHeader() {
   const { setTheme, theme } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const hideHeaderRoutes = ['/dashboard/vision', '/automation'];
   const shouldHide = hideHeaderRoutes.some(route => pathname?.startsWith(route));
@@ -89,8 +90,13 @@ export default function AppHeader() {
           </Link>
         </nav>
 
-        {/* User Menu */}
+        {/* User Menu + Mobile Toggle */}
         <div className="flex items-center gap-2">
+          {/* Mobile menu toggle */}
+          <Button variant="ghost" size="icon" className="md:hidden h-8 w-8" onClick={() => setMobileMenuOpen(v => !v)}>
+            {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+          </Button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="gap-2">
@@ -159,6 +165,26 @@ export default function AppHeader() {
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Mobile Navigation */}
+      {mobileMenuOpen && (
+        <div className="md:hidden border-t border-border bg-background px-4 py-3 space-y-1">
+          {[
+            { href: '/dashboard', label: 'Dashboard' },
+            { href: '/apps', label: 'Apps' },
+            { href: '/bugs', label: 'Jira' },
+            ...(userRole === 'lead' ? [{ href: '/team', label: 'Team Performance' }] : []),
+            { href: '/dashboard/sessions', label: 'Session History' },
+            { href: '/about', label: 'About' },
+          ].map(item => (
+            <Link key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)}>
+              <Button variant={pathname === item.href ? 'secondary' : 'ghost'} size="sm" className="w-full justify-start">
+                {item.label}
+              </Button>
+            </Link>
+          ))}
+        </div>
+      )}
     </header>
   );
 }

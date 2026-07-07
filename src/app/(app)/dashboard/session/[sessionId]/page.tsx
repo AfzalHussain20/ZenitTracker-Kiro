@@ -9,6 +9,7 @@ import { doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import {
   CheckCircle2, XCircle, MinusCircle, ChevronLeft, ChevronRight,
@@ -523,7 +524,16 @@ export default function TestSessionPage() {
 
               {/* Card body — scrollable */}
               <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0">
-                <h2 className="text-base font-semibold text-foreground leading-snug">{tc?.testCaseTitle}</h2>
+                <h2 className="text-base font-semibold text-foreground leading-snug">
+                  {tc?.testCaseTitle}
+                  {tc?.status && tc.status !== 'Untested' && (
+                    <Badge className={cn('ml-2 text-[9px] align-middle',
+                      tc.status === 'Pass' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' :
+                      tc.status.includes('Fail') ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400' :
+                      'bg-muted text-muted-foreground'
+                    )}>{tc.status === 'Pass' ? '✓ Passed' : tc.status.includes('Fail') ? '✗ Failed' : 'Skipped'}</Badge>
+                  )}
+                </h2>
 
                 {steps.length > 0 && (
                   <div className="space-y-1.5">
