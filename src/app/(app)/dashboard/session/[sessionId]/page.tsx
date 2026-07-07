@@ -368,6 +368,17 @@ export default function TestSessionPage() {
   );
   if (!session) return null;
 
+  // Handle empty session
+  if (session.testCases.length === 0) return (
+    <div className="fixed inset-0 bg-background flex items-center justify-center">
+      <div className="text-center space-y-3">
+        <p className="text-lg font-semibold">No test cases in this session</p>
+        <p className="text-sm text-muted-foreground">This session has no test cases loaded.</p>
+        <Button onClick={() => router.push('/dashboard')}>Back to Dashboard</Button>
+      </div>
+    </div>
+  );
+
   // Derived data
   const tc = session.testCases[currentIndex];
   const untestedCount = session.testCases.filter(t => t.status === 'Untested').length;
@@ -375,7 +386,7 @@ export default function TestSessionPage() {
   const failCount = session.testCases.filter(t => t.status.includes('Fail')).length;
   const naCount = session.testCases.filter(t => t.status === 'N/A').length;
   const total = session.testCases.length;
-  const progress = Math.round(((total - untestedCount) / total) * 100);
+  const progress = total > 0 ? Math.round(((total - untestedCount) / total) * 100) : 0;
   const steps = (tc?.testSteps || '').split('\n').filter(Boolean);
   const testBeds = Array.from(new Set(session.testCases.map(t => t.testBed || 'Uncategorized')));
   const filteredCases = session.testCases.filter(t => {
