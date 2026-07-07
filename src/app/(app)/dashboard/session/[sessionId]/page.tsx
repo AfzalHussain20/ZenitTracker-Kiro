@@ -141,12 +141,14 @@ export default function TestSessionPage() {
   const [jiraComponents, setJiraComponents] = useState<{id: string; name: string}[]>([]);
   const [jiraComponent, setJiraComponent] = useState('');
   const [jiraAssigneeSearch, setJiraAssigneeSearch] = useState('');
+  const [jiraEnvironments, setJiraEnvironments] = useState<string[]>([]);
+  const [jiraPriorities, setJiraPriorities] = useState<{id: string; name: string}[]>([]);
 
   const timer = useTimer(currentIndex);
   const { bugTitle, fetching: bugFetching, fetchError: bugFetchError } = useJiraFetch(bugId);
   const anyDialogOpen = failOpen || naOpen || completeOpen || drawerOpen;
 
-  // Fetch Jira users and components when form opens
+  // Fetch Jira users, components, and field options when form opens
   useEffect(() => {
     if (showJiraForm) {
       if (jiraUsers.length === 0) {
@@ -155,8 +157,14 @@ export default function TestSessionPage() {
       if (jiraComponents.length === 0) {
         fetch('/api/jira/components').then(r => r.json()).then(d => { if (d.components) setJiraComponents(d.components); }).catch(() => {});
       }
+      if (jiraEnvironments.length === 0) {
+        fetch('/api/jira/fields').then(r => r.json()).then(d => {
+          if (d.environments?.length) setJiraEnvironments(d.environments);
+          if (d.priorities?.length) setJiraPriorities(d.priorities);
+        }).catch(() => {});
+      }
     }
-  }, [showJiraForm, jiraUsers.length, jiraComponents.length]);
+  }, [showJiraForm, jiraUsers.length, jiraComponents.length, jiraEnvironments.length]);
 
   // Pre-populate Jira form when it opens
   useEffect(() => {
@@ -752,22 +760,35 @@ export default function TestSessionPage() {
                     <label className="text-[11px] font-medium text-muted-foreground">Severity</label>
                     <select value={jiraSeverity} onChange={e => setJiraSeverity(e.target.value)}
                       className="w-full h-9 text-sm bg-muted/50 border border-border rounded-lg px-2 text-foreground">
-                      <option value="Critical">P1 — Critical</option>
-                      <option value="High">P2 — High</option>
-                      <option value="Medium">P3 — Medium</option>
-                      <option value="Low">P4 — Low</option>
+                      {jiraPriorities.length > 0 ? (
+                        jiraPriorities.map(p => <option key={p.id} value={p.name}>{p.name}</option>)
+                      ) : (
+                        <>
+                          <option value="Highest">P1 — Highest</option>
+                          <option value="High">P2 — High</option>
+                          <option value="Medium">P3 — Medium</option>
+                          <option value="Low">P4 — Low</option>
+                          <option value="Lowest">P5 — Lowest</option>
+                        </>
+                      )}
                     </select>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-medium text-muted-foreground">Environment</label>
                     <select value={jiraEnv} onChange={e => setJiraEnv(e.target.value)}
                       className="w-full h-9 text-sm bg-muted/50 border border-border rounded-lg px-2 text-foreground">
-                      <option value="Dev">Dev</option>
-                      <option value="QA">QA</option>
-                      <option value="Staging">Staging</option>
-                      <option value="Preprod">Preprod</option>
-                      <option value="UAT">UAT</option>
-                      <option value="Production">Production</option>
+                      {jiraEnvironments.length > 0 ? (
+                        jiraEnvironments.map(env => <option key={env} value={env}>{env}</option>)
+                      ) : (
+                        <>
+                          <option value="Dev">Dev</option>
+                          <option value="QA">QA</option>
+                          <option value="Staging">Staging</option>
+                          <option value="Preprod">Preprod</option>
+                          <option value="UAT">UAT</option>
+                          <option value="Production">Production</option>
+                        </>
+                      )}
                     </select>
                   </div>
                   <div className="col-span-2 space-y-1.5">
