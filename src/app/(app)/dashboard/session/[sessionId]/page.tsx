@@ -263,11 +263,13 @@ export default function TestSessionPage() {
     router.replace(`/dashboard/session/${sessionId}/results`);
   };
 
-  // Mark verdict
+  // Mark verdict — with double-click guard
+  const [isMarking, setIsMarking] = useState(false);
   const markStatus = useCallback(async (base: 'Pass' | 'Fail' | 'N/A', details?: any) => {
-    if (!session) return;
+    if (!session || isMarking) return;
     const currentTc = session.testCases[currentIndex];
     if (!currentTc) return;
+    setIsMarking(true);
     setVerdict(base);
 
     // Save any pending actual result before marking
@@ -291,9 +293,10 @@ export default function TestSessionPage() {
     setTimeout(() => {
       if (currentIndex < updated.length - 1) setCurrentIndex(i => i + 1);
       else setCompleteOpen(true);
+      setIsMarking(false);
     }, 300);
     setFailOpen(false); setNaOpen(false);
-  }, [session, currentIndex, handleUpdate]);
+  }, [session, currentIndex, handleUpdate, isMarking]);
 
   // Keyboard shortcuts — FIXED: preventDefault BEFORE action, check anyDialogOpen
   useEffect(() => {
@@ -673,7 +676,7 @@ export default function TestSessionPage() {
       </AnimatePresence>
 
       {/* ─── Fail Dialog ─── */}
-      <Dialog open={failOpen} onOpenChange={v => { setFailOpen(v); if (!v) { setJiraIssueKey(null); setJiraIssueLink(null); setShowJiraForm(false); } }}>
+      <Dialog open={failOpen} onOpenChange={v => { setFailOpen(v); if (!v) { setJiraIssueKey(null); setJiraIssueLink(null); setShowJiraForm(false); setBugId(''); setBugDesc(''); } }}>
         <DialogContent className="sm:max-w-[480px] lg:max-w-[560px] bg-card border-border text-foreground rounded-2xl p-0 gap-0 max-h-[90vh] flex flex-col">
           <div className="px-5 pt-5 pb-3 shrink-0">
             <DialogHeader className="space-y-1">
@@ -908,6 +911,7 @@ export default function TestSessionPage() {
             <Button variant="ghost" size="sm" onClick={() => setCompleteOpen(false)}
               className="text-muted-foreground hover:text-foreground hover:bg-muted">Cancel</Button>
             <Button size="sm" onClick={() => handleComplete(incompleteReason)}
+              disabled={untestedCount > 0 && !incompleteReason}
               className="bg-emerald-600 hover:bg-emerald-700 text-white border-0 rounded-lg">
               Generate Report
             </Button>

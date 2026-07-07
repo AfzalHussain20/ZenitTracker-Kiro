@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import {
   Loader2, ArrowLeft, CheckCircle2, XCircle, AlertTriangle,
-  Printer, Download, Clock, Calendar, ExternalLink,
+  Printer, Download, Clock, Calendar, ExternalLink, ArrowRight,
   TrendingUp, Target, Bug, SkipForward, BarChart3, Layers
 } from 'lucide-react';
 import { format, formatDistanceStrict } from 'date-fns';
@@ -154,6 +154,11 @@ export default function TestSessionResultPage() {
               <Button variant="ghost" size="sm" onClick={() => router.push('/dashboard')} className="h-8 -ml-2 text-muted-foreground hover:text-foreground">
                 <ArrowLeft className="w-4 h-4 mr-1" /> Dashboard
               </Button>
+              {(session.status === 'In Progress' || session.status === 'Aborted') && (
+                <Button variant="outline" size="sm" onClick={() => router.push(`/dashboard/session/${session.id}`)} className="h-8 text-xs">
+                  Continue Session <ArrowRight className="w-3 h-3 ml-1" />
+                </Button>
+              )}
               <Badge variant="outline" className="font-mono text-[10px] text-muted-foreground">{session.id.substring(0, 8)}</Badge>
               <Badge className={cn('text-[10px]', session.status === 'Completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400')}>
                 {session.status}
