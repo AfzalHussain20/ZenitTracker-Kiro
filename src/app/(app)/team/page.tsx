@@ -24,6 +24,7 @@ interface MemberStats {
   uid: string;
   name: string;
   sessions: number;
+  completedSessions: number;
   totalCases: number;
   passed: number;
   failed: number;
@@ -32,7 +33,10 @@ interface MemberStats {
   bugsLogged: number;
   platforms: string[];
   lastActive: Date | null;
-  avgDuration: string;
+  avgCasesPerSession: number;
+  completionRate: number;
+  productivityScore: number;
+  activeDays: number;
 }
 
 const getValidDate = (d: any): Date | null => {
@@ -100,10 +104,11 @@ export default function TeamPerformancePage() {
       const uid = session.userId;
       const name = session.userName || 'Unknown';
       if (!map.has(uid)) {
-        map.set(uid, { uid, name, sessions: 0, totalCases: 0, passed: 0, failed: 0, na: 0, passRate: 0, bugsLogged: 0, platforms: [], lastActive: null, avgDuration: '—' });
+        map.set(uid, { uid, name, sessions: 0, completedSessions: 0, totalCases: 0, passed: 0, failed: 0, na: 0, passRate: 0, bugsLogged: 0, platforms: [], lastActive: null, avgCasesPerSession: 0, completionRate: 0, productivityScore: 0, activeDays: 0 });
       }
       const stats = map.get(uid)!;
       stats.sessions += 1;
+      if (session.status === 'Completed') stats.completedSessions += 1;
       const cases = session.testCases || [];
       stats.totalCases += cases.length;
       stats.passed += cases.filter(tc => tc.status === 'Pass').length;
@@ -115,9 +120,26 @@ export default function TeamPerformancePage() {
       const created = getValidDate(session.createdAt);
       if (created && (!stats.lastActive || created > stats.lastActive)) stats.lastActive = created;
     });
-    // Compute pass rates
-    map.forEach(s => { s.passRate = s.totalCases > 0 ? Math.round((s.passed / s.totalCases) * 100) : 0; });
-    return Array.from(map.values()).sort((a, b) => b.totalCases - a.totalCases);
+
+    // Compute derived metrics
+    map.forEach(s => {
+      s.passRate = s.totalCases > 0 ? Math.round((s.passed / s.totalCases) * 100) : 0;
+      s.avgCasesPerSession = s.sessions > 0 ? Math.round(s.totalCases / s.sessions) : 0;
+      s.completionRate = s.sessions > 0 ? Math.round((s.completedSessions / s.sessions) * 100) : 0;
+      // Productivity score: weighted combination of volume + quality + completion
+      s.productivityScore = Math.min(100, Math.round(
+        (s.totalCases * 0.3) + (s.passRate * 0.4) + (s.completionRate * 0.3)
+      ));
+      // Active days: count unique dates
+      const dates = new Set<string>();
+      filteredSessions.filter(sess => sess.userId === s.uid).forEach(sess => {
+        const d = getValidDate(sess.createdAt);
+        if (d) dates.add(d.toISOString().split('T')[0]);
+      });
+      s.activeDays = dates.size;
+    });
+
+    return Array.from(map.values()).sort((a, b) => b.productivityScore - a.productivityScore);
   }, [filteredSessions]);
 
   // Totals
@@ -242,12 +264,14 @@ export default function TeamPerformancePage() {
                 <thead>
                   <tr className="border-b border-border bg-muted/30">
                     <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase">Member</th>
-                    <th className="text-center px-3 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase">Sessions</th>
-                    <th className="text-center px-3 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase">Cases</th>
-                    <th className="text-center px-3 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase">Pass Rate</th>
-                    <th className="text-center px-3 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase">Bugs</th>
-                    <th className="text-center px-3 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase hidden md:table-cell">Platforms</th>
-                    <th className="text-center px-3 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase hidden lg:table-cell">Last Active</th>
+                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase">Score</th>
+                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase">Sessions</th>
+                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase">Cases</th>
+                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase">Pass%</th>
+                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase">Bugs</th>
+                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase hidden md:table-cell">Completion</th>
+                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase hidden lg:table-cell">Active Days</th>
+                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase hidden lg:table-cell">Platforms</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -269,29 +293,39 @@ export default function TeamPerformancePage() {
                               </div>
                             </div>
                           </td>
-                          <td className="text-center px-3 py-3 text-sm font-semibold tabular-nums">{m.sessions}</td>
-                          <td className="text-center px-3 py-3 text-sm tabular-nums">{m.totalCases}</td>
-                          <td className="text-center px-3 py-3">
+                          <td className="text-center px-2 py-3">
+                            <div className="flex items-center justify-center">
+                              <div className={cn('w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold',
+                                m.productivityScore >= 70 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' :
+                                m.productivityScore >= 40 ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400' :
+                                'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400'
+                              )}>{m.productivityScore}</div>
+                            </div>
+                          </td>
+                          <td className="text-center px-2 py-3 text-sm font-semibold tabular-nums">{m.sessions}</td>
+                          <td className="text-center px-2 py-3 text-sm tabular-nums">{m.totalCases}</td>
+                          <td className="text-center px-2 py-3">
                             <span className={cn('text-sm font-bold tabular-nums', m.passRate >= 80 ? 'text-emerald-600' : m.passRate >= 50 ? 'text-amber-600' : 'text-red-600')}>
                               {m.passRate}%
                             </span>
                           </td>
-                          <td className="text-center px-3 py-3 text-sm tabular-nums text-red-600 font-medium">{m.bugsLogged || '—'}</td>
-                          <td className="text-center px-3 py-3 hidden md:table-cell">
-                            <div className="flex flex-wrap gap-1 justify-center">
-                              {m.platforms.slice(0, 3).map(p => (
-                                <Badge key={p} variant="outline" className="text-[9px] px-1.5 py-0">{p.replace(' TV', '').replace('Mobile ', '')}</Badge>
-                              ))}
-                              {m.platforms.length > 3 && <span className="text-[9px] text-muted-foreground">+{m.platforms.length - 3}</span>}
-                            </div>
+                          <td className="text-center px-2 py-3 text-sm tabular-nums text-red-600 font-medium">{m.bugsLogged || '—'}</td>
+                          <td className="text-center px-2 py-3 hidden md:table-cell">
+                            <span className={cn('text-xs font-semibold', m.completionRate >= 80 ? 'text-emerald-600' : 'text-amber-600')}>{m.completionRate}%</span>
                           </td>
-                          <td className="text-center px-3 py-3 text-xs text-muted-foreground hidden lg:table-cell">
-                            {m.lastActive ? format(m.lastActive, 'MMM dd') : '—'}
+                          <td className="text-center px-2 py-3 text-xs text-muted-foreground hidden lg:table-cell">{m.activeDays}d</td>
+                          <td className="text-center px-2 py-3 hidden lg:table-cell">
+                            <div className="flex flex-wrap gap-1 justify-center">
+                              {m.platforms.slice(0, 2).map(p => (
+                                <Badge key={p} variant="outline" className="text-[8px] px-1 py-0">{p.replace(' TV', '').replace('Mobile ', '')}</Badge>
+                              ))}
+                              {m.platforms.length > 2 && <span className="text-[8px] text-muted-foreground">+{m.platforms.length - 2}</span>}
+                            </div>
                           </td>
                         </tr>
                         {isExpanded && memberSessions.length > 0 && (
                           <tr>
-                            <td colSpan={7} className="px-4 py-3 bg-muted/20">
+                            <td colSpan={9} className="px-4 py-3 bg-muted/20">
                               <div className="space-y-1.5">
                                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Recent Sessions by {m.name}</p>
                                 {memberSessions.map(s => {
