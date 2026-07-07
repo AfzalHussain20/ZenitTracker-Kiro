@@ -2,253 +2,69 @@
 
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft, Clock, Shield, Library, Wand2, Users, Sparkles, Bug, FileText, BarChart3, BookOpen } from 'lucide-react';
-
-// Apps hidden from UI (code preserved for future use):
-// - Vision (AI script generation unreliable)
-// - Automation (requires local setup)
-// - Locator Lab (requires local setup)
+import { useAuth } from '@/context/AuthContext';
+import {
+  Clock, Shield, Library, Wand2, Users, Bug, FileText,
+  BarChart3, ArrowRight, Zap, TestTube, Layers
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const apps = [
-  {
-    id: 'wrklog',
-    name: 'Wrklog',
-    description: 'Track your testing time and productivity',
-    icon: Clock,
-    gradient: 'from-indigo-500 to-purple-600',
-    href: '/wrklog',
-    status: 'live',
-  },
-  {
-    id: 'keepr',
-    name: 'Keepr',
-    description: 'Device check-in and check-out management',
-    icon: Shield,
-    gradient: 'from-blue-500 to-cyan-600',
-    href: '/keepr',
-    status: 'live',
-  },
-  {
-    id: 'repository',
-    name: 'Repository',
-    description: 'Test case library and management',
-    icon: Library,
-    gradient: 'from-green-500 to-emerald-600',
-    href: '/dashboard/repository',
-    status: 'live',
-  },
-  {
-    id: 'clevertap',
-    name: 'CleverTap Tracker',
-    description: 'CleverTap analytics event validation',
-    icon: Wand2,
-    gradient: 'from-pink-500 to-rose-600',
-    href: '/dashboard/clevertap-tracker',
-    status: 'live',
-  },
-  {
-    id: 'team',
-    name: 'Team Performance',
-    description: 'Team analytics and leaderboard',
-    icon: Users,
-    gradient: 'from-purple-500 to-indigo-600',
-    href: '/team',
-    status: 'live',
-  },
-  {
-    id: 'bug-tracker',
-    name: 'Bug Tracker',
-    description: 'Log, track and manage bugs from test sessions',
-    icon: Bug,
-    gradient: 'from-red-500 to-orange-600',
-    href: '/bugs',
-    status: 'live',
-  },
-  {
-    id: 'reports',
-    name: 'Reports Hub',
-    description: 'Auto-generate test reports and export to Excel/PDF',
-    icon: FileText,
-    gradient: 'from-amber-500 to-yellow-600',
-    href: '/reports',
-    status: 'coming-soon',
-  },
-  {
-    id: 'analytics',
-    name: 'Analytics',
-    description: 'Cross-session trends, platform metrics and insights',
-    icon: BarChart3,
-    gradient: 'from-cyan-500 to-teal-600',
-    href: '/analytics',
-    status: 'live',
-  },
-  // Nexus Academy - Hidden for now
-  // {
-  //   id: 'nexus',
-  //   name: 'Nexus Academy',
-  //   description: 'QA learning resources and best practices',
-  //   icon: BookOpen,
-  //   gradient: 'from-violet-500 to-purple-600',
-  //   href: '/nexus',
-  //   status: 'live',
-  // },
+  { id: 'sessions', name: 'Test Sessions', desc: 'Execute & track manual testing sessions', icon: TestTube, href: '/dashboard/sessions', color: 'text-violet-600 bg-violet-50 dark:bg-violet-500/10 border-violet-200 dark:border-violet-500/20' },
+  { id: 'team', name: 'Team Performance', desc: 'Track team metrics & member activity', icon: Users, href: '/team', color: 'text-blue-600 bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20', leadOnly: true },
+  { id: 'bug-tracker', name: 'Bug Tracker', desc: 'Jira-synced bug dashboard & analytics', icon: Bug, href: '/bugs', color: 'text-red-600 bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20' },
+  { id: 'jira-kpi', name: 'Jira KPI', desc: 'Advanced Jira analytics & team metrics', icon: BarChart3, href: '/analytics/bugs', color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20' },
+  { id: 'wrklog', name: 'Wrklog', desc: 'Track testing time & productivity', icon: Clock, href: '/wrklog', color: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/20' },
+  { id: 'keepr', name: 'Keepr', desc: 'Device check-in & check-out management', icon: Shield, href: '/keepr', color: 'text-cyan-600 bg-cyan-50 dark:bg-cyan-500/10 border-cyan-200 dark:border-cyan-500/20' },
+  { id: 'repository', name: 'Test Repository', desc: 'Managed test case library', icon: Library, href: '/dashboard/repository', color: 'text-green-600 bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/20' },
+  { id: 'clevertap', name: 'CleverTap Tracker', desc: 'Analytics event validation', icon: Wand2, href: '/dashboard/clevertap-tracker', color: 'text-pink-600 bg-pink-50 dark:bg-pink-500/10 border-pink-200 dark:border-pink-500/20' },
+  { id: 'performance', name: 'Performance Lab', desc: 'Device performance monitoring', icon: Zap, href: '/performance', color: 'text-amber-600 bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20' },
 ];
 
 export default function AppsPage() {
+  const { userRole } = useAuth();
+
+  const visibleApps = apps.filter(a => !a.leadOnly || userRole === 'lead');
+
   return (
-    <div className="space-y-8 animate-fade-in">
-        {/* Hero Header */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/10 via-purple-500/10 to-pink-500/10 border border-primary/20 p-8">
-          <div className="relative z-10">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-4"
-            >
-              <Link href="/dashboard">
-                <Button variant="ghost" size="icon" className="rounded-full">
-                  <ArrowLeft className="h-5 w-5" />
-                </Button>
-              </Link>
-              <div className="flex-1">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-xs font-medium mb-3">
-                  <Sparkles className="w-3 h-3" />
-                  Zenit Suite
-                </div>
-                <h1 className="text-4xl font-bold tracking-tight">
-                  <span className="text-gradient">Zenit Apps</span>
-                </h1>
-                <p className="text-muted-foreground text-lg mt-2">
-                  Powerful tools for modern QA teams
-                </p>
-              </div>
-            </motion.div>
+    <div className="space-y-8 max-w-5xl mx-auto">
+      {/* Header */}
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+            <Layers className="w-5 h-5 text-primary" />
           </div>
-          <div className="absolute top-0 right-0 w-64 h-64 bg-primary/20 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/20 rounded-full blur-3xl" />
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Apps</h1>
+            <p className="text-sm text-muted-foreground">{visibleApps.length} tools available</p>
+          </div>
         </div>
+      </motion.div>
 
-        {/* Apps Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {apps.map((app, index) => {
-            const AppIcon = app.icon;
-            const isComingSoon = app.status === 'coming-soon';
-            return (
-              <motion.div
-                key={app.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-              >
-                <Link href={isComingSoon ? '#' : app.href} onClick={isComingSoon ? (e) => e.preventDefault() : undefined}>
-                  <Card className={`group relative overflow-hidden h-full transition-all duration-300 border-border/50 ${isComingSoon ? 'opacity-70 cursor-not-allowed' : 'hover:shadow-2xl hover:border-primary/50'}`}>
-                    <div className={`absolute inset-0 bg-gradient-to-br ${app.gradient} opacity-0 ${!isComingSoon && 'group-hover:opacity-10'} transition-opacity duration-300`} />
-                    <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary/20 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                    
-                    <CardContent className="p-6 relative">
-                      <div className="flex items-start gap-4">
-                        <div className={`p-4 rounded-2xl bg-gradient-to-br ${app.gradient} shadow-lg ${!isComingSoon && 'group-hover:scale-110'} transition-transform duration-300`}>
-                          <AppIcon className="h-8 w-8 text-white" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-bold text-lg mb-1 group-hover:text-primary transition-colors">
-                              {app.name}
-                            </h3>
-                            {isComingSoon && (
-                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 border border-amber-500/30 mb-1">
-                                SOON
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-muted-foreground line-clamp-2">
-                            {app.description}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="mt-6 flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground">{isComingSoon ? 'Coming soon' : 'Click to launch'}</span>
-                        <div className={`w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center ${!isComingSoon && 'group-hover:bg-primary group-hover:scale-110'} transition-all`}>
-                          <svg className={`w-4 h-4 text-primary ${!isComingSoon && 'group-hover:text-white'} transition-colors`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              </motion.div>
-            );
-          })}
-        </div>
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8 }}
-          >
-            <Card className="relative overflow-hidden border-border/50">
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent" />
-              <CardContent className="p-6 relative">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-xl bg-blue-500/10">
-                    <Sparkles className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold">{apps.filter(a => a.status === 'live').length}</div>
-                    <div className="text-sm text-muted-foreground">Live Apps</div>
-                  </div>
+      {/* Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {visibleApps.map((app, i) => {
+          const Icon = app.icon;
+          return (
+            <motion.div key={app.id}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.04 }}>
+              <Link href={app.href}
+                className="group flex items-start gap-4 p-4 rounded-2xl border border-border bg-card hover:border-primary/30 hover:shadow-md transition-all">
+                <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border', app.color)}>
+                  <Icon className="w-5 h-5" />
                 </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.9 }}
-          >
-            <Card className="relative overflow-hidden border-border/50">
-              <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-transparent" />
-              <CardContent className="p-6 relative">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-xl bg-green-500/10">
-                    <Shield className="h-6 w-6 text-green-600" />
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold">100%</div>
-                    <div className="text-sm text-muted-foreground">Secure & Reliable</div>
-                  </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">{app.name}</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{app.desc}</p>
                 </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.0 }}
-          >
-            <Card className="relative overflow-hidden border-border/50">
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent" />
-              <CardContent className="p-6 relative">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-xl bg-purple-500/10">
-                    <Users className="h-6 w-6 text-purple-600" />
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold">24/7</div>
-                    <div className="text-sm text-muted-foreground">Always Available</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
+                <ArrowRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-1" />
+              </Link>
+            </motion.div>
+          );
+        })}
+      </div>
     </div>
   );
 }

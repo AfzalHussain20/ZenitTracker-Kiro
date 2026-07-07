@@ -140,6 +140,7 @@ export default function TestSessionPage() {
   const [jiraUsers, setJiraUsers] = useState<{accountId: string; displayName: string}[]>([]);
   const [jiraComponents, setJiraComponents] = useState<{id: string; name: string}[]>([]);
   const [jiraComponent, setJiraComponent] = useState('');
+  const [jiraAssigneeSearch, setJiraAssigneeSearch] = useState('');
 
   const timer = useTimer(currentIndex);
   const { bugTitle, fetching: bugFetching, fetchError: bugFetchError } = useJiraFetch(bugId);
@@ -751,29 +752,54 @@ export default function TestSessionPage() {
                     <label className="text-[11px] font-medium text-muted-foreground">Severity</label>
                     <select value={jiraSeverity} onChange={e => setJiraSeverity(e.target.value)}
                       className="w-full h-9 text-sm bg-muted/50 border border-border rounded-lg px-2 text-foreground">
-                      <option value="Critical">Critical</option>
-                      <option value="High">High</option>
-                      <option value="Medium">Medium</option>
-                      <option value="Low">Low</option>
+                      <option value="Critical">P1 — Critical</option>
+                      <option value="High">P2 — High</option>
+                      <option value="Medium">P3 — Medium</option>
+                      <option value="Low">P4 — Low</option>
                     </select>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-medium text-muted-foreground">Environment</label>
                     <select value={jiraEnv} onChange={e => setJiraEnv(e.target.value)}
                       className="w-full h-9 text-sm bg-muted/50 border border-border rounded-lg px-2 text-foreground">
-                      <option value="Staging">Staging</option>
-                      <option value="Production">Production</option>
-                      <option value="QA">QA</option>
                       <option value="Dev">Dev</option>
+                      <option value="QA">QA</option>
+                      <option value="Staging">Staging</option>
+                      <option value="Preprod">Preprod</option>
+                      <option value="UAT">UAT</option>
+                      <option value="Production">Production</option>
                     </select>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="col-span-2 space-y-1.5">
                     <label className="text-[11px] font-medium text-muted-foreground">Assignee</label>
-                    <select value={jiraAssignee} onChange={e => setJiraAssignee(e.target.value)}
-                      className="w-full h-9 text-sm bg-muted/50 border border-border rounded-lg px-2 text-foreground">
-                      <option value="">Unassigned</option>
-                      {jiraUsers.map(u => <option key={u.accountId} value={u.accountId}>{u.displayName}</option>)}
-                    </select>
+                    <div className="relative">
+                      <Input
+                        placeholder="Search assignee..."
+                        value={jiraAssigneeSearch}
+                        onChange={e => { setJiraAssigneeSearch(e.target.value); setJiraAssignee(''); }}
+                        className="h-9 text-sm bg-muted/50 border-border rounded-lg"
+                      />
+                      {jiraAssigneeSearch && !jiraAssignee && (
+                        <div className="absolute top-full left-0 right-0 mt-1 z-10 bg-card border border-border rounded-lg shadow-lg max-h-32 overflow-y-auto">
+                          {jiraUsers
+                            .filter(u => u.displayName.toLowerCase().includes(jiraAssigneeSearch.toLowerCase()))
+                            .slice(0, 8)
+                            .map(u => (
+                              <button key={u.accountId} type="button"
+                                onClick={() => { setJiraAssignee(u.accountId); setJiraAssigneeSearch(u.displayName); }}
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors truncate">
+                                {u.displayName}
+                              </button>
+                            ))}
+                          {jiraUsers.filter(u => u.displayName.toLowerCase().includes(jiraAssigneeSearch.toLowerCase())).length === 0 && (
+                            <p className="px-3 py-2 text-xs text-muted-foreground">No matches</p>
+                          )}
+                        </div>
+                      )}
+                      {jiraAssignee && (
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-emerald-600">✓</span>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-medium text-muted-foreground">Existing in Live?</label>
@@ -784,7 +810,7 @@ export default function TestSessionPage() {
                       <option value="Not Checked">Not Checked</option>
                     </select>
                   </div>
-                  <div className="col-span-2 space-y-1.5">
+                  <div className="space-y-1.5">
                     <label className="text-[11px] font-medium text-muted-foreground">Team / Component</label>
                     <select value={jiraComponent} onChange={e => setJiraComponent(e.target.value)}
                       className="w-full h-9 text-sm bg-muted/50 border border-border rounded-lg px-2 text-foreground">
