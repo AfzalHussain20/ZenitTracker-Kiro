@@ -8,6 +8,7 @@ import { db } from '@/lib/firebaseConfig';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
 import {
   Loader2, ArrowLeft, CheckCircle2, XCircle, AlertTriangle,
   Printer, Download, Clock, Calendar, ExternalLink,
@@ -69,6 +70,7 @@ export default function TestSessionResultPage() {
   const router = useRouter();
   const sessionId = params.sessionId as string;
   const { user, loading: authLoading } = useAuth();
+  const { toast } = useToast();
   const [session, setSession] = useState<TestSession | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -165,6 +167,11 @@ export default function TestSessionResultPage() {
             </div>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => {
+              const url = `${window.location.origin}/report/${session.id}`;
+              navigator.clipboard.writeText(url);
+              toast({ title: 'Link copied!', description: 'Anyone with this link can view the report.' });
+            }} className="text-xs"><ExternalLink className="w-3.5 h-3.5 mr-1.5" />Share Link</Button>
             <Button variant="outline" size="sm" onClick={() => window.print()} className="text-xs"><Printer className="w-3.5 h-3.5 mr-1.5" />Print</Button>
             <Button size="sm" className="text-xs bg-primary hover:bg-primary/90" onClick={() => {
               if (!session) return;

@@ -165,6 +165,7 @@ export default function TestSessionPage() {
 
   const goNext = useCallback(() => {
     if (session && currentIndex < session.testCases.length - 1) setCurrentIndex(i => i + 1);
+    // If already at last, do nothing — completion dialog handles it via markStatus
   }, [session, currentIndex]);
   const goPrev = useCallback(() => {
     if (currentIndex > 0) setCurrentIndex(i => i - 1);
