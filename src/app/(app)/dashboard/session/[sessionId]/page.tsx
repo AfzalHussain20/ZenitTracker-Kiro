@@ -165,16 +165,25 @@ export default function TestSessionPage() {
     if (showJiraForm && session) {
       const currentTc = session.testCases[currentIndex];
       if (currentTc) {
-        const platform = session.platformDetails.platformName;
-        const version = session.platformDetails.appVersion ? `V${session.platformDetails.appVersion}` : '';
-        const module = currentTc.testBed || 'General';
-        // Format: Platform | Version | Env | Module : Test Case Title
-        setJiraSummary(`${platform}${version ? ` | ${version}` : ''} | ${jiraEnv} | ${module} : ${currentTc.testCaseTitle}`);
         setJiraActual(bugDesc || currentTc.actualResult || '');
         setJiraSeverity(currentTc.priority === 'High' ? 'High' : currentTc.priority === 'Low' ? 'Low' : 'Medium');
       }
     }
   }, [showJiraForm]);
+
+  // Auto-generate summary (reactive to env changes)
+  useEffect(() => {
+    if (showJiraForm && session) {
+      const currentTc = session.testCases[currentIndex];
+      if (currentTc) {
+        const platform = session.platformDetails.platformName;
+        const version = session.platformDetails.appVersion ? `V${session.platformDetails.appVersion}` : '';
+        const env = jiraEnv || 'Staging';
+        const module = currentTc.testBed || 'General';
+        setJiraSummary(`${platform}${version ? ` | ${version}` : ''} | ${env} | ${module} : ${currentTc.testCaseTitle}`);
+      }
+    }
+  }, [showJiraForm, jiraEnv]);
 
   const goNext = useCallback(() => {
     if (session && currentIndex < session.testCases.length - 1) setCurrentIndex(i => i + 1);
@@ -840,14 +849,16 @@ export default function TestSessionPage() {
                       <option value="Not Checked">Not Checked</option>
                     </select>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-medium text-muted-foreground">Team / Component</label>
-                    <select value={jiraComponent} onChange={e => setJiraComponent(e.target.value)}
-                      className="w-full h-9 text-sm bg-muted/50 border border-border rounded-lg px-2 text-foreground">
-                      <option value="">None</option>
-                      {jiraComponents.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                  </div>
+                  {jiraComponents.length > 0 && (
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-medium text-muted-foreground">Team / Component</label>
+                      <select value={jiraComponent} onChange={e => setJiraComponent(e.target.value)}
+                        className="w-full h-9 text-sm bg-muted/50 border border-border rounded-lg px-2 text-foreground">
+                        <option value="">None</option>
+                        {jiraComponents.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div className="col-span-2 space-y-1.5">
                     <label className="text-[11px] font-medium text-muted-foreground">Actual Result *</label>
                     <Textarea value={jiraActual} onChange={e => setJiraActual(e.target.value)} rows={2}

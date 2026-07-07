@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-// GET /api/jira/fields — fetch actual Jira create issue metadata
+// GET /api/jira/fields — fetch actual Jira field values by querying existing issues
 export async function GET() {
   try {
     const JIRA_BASE = process.env.JIRA_BASE_URL;
@@ -16,10 +16,12 @@ export async function GET() {
     const headers = { Authorization: `Basic ${auth}`, Accept: 'application/json' };
 
     // Fetch all data in parallel
-    const [priorityRes, usersRes, componentsRes] = await Promise.all([
+    const [priorityRes, usersRes, componentsRes, issuesRes] = await Promise.all([
       fetch(`${JIRA_BASE}/rest/api/3/priority`, { headers, cache: 'no-store' }),
       fetch(`${JIRA_BASE}/rest/api/3/user/assignable/search?project=${PROJECT_KEY}&maxResults=100`, { headers, cache: 'no-store' }),
       fetch(`${JIRA_BASE}/rest/api/3/project/${PROJECT_KEY}/components`, { headers, cache: 'no-store' }),
+      // Fetch recent issues to extract actual environment values used
+      fetch(`${JIRA_BASE}/rest/api/3/search/jql?jql=project=${PROJECT_KEY} ORDER BY created DESC&maxResults=50&fields=customfield_10201`, { headers, cache: 'no-store' }),
     ]);
 
     // Priorities
@@ -34,8 +36,9 @@ export async function GET() {
     if (usersRes.ok) {
       const data = await usersRes.json();
       users = data
-        .filter((u: any) => u.active && u.accountType === 'atlassian')
-        .map((u: any) => ({ accountId: u.accountId, displayName: u.displayName }));
+        .filter((u: any) => u.active !== false)
+        .map((u: any) => ({ accountId: u.accountId, displayName: u.displayName }))
+        .sort((a: any, b: any) => a.displayName.localeCompare(b.displayName));
     }
 
     // Components (teams)
@@ -45,46 +48,23 @@ export async function GET() {
       components = data.map((c: any) => ({ id: c.id, name: c.name }));
     }
 
-    // Environment field — try to fetch from create metadata
+    // Extract environments from existing issues (most reliable method)
     let environments: string[] = [];
-    try {
-      // First get issue types to find Bug type ID
-      const typesRes = await fetch(`${JIRA_BASE}/rest/api/3/issue/createmeta/${PROJECT_KEY}/issuetypes`, { headers, cache: 'no-store' });
-      if (typesRes.ok) {
-        const typesData = await typesRes.json();
-        const bugType = (typesData.issueTypes || typesData.values || []).find((t: any) => t.name === 'Bug');
-        if (bugType) {
-          // Fetch fields for Bug type
-          const fieldsRes = await fetch(`${JIRA_BASE}/rest/api/3/issue/createmeta/${PROJECT_KEY}/issuetypes/${bugType.id}`, { headers, cache: 'no-store' });
-          if (fieldsRes.ok) {
-            const fieldsData = await fieldsRes.json();
-            const fields = fieldsData.fields || fieldsData.values || [];
-            // Find environment field (customfield_10201)
-            const envField = fields.find((f: any) => f.fieldId === 'customfield_10201' || f.key === 'customfield_10201');
-            if (envField?.allowedValues) {
-              environments = envField.allowedValues.map((v: any) => v.value || v.name);
-            }
-          }
+    if (issuesRes.ok) {
+      const issuesData = await issuesRes.json();
+      const envSet = new Set<string>();
+      (issuesData.issues || []).forEach((issue: any) => {
+        const envField = issue.fields?.customfield_10201;
+        if (Array.isArray(envField)) {
+          envField.forEach((v: string) => { if (v) envSet.add(v); });
         }
-      }
-    } catch { /* Environment fetch is best-effort */ }
+      });
+      environments = Array.from(envSet).sort();
+    }
 
-    // If still no environments, try alternate endpoint
+    // Fallback environments if none found from issues
     if (environments.length === 0) {
-      try {
-        const res = await fetch(`${JIRA_BASE}/rest/api/3/field/customfield_10201/context`, { headers, cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          const contextId = data.values?.[0]?.id;
-          if (contextId) {
-            const optsRes = await fetch(`${JIRA_BASE}/rest/api/3/field/customfield_10201/context/${contextId}/option`, { headers, cache: 'no-store' });
-            if (optsRes.ok) {
-              const opts = await optsRes.json();
-              environments = (opts.values || []).map((v: any) => v.value);
-            }
-          }
-        }
-      } catch { /* Best effort */ }
+      environments = ['Dev', 'QA', 'Staging', 'Pre-Prod', 'UAT', 'Production'];
     }
 
     return NextResponse.json({
