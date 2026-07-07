@@ -59,6 +59,12 @@ export default function AppHeader() {
 
         {/* Navigation */}
         <nav className="hidden md:flex items-center gap-1">
+          <Link href="/dashboard">
+            <Button variant={pathname === '/dashboard' ? 'secondary' : 'ghost'} size="sm">
+              <LayoutDashboard className="h-4 w-4 mr-1.5" />
+              Dashboard
+            </Button>
+          </Link>
           <Link href="/apps">
             <Button variant={pathname === '/apps' ? 'secondary' : 'ghost'} size="sm">
               Apps
@@ -66,23 +72,18 @@ export default function AppHeader() {
           </Link>
           <Link href="/bugs">
             <Button variant={pathname === '/bugs' ? 'secondary' : 'ghost'} size="sm">
-              Jira Dashboard
+              Jira
             </Button>
           </Link>
-          <Link href="/analytics/bugs">
-            <Button variant={pathname?.startsWith('/analytics/bugs') ? 'secondary' : 'ghost'} size="sm">
-              Jira Overview
-            </Button>
-          </Link>
-          <Link href="/confluence">
-            <Button variant={pathname === '/confluence' ? 'secondary' : 'ghost'} size="sm">
-              <BookOpen className="h-4 w-4 mr-2" />
-              Docs
-            </Button>
-          </Link>
+          {userRole === 'lead' && (
+            <Link href="/team">
+              <Button variant={pathname === '/team' ? 'secondary' : 'ghost'} size="sm">
+                Team
+              </Button>
+            </Link>
+          )}
           <Link href="/about">
             <Button variant={pathname === '/about' ? 'secondary' : 'ghost'} size="sm">
-              <Info className="h-4 w-4 mr-2" />
               About
             </Button>
           </Link>
