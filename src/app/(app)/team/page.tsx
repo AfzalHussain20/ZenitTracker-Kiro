@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebaseConfig';
 import { collection, query, getDocs, orderBy } from 'firebase/firestore';
@@ -50,6 +50,7 @@ export default function TeamPerformancePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [allSessions, setAllSessions] = useState<TestSession[]>([]);
   const [dateFilter, setDateFilter] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
+  const [selectedMember, setSelectedMember] = useState<string | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
@@ -250,40 +251,75 @@ export default function TeamPerformancePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {memberStats.map((m, i) => (
-                    <tr key={m.uid} className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <Avatar className="h-7 w-7">
-                            <AvatarFallback className="text-[10px] font-bold bg-primary/10 text-primary">{m.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="text-sm font-medium">{m.name}</p>
-                            {i === 0 && <Badge className="text-[8px] bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400 px-1 py-0">Top</Badge>}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="text-center px-3 py-3 text-sm font-semibold tabular-nums">{m.sessions}</td>
-                      <td className="text-center px-3 py-3 text-sm tabular-nums">{m.totalCases}</td>
-                      <td className="text-center px-3 py-3">
-                        <span className={cn('text-sm font-bold tabular-nums', m.passRate >= 80 ? 'text-emerald-600' : m.passRate >= 50 ? 'text-amber-600' : 'text-red-600')}>
-                          {m.passRate}%
-                        </span>
-                      </td>
-                      <td className="text-center px-3 py-3 text-sm tabular-nums text-red-600 font-medium">{m.bugsLogged || '—'}</td>
-                      <td className="text-center px-3 py-3 hidden md:table-cell">
-                        <div className="flex flex-wrap gap-1 justify-center">
-                          {m.platforms.slice(0, 3).map(p => (
-                            <Badge key={p} variant="outline" className="text-[9px] px-1.5 py-0">{p.replace(' TV', '').replace('Mobile ', '')}</Badge>
-                          ))}
-                          {m.platforms.length > 3 && <span className="text-[9px] text-muted-foreground">+{m.platforms.length - 3}</span>}
-                        </div>
-                      </td>
-                      <td className="text-center px-3 py-3 text-xs text-muted-foreground hidden lg:table-cell">
-                        {m.lastActive ? format(m.lastActive, 'MMM dd') : '—'}
-                      </td>
-                    </tr>
-                  ))}
+                  {memberStats.map((m, i) => {
+                    const isExpanded = selectedMember === m.uid;
+                    const memberSessions = isExpanded ? filteredSessions.filter(s => s.userId === m.uid).slice(0, 10) : [];
+                    return (
+                      <React.Fragment key={m.uid}>
+                        <tr onClick={() => setSelectedMember(isExpanded ? null : m.uid)}
+                          className={cn('border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors cursor-pointer', isExpanded && 'bg-primary/5')}>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2.5">
+                              <Avatar className="h-7 w-7">
+                                <AvatarFallback className="text-[10px] font-bold bg-primary/10 text-primary">{m.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <p className="text-sm font-medium">{m.name}</p>
+                                {i === 0 && <Badge className="text-[8px] bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400 px-1 py-0">Top</Badge>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="text-center px-3 py-3 text-sm font-semibold tabular-nums">{m.sessions}</td>
+                          <td className="text-center px-3 py-3 text-sm tabular-nums">{m.totalCases}</td>
+                          <td className="text-center px-3 py-3">
+                            <span className={cn('text-sm font-bold tabular-nums', m.passRate >= 80 ? 'text-emerald-600' : m.passRate >= 50 ? 'text-amber-600' : 'text-red-600')}>
+                              {m.passRate}%
+                            </span>
+                          </td>
+                          <td className="text-center px-3 py-3 text-sm tabular-nums text-red-600 font-medium">{m.bugsLogged || '—'}</td>
+                          <td className="text-center px-3 py-3 hidden md:table-cell">
+                            <div className="flex flex-wrap gap-1 justify-center">
+                              {m.platforms.slice(0, 3).map(p => (
+                                <Badge key={p} variant="outline" className="text-[9px] px-1.5 py-0">{p.replace(' TV', '').replace('Mobile ', '')}</Badge>
+                              ))}
+                              {m.platforms.length > 3 && <span className="text-[9px] text-muted-foreground">+{m.platforms.length - 3}</span>}
+                            </div>
+                          </td>
+                          <td className="text-center px-3 py-3 text-xs text-muted-foreground hidden lg:table-cell">
+                            {m.lastActive ? format(m.lastActive, 'MMM dd') : '—'}
+                          </td>
+                        </tr>
+                        {isExpanded && memberSessions.length > 0 && (
+                          <tr>
+                            <td colSpan={7} className="px-4 py-3 bg-muted/20">
+                              <div className="space-y-1.5">
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Recent Sessions by {m.name}</p>
+                                {memberSessions.map(s => {
+                                  const summary = s.summary || { pass: 0, fail: 0, na: 0, total: 0 };
+                                  const rate = summary.total > 0 ? Math.round((summary.pass / summary.total) * 100) : 0;
+                                  const created = getValidDate(s.createdAt);
+                                  return (
+                                    <div key={s.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-card border border-border/50 text-xs">
+                                      <span className="font-medium text-foreground truncate flex-1">{s.platformDetails?.platformName || 'Unknown'}</span>
+                                      <span className="text-emerald-600 font-semibold">{summary.pass}P</span>
+                                      <span className="text-red-600 font-semibold">{summary.fail}F</span>
+                                      <span className={cn('font-bold', rate >= 80 ? 'text-emerald-600' : 'text-amber-600')}>{rate}%</span>
+                                      <Badge variant="outline" className="text-[9px]">{s.status}</Badge>
+                                      <span className="text-muted-foreground">{created ? format(created, 'MMM dd') : '—'}</span>
+                                      <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2"
+                                        onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/session/${s.id}/results`); }}>
+                                        View <ArrowRight className="w-3 h-3 ml-1" />
+                                      </Button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                   {memberStats.length === 0 && (
                     <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">No team data available for this period</td></tr>
                   )}

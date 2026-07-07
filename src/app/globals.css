@@ -241,3 +241,53 @@
     stroke-dashoffset: 0;
   }
 }
+
+/* ─── Print Styles ─── */
+@media print {
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* Hide non-essential UI elements */
+  header, nav, aside, footer,
+  button, [role="dialog"],
+  .no-print {
+    display: none !important;
+  }
+  
+  /* Reset fixed positioning */
+  .fixed {
+    position: relative !important;
+  }
+  
+  /* Ensure content flows naturally */
+  * {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  
+  /* Cards and borders print well */
+  .rounded-2xl {
+    border-radius: 8px !important;
+  }
+  
+  /* Ensure tables don't break */
+  table {
+    page-break-inside: avoid;
+  }
+  tr {
+    page-break-inside: avoid;
+  }
+  
+  /* Report page specifics */
+  .bg-background {
+    background: white !important;
+  }
+  .text-foreground {
+    color: black !important;
+  }
+  .border-border {
+    border-color: #e5e7eb !important;
+  }
+}
