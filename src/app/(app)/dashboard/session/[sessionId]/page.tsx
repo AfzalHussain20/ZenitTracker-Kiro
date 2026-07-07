@@ -148,30 +148,28 @@ export default function TestSessionPage() {
   const { bugTitle, fetching: bugFetching, fetchError: bugFetchError } = useJiraFetch(bugId);
   const anyDialogOpen = failOpen || naOpen || completeOpen || drawerOpen;
 
-  // Fetch Jira users, components, and field options when form opens
+  // Fetch ALL Jira data from single endpoint when form opens
   useEffect(() => {
-    if (showJiraForm) {
-      if (jiraUsers.length === 0) {
-        fetch('/api/jira/users').then(r => r.json()).then(d => { if (d.users) setJiraUsers(d.users); }).catch(() => {});
-      }
-      if (jiraComponents.length === 0) {
-        fetch('/api/jira/components').then(r => r.json()).then(d => { if (d.components) setJiraComponents(d.components); }).catch(() => {});
-      }
-      if (jiraEnvironments.length === 0) {
-        fetch('/api/jira/fields').then(r => r.json()).then(d => {
-          if (d.environments?.length) setJiraEnvironments(d.environments);
-          if (d.priorities?.length) setJiraPriorities(d.priorities);
-        }).catch(() => {});
-      }
+    if (showJiraForm && jiraUsers.length === 0) {
+      fetch('/api/jira/fields').then(r => r.json()).then(d => {
+        if (d.users) setJiraUsers(d.users);
+        if (d.components) setJiraComponents(d.components);
+        if (d.environments?.length) setJiraEnvironments(d.environments);
+        if (d.priorities?.length) setJiraPriorities(d.priorities);
+      }).catch(() => {});
     }
-  }, [showJiraForm, jiraUsers.length, jiraComponents.length, jiraEnvironments.length]);
+  }, [showJiraForm, jiraUsers.length]);
 
   // Pre-populate Jira form when it opens
   useEffect(() => {
     if (showJiraForm && session) {
       const currentTc = session.testCases[currentIndex];
       if (currentTc) {
-        setJiraSummary(`[${session.platformDetails.platformName}] ${currentTc.testCaseTitle}`);
+        const platform = session.platformDetails.platformName;
+        const version = session.platformDetails.appVersion ? `V${session.platformDetails.appVersion}` : '';
+        const module = currentTc.testBed || 'General';
+        // Format: Platform | Version | Env | Module : Test Case Title
+        setJiraSummary(`${platform}${version ? ` | ${version}` : ''} | ${jiraEnv} | ${module} : ${currentTc.testCaseTitle}`);
         setJiraActual(bugDesc || currentTc.actualResult || '');
         setJiraSeverity(currentTc.priority === 'High' ? 'High' : currentTc.priority === 'Low' ? 'Low' : 'Medium');
       }

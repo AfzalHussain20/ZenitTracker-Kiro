@@ -1,330 +1,219 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Library, Plus, Search, FileCheck, Trash2, ArrowLeft, Sparkles, BrainCircuit, DownloadCloud, UploadCloud } from 'lucide-react';
-import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebaseConfig';
-import { collection, query, orderBy, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, doc, setDoc, deleteDoc, Timestamp } from 'firebase/firestore';
+import type { TestCase, TestSession } from '@/types';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import {
+  Loader2, Upload, Play, Trash2, Search, FileSpreadsheet,
+  Layers, Calendar, Users, ArrowRight
+} from 'lucide-react';
+import { format } from 'date-fns';
+import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
+import * as XLSX from 'xlsx';
 
-interface TestCase {
-    id: string;
-    title: string;
-    steps: string;
-    expectedResult: string;
-    platform: string;
-    priority: 'High' | 'Medium' | 'Low';
-    tags: string[];
-    createdAt: any;
+interface TestSuite {
+  id: string;
+  name: string;
+  platform: string;
+  testBeds: string[];
+  totalCases: number;
+  uploadedBy: string;
+  uploadedByUid: string;
+  createdAt: Date;
+  testCases: Omit<TestCase, 'id' | 'lastModified'>[];
 }
 
 export default function RepositoryPage() {
-    const { user } = useAuth();
-    const { toast } = useToast();
-    const [testCases, setTestCases] = useState<TestCase[]>([]);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [loading, setLoading] = useState(true);
-    const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const { user, displayName, loading: authLoading } = useAuth();
+  const router = useRouter();
+  const { toast } = useToast();
+  const [suites, setSuites] = useState<TestSuite[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [search, setSearch] = useState('');
 
-    const [newCase, setNewCase] = useState({
-        title: '',
-        steps: '',
-        expectedResult: '',
-        platform: 'Android TV',
-        priority: 'Medium' as const,
-        tags: '',
-    });
+  // Fetch all suites
+  useEffect(() => {
+    if (authLoading || !user) return;
+    (async () => {
+      setLoading(true);
+      try {
+        const snap = await getDocs(query(collection(db, 'testSuites'), orderBy('createdAt', 'desc')));
+        setSuites(snap.docs.map(d => {
+          const data = d.data();
+          return { id: d.id, ...data, createdAt: data.createdAt?.toDate?.() || new Date() } as TestSuite;
+        }));
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    })();
+  }, [user, authLoading]);
 
-    useEffect(() => {
-        if (!user) return;
-        const q = query(collection(db, 'managedTestCases'), orderBy('createdAt', 'desc'));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetched = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            } as TestCase));
-            setTestCases(fetched);
-            setLoading(false);
-        });
-        return () => unsubscribe();
-    }, [user]);
+  // Upload XLSX as a new suite
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    setUploading(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows: Record<string, string>[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      const cases = rows.map((row, idx) => ({
+        orderIndex: idx,
+        testBed: String(row['Test Bed'] || row['testBed'] || 'General'),
+        testCaseTitle: String(row['Test Case'] || row['testCaseTitle'] || `Test Case ${idx + 1}`),
+        testSteps: String(row['Test Steps'] || row['testSteps'] || ''),
+        expectedResult: String(row['Expected Result'] || row['expectedResult'] || ''),
+        actualResult: '', notes: '', status: 'Untested' as const,
+        priority: (row['Priority'] as 'High' | 'Medium' | 'Low') || 'Medium',
+      }));
 
-    const handleCreateTestCase = async () => {
-        if (!newCase.title || !newCase.platform) return;
-        try {
-            await addDoc(collection(db, 'managedTestCases'), {
-                ...newCase,
-                tags: newCase.tags.split(',').map(t => t.trim()).filter(t => t),
-                createdBy: user?.uid,
-                createdAt: serverTimestamp(),
-            });
-            toast({ title: "Test Case Created", description: "Successfully added to repository" });
-            setIsAddDialogOpen(false);
-            setNewCase({ title: '', steps: '', expectedResult: '', platform: 'Android TV', priority: 'Medium', tags: '' });
-        } catch (e) {
-            toast({ title: "Error", description: "Failed to create test case", variant: "destructive" });
-        }
-    };
+      const testBeds = [...new Set(cases.map(c => c.testBed))];
+      const suiteName = file.name.replace(/\.(xlsx|xls)$/i, '');
+      const suiteRef = doc(collection(db, 'testSuites'));
 
-    const handleDelete = async (id: string) => {
-        if (!confirm("Delete this test case?")) return;
-        try {
-            await deleteDoc(doc(db, 'managedTestCases', id));
-            toast({ title: "Deleted", description: "Test case removed" });
-        } catch {
-            toast({ title: "Error", variant: "destructive" });
-        }
-    };
+      await setDoc(suiteRef, {
+        id: suiteRef.id,
+        name: suiteName,
+        platform: 'All',
+        testBeds,
+        totalCases: cases.length,
+        uploadedBy: displayName || user.email?.split('@')[0] || 'User',
+        uploadedByUid: user.uid,
+        createdAt: Timestamp.now(),
+        testCases: cases,
+      });
 
-    const filteredData = testCases.filter(item =>
-        item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.tags.some(t => t.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+      toast({ title: 'Suite uploaded', description: `${cases.length} test cases stored in repository.` });
+      // Refresh
+      const snap = await getDocs(query(collection(db, 'testSuites'), orderBy('createdAt', 'desc')));
+      setSuites(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate?.() || new Date() } as TestSuite)));
+    } catch (err: any) {
+      toast({ title: 'Upload failed', description: err.message, variant: 'destructive' });
+    } finally { setUploading(false); e.target.value = ''; }
+  };
 
-    const getPriorityColor = (p: string) => {
-        switch (p) {
-            case 'High': return 'from-rose-500 to-red-600';
-            case 'Medium': return 'from-amber-500 to-orange-600';
-            default: return 'from-emerald-500 to-green-600';
-        }
-    };
+  // Launch session from suite
+  const launchSession = async (suite: TestSuite) => {
+    if (!user) return;
+    try {
+      const sessionsCol = collection(db, 'sessions');
+      const sessionRef = doc(sessionsCol);
+      const now = Timestamp.now();
+      const testCases: TestCase[] = suite.testCases.map((tc, i) => ({
+        ...tc, id: `${sessionRef.id}-tc-${i}`, lastModified: now, status: 'Untested',
+        actualResult: '', notes: '', bugId: undefined, bugTitle: undefined, naReason: undefined,
+      }));
+      const session: TestSession = {
+        id: sessionRef.id, userId: user.uid,
+        userName: displayName || user.email?.split('@')[0] || 'Tester',
+        platformDetails: { platformName: suite.platform as any || 'Other' },
+        testCases, status: 'In Progress',
+        createdAt: now, updatedAt: now,
+        summary: { total: testCases.length, pass: 0, fail: 0, na: 0, untested: testCases.length, failKnown: 0 },
+      };
+      await setDoc(sessionRef, session);
+      toast({ title: 'Session launched', description: `${testCases.length} test cases loaded.` });
+      router.push(`/dashboard/session/${sessionRef.id}`);
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
+  };
 
-    return (
-        <div className="space-y-6 animate-fade-in">
-                {/* Header */}
-                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-purple-500/10 via-indigo-500/10 to-blue-500/10 border border-purple-500/20 p-8">
-                    <div className="relative z-10">
-                        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-4">
-                            <Link href="/apps">
-                                <Button variant="ghost" size="icon" className="rounded-full">
-                                    <ArrowLeft className="h-5 w-5" />
-                                </Button>
-                            </Link>
-                            <div className="flex-1">
-                                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-xs font-medium mb-3">
-                                    <Library className="w-3 h-3" />
-                                    Test Repository
-                                </div>
-                                <h1 className="text-4xl font-bold tracking-tight">
-                                    <span className="text-gradient">Repository</span>
-                                </h1>
-                                <p className="text-muted-foreground text-lg mt-2">
-                                    Master test case library
-                                </p>
-                            </div>
-                        </motion.div>
-                    </div>
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/20 rounded-full blur-3xl" />
-                </div>
+  // Delete suite
+  const deleteSuite = async (id: string) => {
+    if (!confirm('Delete this test suite?')) return;
+    try {
+      await deleteDoc(doc(db, 'testSuites', id));
+      setSuites(s => s.filter(x => x.id !== id));
+      toast({ title: 'Suite deleted' });
+    } catch (err: any) { toast({ title: 'Error', description: err.message, variant: 'destructive' }); }
+  };
 
-                {/* Priority Distribution Visual */}
-                <div className="grid grid-cols-3 gap-4">
-                    {[
-                        { label: 'High Priority', value: testCases.filter(t => t.priority === 'High').length, color: 'from-rose-500 to-red-600' },
-                        { label: 'Medium Priority', value: testCases.filter(t => t.priority === 'Medium').length, color: 'from-amber-500 to-orange-600' },
-                        { label: 'Low Priority', value: testCases.filter(t => t.priority === 'Low').length, color: 'from-emerald-500 to-green-600' },
-                    ].map((s) => (
-                        <Card key={s.label} className="relative overflow-hidden">
-                            <div className={`absolute inset-0 bg-gradient-to-br ${s.color} opacity-10`} />
-                            <CardContent className="p-6 text-center">
-                                <div className="text-4xl font-bold mb-1">{s.value}</div>
-                                <div className="text-sm text-muted-foreground">{s.label}</div>
-                                <div className={`mt-3 h-1.5 rounded-full bg-gradient-to-r ${s.color}`} style={{ width: `${testCases.length ? (s.value / testCases.length) * 100 : 0}%`, margin: '0 auto' }} />
-                            </CardContent>
-                        </Card>
-                    ))}
-                </div>
+  const filtered = suites.filter(s =>
+    !search || s.name.toLowerCase().includes(search.toLowerCase()) || s.testBeds.some(b => b.toLowerCase().includes(search.toLowerCase()))
+  );
 
-                {/* Stats */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    {[
-                        { label: 'Total Cases', value: testCases.length, gradient: 'from-purple-500 to-indigo-600' },
-                        { label: 'High Priority', value: testCases.filter(t => t.priority === 'High').length, gradient: 'from-rose-500 to-red-600' },
-                        { label: 'Medium Priority', value: testCases.filter(t => t.priority === 'Medium').length, gradient: 'from-amber-500 to-orange-600' },
-                        { label: 'Low Priority', value: testCases.filter(t => t.priority === 'Low').length, gradient: 'from-emerald-500 to-green-600' },
-                    ].map((stat, i) => (
-                        <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
-                            <Card className="relative overflow-hidden group hover:shadow-xl transition-all">
-                                <div className={`absolute inset-0 bg-gradient-to-br ${stat.gradient} opacity-0 group-hover:opacity-10 transition-opacity`} />
-                                <CardContent className="p-6 relative">
-                                    <div className="text-2xl font-bold">{stat.value}</div>
-                                    <div className="text-xs text-muted-foreground">{stat.label}</div>
-                                </CardContent>
-                            </Card>
-                        </motion.div>
-                    ))}
-                </div>
+  if (loading || authLoading) return (
+    <div className="flex h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+  );
 
-                {/* Search & Actions */}
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex flex-col sm:flex-row gap-4">
-                            <div className="relative flex-1">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                <Input
-                                    placeholder="Search test cases..."
-                                    value={searchTerm}
-                                    onChange={e => setSearchTerm(e.target.value)}
-                                    className="pl-10"
-                                />
-                            </div>
-                            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-                                <DialogTrigger asChild>
-                                    <Button className="bg-gradient-to-r from-purple-500 to-indigo-600">
-                                        <Plus className="w-4 h-4 mr-2" /> Create Test Case
-                                    </Button>
-                                </DialogTrigger>
-                                <DialogContent className="max-w-2xl">
-                                    <DialogHeader>
-                                        <DialogTitle>Create Test Case</DialogTitle>
-                                        <DialogDescription>Add a new test case to the repository</DialogDescription>
-                                    </DialogHeader>
-                                    <div className="space-y-4 py-4">
-                                        <div className="space-y-2">
-                                            <Label>Title</Label>
-                                            <Input
-                                                placeholder="Test case title..."
-                                                value={newCase.title}
-                                                onChange={e => setNewCase({ ...newCase, title: e.target.value })}
-                                            />
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="space-y-2">
-                                                <Label>Platform</Label>
-                                                <Select value={newCase.platform} onValueChange={v => setNewCase({ ...newCase, platform: v })}>
-                                                    <SelectTrigger><SelectValue /></SelectTrigger>
-                                                    <SelectContent>
-                                                        {["Android TV", "Apple TV", "Web", "Mobile (iOS)", "Mobile (Android)"].map(p => (
-                                                            <SelectItem key={p} value={p}>{p}</SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label>Priority</Label>
-                                                <Select value={newCase.priority} onValueChange={v => setNewCase({ ...newCase, priority: v as any })}>
-                                                    <SelectTrigger><SelectValue /></SelectTrigger>
-                                                    <SelectContent>
-                                                        {["High", "Medium", "Low"].map(p => (
-                                                            <SelectItem key={p} value={p}>{p}</SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label>Steps</Label>
-                                            <Textarea
-                                                placeholder="1. Step one&#10;2. Step two..."
-                                                value={newCase.steps}
-                                                onChange={e => setNewCase({ ...newCase, steps: e.target.value })}
-                                                rows={4}
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label>Expected Result</Label>
-                                            <Textarea
-                                                placeholder="Expected outcome..."
-                                                value={newCase.expectedResult}
-                                                onChange={e => setNewCase({ ...newCase, expectedResult: e.target.value })}
-                                                rows={3}
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label>Tags (comma separated)</Label>
-                                            <Input
-                                                placeholder="regression, smoke, critical"
-                                                value={newCase.tags}
-                                                onChange={e => setNewCase({ ...newCase, tags: e.target.value })}
-                                            />
-                                        </div>
-                                    </div>
-                                    <DialogFooter>
-                                        <Button onClick={handleCreateTestCase} className="w-full bg-gradient-to-r from-purple-500 to-indigo-600">
-                                            Create Test Case
-                                        </Button>
-                                    </DialogFooter>
-                                </DialogContent>
-                            </Dialog>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Test Cases Grid */}
-                <div className="grid gap-4">
-                    {filteredData.map((testCase, i) => (
-                        <motion.div
-                            key={testCase.id}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: i * 0.05 }}
-                        >
-                            <Card className="group hover:shadow-xl transition-all">
-                                <CardContent className="p-6">
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-3 mb-3">
-                                                <div className={`p-2 rounded-lg bg-gradient-to-br ${getPriorityColor(testCase.priority)}`}>
-                                                    <FileCheck className="w-4 h-4 text-white" />
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <h3 className="font-semibold truncate">{testCase.title}</h3>
-                                                    <p className="text-sm text-muted-foreground">{testCase.platform}</p>
-                                                </div>
-                                                <Badge className={`bg-gradient-to-r ${getPriorityColor(testCase.priority)} text-white border-0`}>
-                                                    {testCase.priority}
-                                                </Badge>
-                                            </div>
-                                            {testCase.steps && (
-                                                <div className="mb-3">
-                                                    <p className="text-xs font-semibold text-muted-foreground mb-1">Steps:</p>
-                                                    <p className="text-sm whitespace-pre-wrap line-clamp-3">{testCase.steps}</p>
-                                                </div>
-                                            )}
-                                            {testCase.tags.length > 0 && (
-                                                <div className="flex flex-wrap gap-2">
-                                                    {testCase.tags.map(tag => (
-                                                        <Badge key={tag} variant="outline" className="text-xs">
-                                                            {tag}
-                                                        </Badge>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <Button
-                                            size="icon"
-                                            variant="ghost"
-                                            onClick={() => handleDelete(testCase.id)}
-                                            className="text-muted-foreground hover:text-destructive"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </Button>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </motion.div>
-                    ))}
-                </div>
-
-                {filteredData.length === 0 && !loading && (
-                    <Card>
-                        <CardContent className="p-12 text-center">
-                            <Library className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                            <h3 className="text-lg font-semibold mb-2">No test cases found</h3>
-                            <p className="text-muted-foreground">Create your first test case to get started</p>
-                        </CardContent>
-                    </Card>
-                )}
+  return (
+    <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Test Repository</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{suites.length} test suites · Available for all team members</p>
         </div>
-    );
+        <label className="cursor-pointer">
+          <Button disabled={uploading} className="gap-2">
+            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            Upload XLSX
+          </Button>
+          <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
+        </label>
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search suites..." className="pl-9 h-9 rounded-lg" />
+      </div>
+
+      {/* Suites List */}
+      <div className="space-y-3">
+        {filtered.map((suite, i) => (
+          <motion.div key={suite.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
+            <Card className="p-4 hover:shadow-sm transition-shadow">
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                  <FileSpreadsheet className="w-5 h-5 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">{suite.name}</p>
+                  <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground flex-wrap">
+                    <span className="flex items-center gap-1"><Layers className="w-3 h-3" />{suite.totalCases} cases</span>
+                    <span className="flex items-center gap-1"><Users className="w-3 h-3" />{suite.uploadedBy}</span>
+                    <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{format(suite.createdAt, 'MMM dd, yyyy')}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {suite.testBeds.slice(0, 4).map(bed => (
+                      <Badge key={bed} variant="outline" className="text-[9px] px-1.5 py-0">{bed}</Badge>
+                    ))}
+                    {suite.testBeds.length > 4 && <Badge variant="outline" className="text-[9px]">+{suite.testBeds.length - 4}</Badge>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button size="sm" onClick={() => launchSession(suite)} className="gap-1.5 text-xs">
+                    <Play className="w-3 h-3" /> Execute
+                  </Button>
+                  {suite.uploadedByUid === user?.uid && (
+                    <Button size="sm" variant="ghost" onClick={() => deleteSuite(suite.id)} className="text-destructive hover:text-destructive h-8 w-8 p-0">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </Card>
+          </motion.div>
+        ))}
+        {filtered.length === 0 && (
+          <div className="text-center py-12">
+            <FileSpreadsheet className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">No test suites yet. Upload an XLSX to get started.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
