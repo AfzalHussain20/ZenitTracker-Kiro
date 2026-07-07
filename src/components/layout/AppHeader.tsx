@@ -71,9 +71,14 @@ export default function AppHeader() {
               Apps
             </Button>
           </Link>
+          <Link href="/analytics/bugs">
+            <Button variant={pathname?.startsWith('/analytics') ? 'secondary' : 'ghost'} size="sm">
+              Jira KPI
+            </Button>
+          </Link>
           <Link href="/bugs">
             <Button variant={pathname === '/bugs' ? 'secondary' : 'ghost'} size="sm">
-              Jira
+              Bugs
             </Button>
           </Link>
           {userRole === 'lead' && (
@@ -83,11 +88,6 @@ export default function AppHeader() {
               </Button>
             </Link>
           )}
-          <Link href="/about">
-            <Button variant={pathname === '/about' ? 'secondary' : 'ghost'} size="sm">
-              About
-            </Button>
-          </Link>
         </nav>
 
         {/* User Menu + Mobile Toggle */}
@@ -172,10 +172,10 @@ export default function AppHeader() {
           {[
             { href: '/dashboard', label: 'Dashboard' },
             { href: '/apps', label: 'Apps' },
-            { href: '/bugs', label: 'Jira' },
+            { href: '/analytics/bugs', label: 'Jira KPI' },
+            { href: '/bugs', label: 'Bug Tracker' },
             ...(userRole === 'lead' ? [{ href: '/team', label: 'Team Performance' }] : []),
             { href: '/dashboard/sessions', label: 'Session History' },
-            { href: '/about', label: 'About' },
           ].map(item => (
             <Link key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)}>
               <Button variant={pathname === item.href ? 'secondary' : 'ghost'} size="sm" className="w-full justify-start">

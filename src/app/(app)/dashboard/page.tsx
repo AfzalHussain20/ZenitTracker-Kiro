@@ -240,6 +240,26 @@ export default function DashboardPage() {
           <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/20 rounded-full blur-3xl" />
         </div>
 
+        {/* Quick Resume Banner */}
+        {activeSessions.length > 0 && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+            <Link href={`/dashboard/session/${activeSessions[0].id}`}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors group">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <Zap className="w-4 h-4 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">Continue: {activeSessions[0].platformDetails?.platformName}</p>
+                <p className="text-xs text-muted-foreground">
+                  {activeSessions[0].summary ? `${activeSessions[0].summary.pass + activeSessions[0].summary.fail + activeSessions[0].summary.na}/${activeSessions[0].summary.total} done` : 'In progress'}
+                  {activeSessions.length > 1 && ` · ${activeSessions.length - 1} more active`}
+                </p>
+              </div>
+              <ArrowRight className="w-4 h-4 text-primary group-hover:translate-x-1 transition-transform" />
+            </Link>
+          </motion.div>
+        )}
+
         {/* Stats Grid */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>

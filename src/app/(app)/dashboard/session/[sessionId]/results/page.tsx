@@ -190,6 +190,28 @@ export default function TestSessionResultPage() {
               a.href = url; a.download = `${session.platformDetails.platformName}_Report_${session.id.substring(0,8)}.csv`;
               a.click(); URL.revokeObjectURL(url);
             }}><Download className="w-3.5 h-3.5 mr-1.5" />Export CSV</Button>
+            <Button size="sm" variant="outline" className="text-xs" onClick={async () => {
+              if (!session || !user) return;
+              try {
+                const { collection: col, doc: docRef, setDoc, Timestamp: Ts } = await import('firebase/firestore');
+                const sessionsCol = col(db, 'sessions');
+                const newRef = docRef(sessionsCol);
+                const now = Ts.now();
+                const freshCases = session.testCases.map((tc: any, i: number) => ({
+                  ...tc, id: `${newRef.id}-tc-${i}`, status: 'Untested', actualResult: '', notes: '', bugId: null, bugTitle: null, naReason: null, lastModified: now,
+                }));
+                await setDoc(newRef, {
+                  id: newRef.id, userId: user.uid, userName: session.userName,
+                  platformDetails: session.platformDetails, testCases: freshCases, status: 'In Progress',
+                  createdAt: now, updatedAt: now,
+                  summary: { total: freshCases.length, pass: 0, fail: 0, na: 0, untested: freshCases.length, failKnown: 0 },
+                });
+                toast({ title: 'New session created', description: `Re-running ${freshCases.length} test cases.` });
+                router.push(`/dashboard/session/${newRef.id}`);
+              } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
+            }}>
+              <ArrowRight className="w-3.5 h-3.5 mr-1.5" />Run Again
+            </Button>
           </div>
         </motion.header>
 
