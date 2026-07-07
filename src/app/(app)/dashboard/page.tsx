@@ -11,11 +11,14 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { PlusCircle, Loader2, ArrowRight, Activity, TrendingUp, CheckCircle2, XCircle, Eye, Zap, Target, BarChart3 } from 'lucide-react';
 import { format } from 'date-fns';
 import { motion } from 'framer-motion';
-import { ParticleBackground } from '@/components/three/ParticleBackground';
-import { ActivityTrendVisualization } from '@/components/three/ActivityTrendVisualization';
-import { TestResultsVisualization } from '@/components/three/TestResultsVisualization';
-import { SessionActivity3D } from '@/components/three/SessionActivity3D';
-import { AnimatedLineChart3D } from '@/components/three/AnimatedLineChart3D';
+import dynamic from 'next/dynamic';
+
+// Lazy load Three.js components to prevent WebGL context issues
+const ParticleBackground = dynamic(() => import('@/components/three/ParticleBackground').then(m => ({ default: m.ParticleBackground })), { ssr: false });
+const ActivityTrendVisualization = dynamic(() => import('@/components/three/ActivityTrendVisualization').then(m => ({ default: m.ActivityTrendVisualization })), { ssr: false });
+const TestResultsVisualization = dynamic(() => import('@/components/three/TestResultsVisualization').then(m => ({ default: m.TestResultsVisualization })), { ssr: false });
+const SessionActivity3D = dynamic(() => import('@/components/three/SessionActivity3D').then(m => ({ default: m.SessionActivity3D })), { ssr: false });
+const AnimatedLineChart3D = dynamic(() => import('@/components/three/AnimatedLineChart3D').then(m => ({ default: m.AnimatedLineChart3D })), { ssr: false });
 
 const getValidDate = (d: any): Date | null => {
   if (!d) return null;
