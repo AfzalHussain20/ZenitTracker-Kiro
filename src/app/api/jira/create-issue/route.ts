@@ -28,19 +28,37 @@ export async function POST(req: Request) {
         };
         const jiraPriority = priorityMap[severity] || priorityMap[priority] || 'Medium';
 
-        // Build description in Atlassian Document Format
-        const makeSection = (heading: string, text: string) => ([
-            { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: heading }] },
-            { type: 'paragraph', content: [{ type: 'text', text: text || 'N/A' }] },
-        ]);
+        // Build description in Atlassian Document Format — Professional QA Template
+        const makeHeading = (text: string) => ({ type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text }] });
+        const makeParagraph = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text: text || 'N/A' }] });
+        const makeBold = (label: string, value: string) => ({
+          type: 'paragraph', content: [
+            { type: 'text', text: `${label}: `, marks: [{ type: 'strong' }] },
+            { type: 'text', text: value || 'N/A' },
+          ]
+        });
+        const makeRule = () => ({ type: 'rule' });
 
         const descContent = [
-            ...makeSection('Summary', description || summary),
-            ...(stepsText ? makeSection('Steps to Reproduce', stepsText) : []),
-            ...(expectedText ? makeSection('Expected Result', expectedText) : []),
-            ...(actualText ? makeSection('Actual Result', actualText) : []),
-            ...makeSection('Environment Info', `Platform: ${platform || 'N/A'} | Version: ${appVersion || 'N/A'} | Reported by: ${reporter}`),
-            { type: 'paragraph', content: [{ type: 'text', text: '🔗 Logged via Zenit Tracker', marks: [{ type: 'em' }] }] },
+          makeHeading('🐛 Bug Description'),
+          makeParagraph(description || summary),
+          makeRule(),
+          makeHeading('📋 Steps to Reproduce'),
+          ...(stepsText ? stepsText.split('\n').filter(Boolean).map((s: string, i: number) =>
+            makeParagraph(`${i + 1}. ${s.replace(/^\d+[\.\)]\s*/, '')}`)
+          ) : [makeParagraph('N/A')]),
+          makeRule(),
+          makeHeading('✅ Expected Result'),
+          makeParagraph(expectedText),
+          makeHeading('❌ Actual Result'),
+          makeParagraph(actualText),
+          makeRule(),
+          makeHeading('🔧 Environment'),
+          makeBold('Platform', platform || 'N/A'),
+          makeBold('App Version', appVersion || 'N/A'),
+          makeBold('Environment', environment || 'Staging'),
+          makeBold('Reported by', reporter),
+          makeBold('Tool', 'Zenit Tracker — Automated QA Session'),
         ];
 
         const fields: Record<string, any> = {

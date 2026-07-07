@@ -129,10 +129,39 @@ export default function TestSessionPage() {
   const [jiraIssueLink, setJiraIssueLink] = useState<string | null>(null);
   const [verdict, setVerdict] = useState<'Pass' | 'Fail' | 'N/A' | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showJiraForm, setShowJiraForm] = useState(false);
+  const [jiraSummary, setJiraSummary] = useState('');
+  const [jiraSeverity, setJiraSeverity] = useState('High');
+  const [jiraEnv, setJiraEnv] = useState('Staging');
+  const [jiraAssignee, setJiraAssignee] = useState('');
+  const [jiraExistingInLive, setJiraExistingInLive] = useState('No');
+  const [jiraActual, setJiraActual] = useState('');
+  const [jiraUsers, setJiraUsers] = useState<{accountId: string; displayName: string}[]>([]);
 
   const timer = useTimer(currentIndex);
   const { bugTitle, fetching: bugFetching, fetchError: bugFetchError } = useJiraFetch(bugId);
   const anyDialogOpen = failOpen || naOpen || completeOpen || drawerOpen;
+
+  // Fetch Jira users when form opens
+  useEffect(() => {
+    if (showJiraForm && jiraUsers.length === 0) {
+      fetch('/api/jira/users').then(r => r.json()).then(d => {
+        if (d.users) setJiraUsers(d.users);
+      }).catch(() => {});
+    }
+  }, [showJiraForm, jiraUsers.length]);
+
+  // Pre-populate Jira form when it opens
+  useEffect(() => {
+    if (showJiraForm && session) {
+      const currentTc = session.testCases[currentIndex];
+      if (currentTc) {
+        setJiraSummary(`[${session.platformDetails.platformName}] ${currentTc.testCaseTitle}`);
+        setJiraActual(bugDesc || currentTc.actualResult || '');
+        setJiraSeverity(currentTc.priority === 'High' ? 'High' : currentTc.priority === 'Low' ? 'Low' : 'Medium');
+      }
+    }
+  }, [showJiraForm]);
 
   const goNext = useCallback(() => {
     if (session && currentIndex < session.testCases.length - 1) setCurrentIndex(i => i + 1);
@@ -638,70 +667,168 @@ export default function TestSessionPage() {
       </AnimatePresence>
 
       {/* ─── Fail Dialog ─── */}
-      <Dialog open={failOpen} onOpenChange={v => { setFailOpen(v); if (!v) { setJiraIssueKey(null); setJiraIssueLink(null); } }}>
-        <DialogContent className="sm:max-w-[480px] lg:max-w-[520px] bg-card border-border text-foreground rounded-2xl p-0 gap-0 max-h-[90vh] flex flex-col">
+      <Dialog open={failOpen} onOpenChange={v => { setFailOpen(v); if (!v) { setJiraIssueKey(null); setJiraIssueLink(null); setShowJiraForm(false); } }}>
+        <DialogContent className="sm:max-w-[480px] lg:max-w-[560px] bg-card border-border text-foreground rounded-2xl p-0 gap-0 max-h-[90vh] flex flex-col">
           <div className="px-5 pt-5 pb-3 shrink-0">
             <DialogHeader className="space-y-1">
               <DialogTitle className="flex items-center gap-2 text-foreground text-base">
                 <div className="w-6 h-6 rounded-md bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-500/20 flex items-center justify-center">
                   <Bug className="w-3 h-3 text-red-600 dark:text-red-400" />
                 </div>
-                Log Bug
+                {showJiraForm ? 'Create Jira Bug' : 'Log Bug'}
               </DialogTitle>
               <DialogDescription className="text-muted-foreground text-xs">
-                Link a Jira issue or create new.
+                {showJiraForm ? 'Professional bug report — all fields auto-populated from test case.' : 'Link existing or create a new Jira issue.'}
               </DialogDescription>
             </DialogHeader>
           </div>
+
           <div className="flex-1 overflow-y-auto px-5 pb-3 space-y-3 min-h-0">
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-medium text-muted-foreground">Bug ID</label>
-              <Input placeholder="e.g. SUN-1234" value={bugId}
-                onChange={e => setBugId(e.target.value.toUpperCase())}
-                className="h-9 text-sm font-mono bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 focus:border-primary/40 rounded-lg" />
-              {bugFetching && (
-                <p className="text-[10px] text-muted-foreground flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" />Fetching...</p>
-              )}
-              {bugTitle && !bugFetching && (
-                <div className="text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/[0.06] border border-emerald-200 dark:border-emerald-500/20 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3 h-3 shrink-0" />
-                  <span className="truncate">{bugId} — {bugTitle}</span>
+            {!showJiraForm ? (
+              <>
+                {/* Quick mode: Bug ID + Notes */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium text-muted-foreground">Bug ID (existing)</label>
+                  <Input placeholder="e.g. SUN-1234" value={bugId}
+                    onChange={e => setBugId(e.target.value.toUpperCase())}
+                    className="h-9 text-sm font-mono bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 focus:border-primary/40 rounded-lg" />
+                  {bugFetching && <p className="text-[10px] text-muted-foreground flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" />Fetching...</p>}
+                  {bugTitle && !bugFetching && (
+                    <div className="text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/[0.06] border border-emerald-200 dark:border-emerald-500/20 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3 h-3 shrink-0" /><span className="truncate">{bugId} — {bugTitle}</span>
+                    </div>
+                  )}
+                  {bugFetchError && !bugFetching && <p className="text-[10px] text-amber-600 flex items-center gap-1.5"><XCircle className="w-3 h-3" />{bugFetchError}</p>}
                 </div>
-              )}
-              {bugFetchError && !bugFetching && (
-                <p className="text-[10px] text-amber-600 flex items-center gap-1.5"><XCircle className="w-3 h-3" />{bugFetchError}</p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-medium text-muted-foreground">Notes</label>
-              <Textarea placeholder="What went wrong..." value={bugDesc}
-                onChange={e => setBugDesc(e.target.value)}
-                rows={2}
-                className="resize-none text-sm bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 rounded-lg focus:border-primary/40 min-h-0" />
-            </div>
-            <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2">
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Jira</span>
-              {jiraIssueKey ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-semibold text-emerald-600">✓ {jiraIssueKey}</span>
-                  {jiraIssueLink && <a href={jiraIssueLink} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary hover:underline">Open</a>}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium text-muted-foreground">Notes</label>
+                  <Textarea placeholder="What went wrong..." value={bugDesc} onChange={e => setBugDesc(e.target.value)}
+                    rows={2} className="resize-none text-sm bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 rounded-lg focus:border-primary/40 min-h-0" />
                 </div>
-              ) : (
-                <Button size="sm" variant="outline" disabled={jiraPushing} onClick={pushToJira}
-                  className="h-6 text-[10px] gap-1 px-2 bg-transparent border-border text-muted-foreground hover:text-foreground">
-                  {jiraPushing ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
-                  Create
-                </Button>
-              )}
-            </div>
+                {/* Create in Jira button */}
+                {!jiraIssueKey ? (
+                  <Button variant="outline" size="sm" onClick={() => setShowJiraForm(true)}
+                    className="w-full h-9 text-xs gap-1.5 border-border text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg">
+                    <ExternalLink className="w-3.5 h-3.5" /> Create New Bug in Jira (Professional)
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-500/[0.06] border border-emerald-200 dark:border-emerald-500/20">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="text-[11px] font-semibold text-emerald-600">{jiraIssueKey} created</span>
+                    {jiraIssueLink && <a href={jiraIssueLink} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary hover:underline ml-auto">Open</a>}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {/* Professional Jira Form */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="text-[11px] font-medium text-muted-foreground">Summary *</label>
+                    <Input value={jiraSummary} onChange={e => setJiraSummary(e.target.value)}
+                      className="h-9 text-sm bg-muted/50 border-border rounded-lg" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-muted-foreground">Severity</label>
+                    <select value={jiraSeverity} onChange={e => setJiraSeverity(e.target.value)}
+                      className="w-full h-9 text-sm bg-muted/50 border border-border rounded-lg px-2 text-foreground">
+                      <option value="Critical">Critical</option>
+                      <option value="High">High</option>
+                      <option value="Medium">Medium</option>
+                      <option value="Low">Low</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-muted-foreground">Environment</label>
+                    <select value={jiraEnv} onChange={e => setJiraEnv(e.target.value)}
+                      className="w-full h-9 text-sm bg-muted/50 border border-border rounded-lg px-2 text-foreground">
+                      <option value="Staging">Staging</option>
+                      <option value="Production">Production</option>
+                      <option value="QA">QA</option>
+                      <option value="Dev">Dev</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-muted-foreground">Assignee</label>
+                    <select value={jiraAssignee} onChange={e => setJiraAssignee(e.target.value)}
+                      className="w-full h-9 text-sm bg-muted/50 border border-border rounded-lg px-2 text-foreground">
+                      <option value="">Unassigned</option>
+                      {jiraUsers.map(u => <option key={u.accountId} value={u.accountId}>{u.displayName}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-muted-foreground">Existing in Live?</label>
+                    <select value={jiraExistingInLive} onChange={e => setJiraExistingInLive(e.target.value)}
+                      className="w-full h-9 text-sm bg-muted/50 border border-border rounded-lg px-2 text-foreground">
+                      <option value="No">No</option>
+                      <option value="Yes">Yes</option>
+                      <option value="Not Checked">Not Checked</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="text-[11px] font-medium text-muted-foreground">Actual Result *</label>
+                    <Textarea value={jiraActual} onChange={e => setJiraActual(e.target.value)} rows={2}
+                      className="resize-none text-sm bg-muted/50 border-border rounded-lg min-h-0" />
+                  </div>
+                </div>
+                {/* Preview */}
+                <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-1">
+                  <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Preview</p>
+                  <p className="text-[11px] text-foreground"><span className="text-muted-foreground">Platform:</span> {session.platformDetails.platformName} {session.platformDetails.appVersion ? `v${session.platformDetails.appVersion}` : ''}</p>
+                  <p className="text-[11px] text-foreground"><span className="text-muted-foreground">Module:</span> {tc?.testBed || 'General'}</p>
+                  <p className="text-[11px] text-foreground"><span className="text-muted-foreground">Reported by:</span> {session.userName}</p>
+                </div>
+              </>
+            )}
           </div>
+
           <div className="shrink-0 px-5 py-3 border-t border-border flex justify-end gap-2">
+            {showJiraForm && (
+              <Button variant="ghost" size="sm" onClick={() => setShowJiraForm(false)} className="h-8 text-xs text-muted-foreground mr-auto">← Back</Button>
+            )}
             <Button variant="ghost" size="sm" onClick={() => setFailOpen(false)} className="h-8 text-xs text-muted-foreground hover:text-foreground">Cancel</Button>
-            <Button size="sm"
-              onClick={() => markStatus('Fail', { bugId: bugId || undefined, bugDesc: bugDesc || undefined, bugTitle: bugTitle || undefined })}
-              className="h-8 text-xs bg-red-600 hover:bg-red-700 text-white border-0 rounded-lg px-4">
-              Confirm Fail
-            </Button>
+            {showJiraForm ? (
+              <Button size="sm" disabled={jiraPushing || !jiraSummary}
+                onClick={async () => {
+                  setJiraPushing(true);
+                  try {
+                    const res = await fetch('/api/jira/create-issue', {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        title: jiraSummary,
+                        description: `Test case "${tc?.testCaseTitle}" failed during ${session.platformDetails.platformName} testing session.`,
+                        stepsToReproduce: tc?.testSteps || '',
+                        expectedResult: tc?.expectedResult || '',
+                        actualResult: jiraActual,
+                        severity: jiraSeverity,
+                        platform: session.platformDetails.platformName,
+                        appVersion: session.platformDetails.appVersion || '',
+                        environment: jiraEnv,
+                        existingInLive: jiraExistingInLive,
+                        assigneeAccountId: jiraAssignee || undefined,
+                        reportedByName: session.userName,
+                        labels: ['zenit-session', tc?.testBed?.toLowerCase().replace(/\s+/g, '-') || 'general'],
+                      }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Jira error');
+                    setJiraIssueKey(data.issueKey); setJiraIssueLink(data.issueLink); setBugId(data.issueKey);
+                    setShowJiraForm(false);
+                    toast({ title: `${data.issueKey} created in Jira` });
+                  } catch (e: any) { toast({ title: 'Jira Error', description: e.message, variant: 'destructive' }); }
+                  finally { setJiraPushing(false); }
+                }}
+                className="h-8 text-xs bg-primary hover:bg-primary/90 text-white border-0 rounded-lg px-4">
+                {jiraPushing ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <ExternalLink className="w-3 h-3 mr-1" />}
+                Create Issue
+              </Button>
+            ) : (
+              <Button size="sm"
+                onClick={() => markStatus('Fail', { bugId: bugId || undefined, bugDesc: bugDesc || undefined, bugTitle: bugTitle || undefined })}
+                className="h-8 text-xs bg-red-600 hover:bg-red-700 text-white border-0 rounded-lg px-4">
+                Confirm Fail
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>
