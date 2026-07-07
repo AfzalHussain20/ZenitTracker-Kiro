@@ -109,30 +109,39 @@ export default function DashboardPage() {
     }
     
     setSessionsLoading(true);
-    const sessionsQuery = query(
-      collection(db, 'testSessions'), 
-      where('userId', '==', user.uid), 
-      orderBy('createdAt', 'desc')
-    );
-    
-    const unsubscribe = onSnapshot(sessionsQuery, (snapshot) => {
-      const fetchedSessions = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id, 
-          ...data,
-          createdAt: getValidDate(data.createdAt),
-          updatedAt: getValidDate(data.updatedAt)
-        } as TestSession;
+
+    // Listen to both collections and merge
+    let sessions1: TestSession[] = [];
+    let sessions2: TestSession[] = [];
+    let loaded1 = false, loaded2 = false;
+
+    const merge = () => {
+      if (!loaded1 || !loaded2) return;
+      const merged = new Map<string, TestSession>();
+      [...sessions1, ...sessions2].forEach(s => merged.set(s.id, s));
+      const sorted = Array.from(merged.values()).sort((a, b) => {
+        const da = getValidDate(a.createdAt)?.getTime() || 0;
+        const db2 = getValidDate(b.createdAt)?.getTime() || 0;
+        return db2 - da;
       });
-      setSessions(fetchedSessions);
+      setSessions(sorted);
       setSessionsLoading(false);
-    }, (err) => { 
-      console.error("Failed to fetch sessions:", err); 
-      setSessionsLoading(false); 
-    });
+    };
+
+    const q1 = query(collection(db, 'sessions'), where('userId', '==', user.uid), orderBy('createdAt', 'desc'));
+    const q2 = query(collection(db, 'testSessions'), where('userId', '==', user.uid), orderBy('createdAt', 'desc'));
+
+    const unsub1 = onSnapshot(q1, (snap) => {
+      sessions1 = snap.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: getValidDate(doc.data().createdAt), updatedAt: getValidDate(doc.data().updatedAt) } as TestSession));
+      loaded1 = true; merge();
+    }, () => { loaded1 = true; merge(); });
+
+    const unsub2 = onSnapshot(q2, (snap) => {
+      sessions2 = snap.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: getValidDate(doc.data().createdAt), updatedAt: getValidDate(doc.data().updatedAt) } as TestSession));
+      loaded2 = true; merge();
+    }, () => { loaded2 = true; merge(); });
     
-    return () => unsubscribe();
+    return () => { unsub1(); unsub2(); };
   }, [user, authLoading]);
 
   const { activeSessions, completedSessions, stats } = useMemo(() => {
