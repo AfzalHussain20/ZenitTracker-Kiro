@@ -21,7 +21,7 @@ export async function GET() {
       fetch(`${JIRA_BASE}/rest/api/3/user/assignable/search?project=${PROJECT_KEY}&maxResults=100`, { headers, cache: 'no-store' }),
       fetch(`${JIRA_BASE}/rest/api/3/project/${PROJECT_KEY}/components`, { headers, cache: 'no-store' }),
       // Fetch recent issues to extract actual environment values used
-      fetch(`${JIRA_BASE}/rest/api/3/search/jql?jql=project=${PROJECT_KEY} ORDER BY created DESC&maxResults=50&fields=customfield_10201`, { headers, cache: 'no-store' }),
+      fetch(`${JIRA_BASE}/rest/api/3/search?jql=${encodeURIComponent(`project=${PROJECT_KEY} ORDER BY created DESC`)}&maxResults=50&fields=customfield_10201`, { headers, cache: 'no-store' }),
     ]);
 
     // Priorities

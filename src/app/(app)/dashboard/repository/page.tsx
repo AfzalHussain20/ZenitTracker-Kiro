@@ -183,7 +183,8 @@ export default function RepositoryPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input placeholder="Test Case Title *" value={addTitle} onChange={e => setAddTitle(e.target.value)} className="h-9 text-sm" />
             <Input placeholder="Module / Test Bed" value={addModule} onChange={e => setAddModule(e.target.value)} className="h-9 text-sm" />
-            <Input placeholder="Test Steps (one per line)" value={addSteps} onChange={e => setAddSteps(e.target.value)} className="h-9 text-sm col-span-full" />
+            <textarea placeholder="Test Steps (one per line)" value={addSteps} onChange={e => setAddSteps(e.target.value)}
+              rows={3} className="col-span-full text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-primary/40" />
             <Input placeholder="Expected Result" value={addExpected} onChange={e => setAddExpected(e.target.value)} className="h-9 text-sm col-span-full" />
           </div>
           <div className="flex gap-2">

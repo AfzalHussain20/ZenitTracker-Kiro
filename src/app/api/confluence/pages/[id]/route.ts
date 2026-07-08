@@ -58,17 +58,25 @@ export async function GET(
     // Fetch comments (footer comments on the page)
     let comments: any[] = [];
     try {
-      const commentsRes = await fetch(
+      // Try v2 footer-comments endpoint
+      let commentsRes = await fetch(
         `${baseUrl}/api/v2/pages/${id}/footer-comments?limit=20&sort=-created-date`,
         { headers: { Authorization: authHeader, Accept: 'application/json' }, cache: 'no-store' }
       );
+      // Fallback to v1 endpoint if v2 fails
+      if (!commentsRes.ok) {
+        commentsRes = await fetch(
+          `${baseUrl}/rest/api/content/${id}/child/comment?limit=20&expand=body.storage,version&orderby=-created`,
+          { headers: { Authorization: authHeader, Accept: 'application/json' }, cache: 'no-store' }
+        );
+      }
       if (commentsRes.ok) {
         const commentsData = await commentsRes.json();
         comments = (commentsData.results || []).map((c: any) => ({
           id: c.id,
-          body: c.body?.storage?.value?.replace(/<[^>]+>/g, '').trim() || '',
-          createdAt: c.version?.createdAt || c.createdAt || null,
-          author: c.version?.authorId || null,
+          body: (c.body?.storage?.value || '').replace(/<[^>]+>/g, '').trim(),
+          createdAt: c.version?.createdAt || c.version?.when || null,
+          author: c.version?.by?.displayName || c.version?.authorId || null,
         }));
       }
     } catch (e) {
