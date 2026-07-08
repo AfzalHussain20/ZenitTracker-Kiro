@@ -12,8 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import {
-  CheckCircle2, XCircle, MinusCircle, ChevronLeft, ChevronRight,
-  Menu, X, Loader2, Search, Bug, ExternalLink, Timer,
+  CheckCircle2, XCircle, ChevronLeft, ChevronRight,
+  Menu, X, Loader2, Search, Bug, ExternalLink,
   ArrowRight, Zap, ListChecks, Target, Keyboard,
   SkipForward, Clock
 } from 'lucide-react';
@@ -612,7 +612,7 @@ export default function TestSessionPage() {
               </div>
 
               {/* Verdict buttons — always visible at bottom */}
-              <div className="px-5 py-3 border-t border-border bg-muted/30 shrink-0">
+              <div className={cn('px-5 py-3 border-t border-border bg-muted/30 shrink-0', isMarking && 'opacity-50 pointer-events-none')}>
                 <div className="grid grid-cols-3 gap-2">
                   <motion.button whileTap={{ scale: 0.95 }} onClick={() => markStatus('Pass')}
                     className={cn('flex items-center justify-center gap-2 py-2.5 rounded-xl border transition-all',

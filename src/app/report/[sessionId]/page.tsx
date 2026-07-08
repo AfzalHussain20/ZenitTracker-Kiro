@@ -50,7 +50,10 @@ export default function PublicReportPage() {
             testCases: (data.testCases || []).map((tc: any) => ({ ...tc, lastModified: getValidDate(tc.lastModified) }))
           } as TestSession);
         } else { setError('Report not found'); }
-      } catch (e) { setError('Failed to load report'); }
+      } catch (e: any) {
+        const msg = e?.code === 'permission-denied' ? 'This report is not publicly available yet. Only completed sessions can be shared.' : 'Failed to load report';
+        setError(msg);
+      }
       finally { setLoading(false); }
     })();
   }, [sessionId]);

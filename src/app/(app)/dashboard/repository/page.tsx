@@ -105,6 +105,7 @@ export default function RepositoryPage() {
   // Launch session from suite
   const launchSession = async (suite: TestSuite) => {
     if (!user) return;
+    const platform = suite.platform !== 'All' ? suite.platform : prompt('Enter platform (e.g., Android TV, Fire TV, Web):') || 'Other';
     try {
       const sessionsCol = collection(db, 'sessions');
       const sessionRef = doc(sessionsCol);
@@ -116,7 +117,7 @@ export default function RepositoryPage() {
       const session: TestSession = {
         id: sessionRef.id, userId: user.uid,
         userName: displayName || user.email?.split('@')[0] || 'Tester',
-        platformDetails: { platformName: suite.platform as any || 'Other' },
+        platformDetails: { platformName: platform as any },
         testCases, status: 'In Progress',
         createdAt: now, updatedAt: now,
         summary: { total: testCases.length, pass: 0, fail: 0, na: 0, untested: testCases.length, failKnown: 0 },

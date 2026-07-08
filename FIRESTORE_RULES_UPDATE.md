@@ -42,7 +42,19 @@ service cloud.firestore {
 }
 ```
 
-## Security Notes
+## Firestore Indexes Required
+
+If you see errors like `The query requires an index`, create these composite indexes in Firebase Console → Firestore → Indexes:
+
+| Collection | Fields | Order |
+|-----------|--------|-------|
+| `sessions` | `userId` ASC, `createdAt` DESC | |
+| `testSessions` | `userId` ASC, `createdAt` DESC | |
+| `testSuites` | `createdAt` DESC | |
+
+To create: Firebase Console → Firestore → Indexes → Create Index → Select collection → Add fields → Create.
+
+Alternatively, Firestore will show a direct link in the error message — click it to auto-create the index.
 - Session READ is public so `/report/[id]` can work without login
 - Session WRITE still requires the authenticated owner
 - If you want more restrictive public access (e.g., only completed sessions), use:
