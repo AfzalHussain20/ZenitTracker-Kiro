@@ -45,6 +45,7 @@ export default function RepositoryPage() {
   const [addModule, setAddModule] = useState('');
   const [addSteps, setAddSteps] = useState('');
   const [addExpected, setAddExpected] = useState('');
+  const [expandedSuite, setExpandedSuite] = useState<string | null>(null);
 
   // Fetch all suites
   useEffect(() => {
@@ -254,6 +255,9 @@ export default function RepositoryPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  <Button size="sm" variant="outline" onClick={() => setExpandedSuite(expandedSuite === suite.id ? null : suite.id)} className="gap-1 text-xs h-8">
+                    {expandedSuite === suite.id ? 'Hide' : 'View'}
+                  </Button>
                   <Button size="sm" onClick={() => launchSession(suite)} className="gap-1.5 text-xs">
                     <Play className="w-3 h-3" /> Execute
                   </Button>
@@ -264,6 +268,19 @@ export default function RepositoryPage() {
                   )}
                 </div>
               </div>
+              {expandedSuite === suite.id && (
+                <div className="mt-3 pt-3 border-t border-border space-y-1">
+                  {suite.testCases.slice(0, 20).map((tc, idx) => (
+                    <div key={idx} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted/50 text-xs">
+                      <span className="text-muted-foreground font-mono w-5 shrink-0">{idx + 1}</span>
+                      <span className="flex-1 truncate text-foreground">{tc.testCaseTitle}</span>
+                      <Badge variant="outline" className="text-[8px] px-1 py-0 shrink-0">{tc.testBed}</Badge>
+                      {tc.priority && <Badge variant="outline" className={cn('text-[8px] px-1 py-0 shrink-0', tc.priority === 'High' ? 'border-red-200 text-red-600' : '')}>{tc.priority}</Badge>}
+                    </div>
+                  ))}
+                  {suite.testCases.length > 20 && <p className="text-[10px] text-muted-foreground px-2">+{suite.testCases.length - 20} more</p>}
+                </div>
+              )}
             </Card>
           </motion.div>
         ))}

@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import type { Platform, PlatformDetails, TestCase, TestSession } from '@/types';
 import { db } from '@/lib/firebaseConfig';
-import { doc, collection, setDoc, Timestamp } from 'firebase/firestore';
+import { doc, collection, setDoc, getDocs, query, orderBy, Timestamp } from 'firebase/firestore';
 import {
   Loader2, UploadCloud, ChevronRight, CheckCircle2,
   Rocket, Tv, Smartphone, Monitor, Globe, Gamepad2,
@@ -85,6 +85,10 @@ export default function NewTestSessionPage() {
   const [isParsingFile, setIsParsingFile] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [platformDetails, setPlatformDetails] = useState<PlatformDetails | null>(null);
+  const [sourceMode, setSourceMode] = useState<'upload' | 'library'>('upload');
+  const [librarySuites, setLibrarySuites] = useState<any[]>([]);
+  const [selectedSuiteId, setSelectedSuiteId] = useState<string | null>(null);
+  const [libraryLoading, setLibraryLoading] = useState(false);
 
   const handlePlatformSubmit = (data: PlatformFormValues) => {
     setPlatformDetails(data as PlatformDetails);
@@ -336,25 +340,64 @@ export default function NewTestSessionPage() {
               </motion.div>
             )}
 
-            {/* ══════ STEP 2: Upload Test Cases ══════ */}
+            {/* ══════ STEP 2: Test Cases Source ══════ */}
             {step === 2 && (
               <motion.div key="step2"
                 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-                className="space-y-8">
+                className="space-y-6">
 
                 {/* Hero */}
                 <div className="text-center space-y-2">
-                  <motion.div
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ delay: 0.1, type: 'spring', damping: 15 }}
-                    className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto mb-4">
-                    <FileSpreadsheet className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                  </motion.div>
-                  <h1 className="text-2xl font-bold text-foreground tracking-tight">Upload Test Cases</h1>
-                  <p className="text-sm text-muted-foreground">Import your test suite from an Excel file</p>
+                  <h1 className="text-2xl font-bold text-foreground tracking-tight">Select Test Cases</h1>
+                  <p className="text-sm text-muted-foreground">Upload new or pick from your library</p>
                 </div>
+
+                {/* Source Toggle */}
+                <div className="flex items-center gap-1 bg-muted rounded-lg p-1 max-w-xs mx-auto">
+                  <button onClick={() => setSourceMode('upload')}
+                    className={cn('flex-1 px-4 py-2 text-xs font-medium rounded-md transition-colors', sourceMode === 'upload' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground')}>
+                    Upload XLSX
+                  </button>
+                  <button onClick={() => { setSourceMode('library'); if (librarySuites.length === 0) { setLibraryLoading(true); getDocs(query(collection(db, 'testSuites'), orderBy('createdAt', 'desc'))).then(snap => { setLibrarySuites(snap.docs.map(d => ({ id: d.id, ...d.data() }))); }).catch(() => {}).finally(() => setLibraryLoading(false)); } }}
+                    className={cn('flex-1 px-4 py-2 text-xs font-medium rounded-md transition-colors', sourceMode === 'library' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground')}>
+                    From Library
+                  </button>
+                </div>
+
+                {sourceMode === 'library' ? (
+                  /* Library picker */
+                  <div className="space-y-3">
+                    {libraryLoading ? (
+                      <div className="text-center py-8"><Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" /></div>
+                    ) : librarySuites.length === 0 ? (
+                      <div className="text-center py-8 text-sm text-muted-foreground">No suites in library. Upload one first.</div>
+                    ) : (
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                        {librarySuites.map((suite: any) => (
+                          <button key={suite.id} onClick={() => {
+                            setSelectedSuiteId(suite.id);
+                            const cases = (suite.testCases || []).map((tc: any, idx: number) => ({ ...tc, orderIndex: idx }));
+                            setParsedTestCases(cases);
+                            setTestBeds([...new Set(cases.map((c: any) => c.testBed || 'General'))]);
+                            setSelectedTestBed(null);
+                          }}
+                            className={cn('w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all',
+                              selectedSuiteId === suite.id ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/30')}>
+                            <FileSpreadsheet className="w-5 h-5 text-primary shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{suite.name}</p>
+                              <p className="text-[10px] text-muted-foreground">{suite.totalCases} cases · {suite.platform || 'All platforms'}</p>
+                            </div>
+                            {selectedSuiteId === suite.id && <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Upload XLSX (existing) */
+                  <>
 
                 {/* Drop zone */}
                 <label className={cn(
@@ -454,13 +497,15 @@ export default function NewTestSessionPage() {
                     </motion.div>
                   )}
                 </AnimatePresence>
+                </>
+                )}
 
                 {/* Navigation */}
                 <div className="flex gap-3">
                   <Button variant="outline" onClick={() => setStep(1)} className="flex-1 h-12 rounded-2xl font-medium">
                     <ArrowLeft className="w-4 h-4 mr-2" /> Back
                   </Button>
-                  <Button onClick={() => setStep(3)} disabled={!xlsxFile || parsedTestCases.length === 0}
+                  <Button onClick={() => setStep(3)} disabled={parsedTestCases.length === 0}
                     className="flex-1 h-12 rounded-2xl font-semibold gap-2 shadow-sm disabled:opacity-40">
                     Continue <ChevronRight className="w-4 h-4" />
                   </Button>
