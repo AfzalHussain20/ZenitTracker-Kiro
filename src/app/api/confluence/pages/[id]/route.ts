@@ -55,6 +55,26 @@ export async function GET(
       console.warn('[Confluence] Failed to fetch attachments:', e);
     }
 
+    // Fetch comments (footer comments on the page)
+    let comments: any[] = [];
+    try {
+      const commentsRes = await fetch(
+        `${baseUrl}/api/v2/pages/${id}/footer-comments?limit=20&sort=-created-date`,
+        { headers: { Authorization: authHeader, Accept: 'application/json' }, cache: 'no-store' }
+      );
+      if (commentsRes.ok) {
+        const commentsData = await commentsRes.json();
+        comments = (commentsData.results || []).map((c: any) => ({
+          id: c.id,
+          body: c.body?.storage?.value?.replace(/<[^>]+>/g, '').trim() || '',
+          createdAt: c.version?.createdAt || c.createdAt || null,
+          author: c.version?.authorId || null,
+        }));
+      }
+    } catch (e) {
+      console.warn('[Confluence] Failed to fetch comments:', e);
+    }
+
     const imageAttachments = attachments.filter(
       (a) => a.mediaType && a.mediaType.startsWith('image/')
     );
@@ -67,6 +87,7 @@ export async function GET(
       space: { id: pageData.spaceId },
       attachments: imageAttachments,
       allAttachments: attachments,
+      comments,
     };
 
     return NextResponse.json({ page });

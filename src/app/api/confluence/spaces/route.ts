@@ -30,13 +30,21 @@ export async function GET() {
     }
 
     const data = await res.json();
-    const spaces = (data.results || []).map((s: any) => ({
-      id: s.id,
-      key: s.key,
-      name: s.name,
-      type: s.type,
-      icon: s.icon?.path ? `${baseUrl}${s.icon.path}` : null,
-    }));
+    const spaces = (data.results || [])
+      .filter((s: any) => {
+        // Filter out personal spaces and Jira-created system spaces
+        if (s.type === 'personal') return false;
+        // Filter out known system/Jira spaces by key pattern
+        if (s.key?.startsWith('~') || s.key === 'JIRA') return false;
+        return true;
+      })
+      .map((s: any) => ({
+        id: s.id,
+        key: s.key,
+        name: s.name,
+        type: s.type,
+        icon: s.icon?.path ? `${baseUrl}${s.icon.path}` : null,
+      }));
 
     return NextResponse.json({ spaces });
   } catch (err: any) {
