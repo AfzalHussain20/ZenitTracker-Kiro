@@ -140,6 +140,26 @@ export default function NewTestSessionPage() {
         summary: { total: testCasesWithIds.length, pass: 0, fail: 0, na: 0, untested: testCasesWithIds.length, failKnown: 0 },
       };
       await setDoc(sessionRef, session);
+
+      // Also save to Test Repository (library) for future re-use
+      if (xlsxFile) {
+        try {
+          const suiteRef = doc(collection(db, 'testSuites'));
+          const suiteName = xlsxFile.name.replace(/\.(xlsx|xls)$/i, '');
+          await setDoc(suiteRef, {
+            id: suiteRef.id,
+            name: suiteName,
+            platform: platformDetails.platformName,
+            testBeds: [...new Set(filteredCases.map(c => c.testBed))],
+            totalCases: filteredCases.length,
+            uploadedBy: displayName || user.email?.split('@')[0] || 'User',
+            uploadedByUid: user.uid,
+            createdAt: now,
+            testCases: filteredCases,
+          });
+        } catch { /* Silent — don't block session creation if library save fails */ }
+      }
+
       toast({ title: 'Session created', description: `${testCasesWithIds.length} test cases loaded.` });
       router.push(`/dashboard/session/${sessionRef.id}`);
     } catch (err: any) {

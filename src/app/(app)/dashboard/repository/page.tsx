@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebaseConfig';
-import { collection, query, getDocs, orderBy, doc, setDoc, deleteDoc, Timestamp } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, doc, setDoc, deleteDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import type { TestCase, TestSession } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,6 +40,11 @@ export default function RepositoryPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [search, setSearch] = useState('');
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addTitle, setAddTitle] = useState('');
+  const [addModule, setAddModule] = useState('');
+  const [addSteps, setAddSteps] = useState('');
+  const [addExpected, setAddExpected] = useState('');
 
   // Fetch all suites
   useEffect(() => {
@@ -156,14 +161,68 @@ export default function RepositoryPage() {
           <h1 className="text-2xl font-bold tracking-tight">Test Repository</h1>
           <p className="text-sm text-muted-foreground mt-0.5">{suites.length} test suites · Available for all team members</p>
         </div>
-        <label className="cursor-pointer">
-          <Button disabled={uploading} className="gap-2">
-            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            Upload XLSX
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowAddForm(v => !v)} className="gap-2 text-sm">
+            + Add Case
           </Button>
-          <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
-        </label>
+          <label className="cursor-pointer">
+            <Button disabled={uploading} className="gap-2">
+              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              Upload XLSX
+            </Button>
+            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
+          </label>
+        </div>
       </div>
+
+      {/* Quick Add Form */}
+      {showAddForm && (
+        <Card className="p-4 space-y-3 border-primary/20">
+          <p className="text-sm font-semibold">Add Test Case</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input placeholder="Test Case Title *" value={addTitle} onChange={e => setAddTitle(e.target.value)} className="h-9 text-sm" />
+            <Input placeholder="Module / Test Bed" value={addModule} onChange={e => setAddModule(e.target.value)} className="h-9 text-sm" />
+            <Input placeholder="Test Steps (one per line)" value={addSteps} onChange={e => setAddSteps(e.target.value)} className="h-9 text-sm col-span-full" />
+            <Input placeholder="Expected Result" value={addExpected} onChange={e => setAddExpected(e.target.value)} className="h-9 text-sm col-span-full" />
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" disabled={!addTitle} onClick={async () => {
+              if (!user || !addTitle) return;
+              try {
+                // Find or create "Manual Cases" suite
+                const manualSuiteQuery = suites.find(s => s.name === 'Manual Cases' && s.uploadedByUid === user.uid);
+                if (manualSuiteQuery) {
+                  // Add to existing suite (re-save entire doc with new case appended)
+                  const updated = [...manualSuiteQuery.testCases, {
+                    orderIndex: manualSuiteQuery.totalCases,
+                    testBed: addModule || 'General', testCaseTitle: addTitle,
+                    testSteps: addSteps, expectedResult: addExpected,
+                    actualResult: '', notes: '', status: 'Untested' as const, priority: 'Medium' as const,
+                  }];
+                  const ref = doc(db, 'testSuites', manualSuiteQuery.id);
+                  await updateDoc(ref, { testCases: updated, totalCases: updated.length, testBeds: [...new Set(updated.map(c => c.testBed))] });
+                } else {
+                  // Create new "Manual Cases" suite
+                  const ref = doc(collection(db, 'testSuites'));
+                  await setDoc(ref, {
+                    id: ref.id, name: 'Manual Cases', platform: 'All',
+                    testBeds: [addModule || 'General'], totalCases: 1,
+                    uploadedBy: displayName || 'User', uploadedByUid: user.uid,
+                    createdAt: Timestamp.now(),
+                    testCases: [{ orderIndex: 0, testBed: addModule || 'General', testCaseTitle: addTitle, testSteps: addSteps, expectedResult: addExpected, actualResult: '', notes: '', status: 'Untested', priority: 'Medium' }],
+                  });
+                }
+                toast({ title: 'Test case added' });
+                setAddTitle(''); setAddModule(''); setAddSteps(''); setAddExpected(''); setShowAddForm(false);
+                // Refresh
+                const snap = await getDocs(query(collection(db, 'testSuites'), orderBy('createdAt', 'desc')));
+                setSuites(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate?.() || new Date() } as TestSuite)));
+              } catch (err: any) { toast({ title: 'Error', description: err.message, variant: 'destructive' }); }
+            }}>Save</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowAddForm(false)}>Cancel</Button>
+          </div>
+        </Card>
+      )}
 
       {/* Search */}
       <div className="relative max-w-sm">
