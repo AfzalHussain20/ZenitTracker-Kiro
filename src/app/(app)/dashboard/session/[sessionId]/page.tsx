@@ -400,15 +400,15 @@ export default function TestSessionPage() {
   const tc = session.testCases[currentIndex];
   const untestedCount = session.testCases.filter(t => t.status === 'Untested').length;
   const passCount = session.testCases.filter(t => t.status === 'Pass').length;
-  const failCount = session.testCases.filter(t => t.status.includes('Fail')).length;
+  const failCount = session.testCases.filter(t => t.status?.includes('Fail')).length;
   const naCount = session.testCases.filter(t => t.status === 'N/A').length;
   const total = session.testCases.length;
   const progress = total > 0 ? Math.round(((total - untestedCount) / total) * 100) : 0;
   const steps = (tc?.testSteps || '').split('\n').filter(Boolean);
   const testBeds = Array.from(new Set(session.testCases.map(t => t.testBed || 'Uncategorized')));
   const filteredCases = session.testCases.filter(t => {
-    const matchSearch = !searchQuery || t.testCaseTitle.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchFilter = filterStatus === 'all' || t.status === filterStatus || (filterStatus === 'fail' && t.status.includes('Fail'));
+    const matchSearch = !searchQuery || (t.testCaseTitle || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchFilter = filterStatus === 'all' || t.status === filterStatus || (filterStatus === 'fail' && t.status?.includes('Fail'));
     return matchSearch && matchFilter;
   });
 
@@ -566,9 +566,9 @@ export default function TestSessionPage() {
                   {tc?.status && tc.status !== 'Untested' && (
                     <Badge className={cn('ml-2 text-[9px] align-middle',
                       tc.status === 'Pass' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' :
-                      tc.status.includes('Fail') ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400' :
+                      tc.status?.includes('Fail') ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400' :
                       'bg-muted text-muted-foreground'
-                    )}>{tc.status === 'Pass' ? '✓ Passed' : tc.status.includes('Fail') ? '✗ Failed' : 'Skipped'}</Badge>
+                    )}>{tc.status === 'Pass' ? '✓ Passed' : tc.status?.includes('Fail') ? '✗ Failed' : 'Skipped'}</Badge>
                   )}
                 </h2>
 
@@ -699,7 +699,7 @@ export default function TestSessionPage() {
                       {casesInBed.map(t => {
                         const idx = session.testCases.findIndex(x => x.id === t.id);
                         const active = idx === currentIndex;
-                        const dot = t.status === 'Pass' ? 'bg-emerald-500' : t.status.includes('Fail') ? 'bg-red-500' : t.status === 'N/A' ? 'bg-muted-foreground/40' : 'bg-muted-foreground/15';
+                        const dot = t.status === 'Pass' ? 'bg-emerald-500' : t.status?.includes('Fail') ? 'bg-red-500' : t.status === 'N/A' ? 'bg-muted-foreground/40' : 'bg-muted-foreground/15';
                         return (
                           <button key={t.id} onClick={() => { setCurrentIndex(idx); setDrawerOpen(false); }}
                             className={cn('w-full flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-all',

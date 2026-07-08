@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import {
   Loader2, ArrowLeft, CheckCircle2, XCircle, AlertTriangle,
   Printer, Download, Clock, Calendar, ExternalLink, ArrowRight,
-  TrendingUp, Target, Bug, SkipForward, BarChart3, Layers
+  TrendingUp, Target, Bug, BarChart3, Layers
 } from 'lucide-react';
 import { format, formatDistanceStrict } from 'date-fns';
 import { motion } from 'framer-motion';
@@ -108,7 +108,7 @@ export default function TestSessionResultPage() {
   if (!session) return <div className="p-8 text-center text-muted-foreground">Report unavailable.</div>;
 
   const passed = session.testCases.filter(tc => tc.status === 'Pass').length;
-  const failed = session.testCases.filter(tc => tc.status.includes('Fail')).length;
+  const failed = session.testCases.filter(tc => tc.status?.includes('Fail')).length;
   const na = session.testCases.filter(tc => tc.status === 'N/A').length;
   const total = session.testCases.length;
   const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
@@ -135,12 +135,12 @@ export default function TestSessionResultPage() {
     return {
       bed, total: cases.length,
       pass: cases.filter(t => t.status === 'Pass').length,
-      fail: cases.filter(t => t.status.includes('Fail')).length,
+      fail: cases.filter(t => t.status?.includes('Fail')).length,
       na: cases.filter(t => t.status === 'N/A').length,
     };
   });
 
-  const failedCases = session.testCases.filter(tc => tc.status.includes('Fail'));
+  const failedCases = session.testCases.filter(tc => tc.status?.includes('Fail'));
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -370,7 +370,7 @@ export default function TestSessionResultPage() {
                           <CheckCircle2 className="w-3 h-3" />Pass
                         </span>
                       )}
-                      {tc.status.includes('Fail') && (
+                      {tc.status?.includes('Fail') && (
                         <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 px-2 py-0.5 rounded-full">
                           <XCircle className="w-3 h-3" />Fail
                         </span>

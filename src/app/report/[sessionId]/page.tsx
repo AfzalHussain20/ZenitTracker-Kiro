@@ -76,7 +76,7 @@ export default function PublicReportPage() {
   );
 
   const passed = session.testCases.filter(tc => tc.status === 'Pass').length;
-  const failed = session.testCases.filter(tc => tc.status.includes('Fail')).length;
+  const failed = session.testCases.filter(tc => tc.status?.includes('Fail')).length;
   const na = session.testCases.filter(tc => tc.status === 'N/A').length;
   const total = session.testCases.length;
   const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
@@ -88,7 +88,7 @@ export default function PublicReportPage() {
     { name: 'Failed', value: failed, color: '#ef4444' },
     { name: 'N/A', value: na, color: '#94a3b8' },
   ].filter(x => x.value > 0);
-  const failedCases = session.testCases.filter(tc => tc.status.includes('Fail'));
+  const failedCases = session.testCases.filter(tc => tc.status?.includes('Fail'));
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -204,7 +204,7 @@ export default function PublicReportPage() {
                     </td>
                     <td className="px-4 py-2.5">
                       {tc.status === 'Pass' && <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full"><CheckCircle2 className="w-3 h-3" />Pass</span>}
-                      {tc.status.includes('Fail') && <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full"><XCircle className="w-3 h-3" />Fail</span>}
+                      {tc.status?.includes('Fail') && <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full"><XCircle className="w-3 h-3" />Fail</span>}
                       {(tc.status === 'N/A' || tc.status === 'Untested') && <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full"><AlertTriangle className="w-3 h-3" />{tc.status}</span>}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-muted-foreground hidden md:table-cell">
