@@ -36,6 +36,9 @@ const instrumentSans = Instrument_Sans({
 export const metadata = {
   title: 'Zenit Tracker | Precision Testing',
   description: 'Enterprise-grade test tracking and management system.',
+  icons: {
+    icon: '/icon.svg',
+  },
 };
 
 export default function RootLayout({
