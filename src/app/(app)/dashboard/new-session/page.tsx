@@ -108,8 +108,8 @@ export default function NewTestSessionPage() {
       const rows: Record<string, string>[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
       const cases: Omit<TestCase, 'id' | 'lastModified'>[] = rows.map((row, idx) => ({
         orderIndex: idx,
-        testBed: String(row['Test Bed'] || row['testBed'] || 'General'),
-        testCaseTitle: String(row['Test Case'] || row['testCaseTitle'] || `Test Case ${idx + 1}`),
+        testBed: String(row['Module'] || row['Test Bed'] || row['testBed'] || 'General'),
+        testCaseTitle: String(row['Test Scenario'] || row['Test Case'] || row['testCaseTitle'] || `Test Case ${idx + 1}`),
         testSteps: String(row['Test Steps'] || row['testSteps'] || ''),
         expectedResult: String(row['Expected Result'] || row['expectedResult'] || ''),
         actualResult: '', notes: '', status: 'Untested',

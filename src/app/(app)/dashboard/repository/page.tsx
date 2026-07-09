@@ -75,8 +75,8 @@ export default function RepositoryPage() {
       const rows: Record<string, string>[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
       const cases = rows.map((row, idx) => ({
         orderIndex: idx,
-        testBed: String(row['Test Bed'] || row['testBed'] || 'General'),
-        testCaseTitle: String(row['Test Case'] || row['testCaseTitle'] || `Test Case ${idx + 1}`),
+        testBed: String(row['Module'] || row['Test Bed'] || row['testBed'] || 'General'),
+        testCaseTitle: String(row['Test Scenario'] || row['Test Case'] || row['testCaseTitle'] || `Test Case ${idx + 1}`),
         testSteps: String(row['Test Steps'] || row['testSteps'] || ''),
         expectedResult: String(row['Expected Result'] || row['expectedResult'] || ''),
         actualResult: '', notes: '', status: 'Untested' as const,
@@ -127,7 +127,7 @@ export default function RepositoryPage() {
       const now = Timestamp.now();
       const testCases: TestCase[] = suite.testCases.map((tc, i) => ({
         ...tc, id: `${sessionRef.id}-tc-${i}`, lastModified: now, status: 'Untested',
-        actualResult: '', notes: '', bugId: undefined, bugTitle: undefined, naReason: undefined,
+        actualResult: '', notes: '', bugId: null, bugTitle: null, naReason: null,
       }));
       const session: TestSession = {
         id: sessionRef.id, userId: user.uid,
