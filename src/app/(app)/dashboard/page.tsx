@@ -168,21 +168,27 @@ export default function DashboardPage() {
   }, [sessions]);
 
   const chartData = useMemo(() => {
+    // Group sessions by day for the last 7 days
     const last7Days = Array.from({ length: 7 }, (_, i) => {
       const date = new Date();
       date.setDate(date.getDate() - (6 - i));
-      const tests = Math.floor(Math.random() * 50) + 20;
-      const passed = Math.floor(tests * (0.7 + Math.random() * 0.2));
-      const failed = tests - passed;
-      return {
-        date: format(date, 'EEE'),
-        tests,
-        passed,
-        failed,
-      };
+      const dayStr = date.toISOString().split('T')[0];
+      const daySessions = sessions.filter(s => {
+        const created = getValidDate(s.createdAt);
+        return created && created.toISOString().split('T')[0] === dayStr;
+      });
+      let tests = 0, passed = 0, failed = 0;
+      daySessions.forEach(s => {
+        if (s.summary) {
+          tests += s.summary.total;
+          passed += s.summary.pass;
+          failed += s.summary.fail + (s.summary.failKnown || 0);
+        }
+      });
+      return { date: format(date, 'EEE'), tests, passed, failed };
     });
     return last7Days;
-  }, []);
+  }, [sessions]);
 
   const pieData = [
     { name: 'Pass', value: stats.totalPass, color: '#10b981' },

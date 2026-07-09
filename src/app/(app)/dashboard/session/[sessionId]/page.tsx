@@ -299,6 +299,9 @@ export default function TestSessionPage() {
     setIsMarking(true);
     setVerdict(base);
 
+    // Brief success toast for Pass
+    if (base === 'Pass') toast({ title: '✓ Passed' });
+
     // Save any pending actual result before marking
     const updated = [...session.testCases];
     updated[currentIndex] = {

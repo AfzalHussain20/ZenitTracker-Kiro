@@ -84,7 +84,11 @@ export default function RepositoryPage() {
       }));
 
       const testBeds = [...new Set(cases.map(c => c.testBed))];
-      const suiteName = file.name.replace(/\.(xlsx|xls)$/i, '');
+      let suiteName = file.name.replace(/\.(xlsx|xls)$/i, '');
+      // Avoid duplicates — append timestamp if name exists
+      if (suites.some(s => s.name === suiteName)) {
+        suiteName = `${suiteName} (${new Date().toLocaleDateString()})`;
+      }
       const suiteRef = doc(collection(db, 'testSuites'));
 
       await setDoc(suiteRef, {
@@ -109,9 +113,13 @@ export default function RepositoryPage() {
   };
 
   // Launch session from suite
-  const launchSession = async (suite: TestSuite) => {
-    if (!user) return;
-    const platform = suite.platform !== 'All' ? suite.platform : prompt('Enter platform (e.g., Android TV, Fire TV, Web):') || 'Other';
+  const [launchPlatform, setLaunchPlatform] = useState('');
+  const [launchSuiteId, setLaunchSuiteId] = useState<string | null>(null);
+
+  const confirmLaunch = async () => {
+    const suite = suites.find(s => s.id === launchSuiteId);
+    if (!user || !suite) return;
+    const platform = launchPlatform || suite.platform || 'Other';
     try {
       const sessionsCol = collection(db, 'sessions');
       const sessionRef = doc(sessionsCol);
@@ -133,6 +141,20 @@ export default function RepositoryPage() {
       router.push(`/dashboard/session/${sessionRef.id}`);
     } catch (err: any) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
+    setLaunchSuiteId(null);
+  };
+
+  const launchSession = (suite: TestSuite) => {
+    if (suite.platform && suite.platform !== 'All') {
+      // Platform known — launch directly
+      setLaunchPlatform(suite.platform);
+      setLaunchSuiteId(suite.id);
+      confirmLaunch();
+    } else {
+      // Ask for platform
+      setLaunchPlatform('');
+      setLaunchSuiteId(suite.id);
     }
   };
 
@@ -292,6 +314,26 @@ export default function RepositoryPage() {
           </div>
         )}
       </div>
+
+      {/* Platform Picker for Launch */}
+      {launchSuiteId && !launchPlatform && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setLaunchSuiteId(null)}>
+          <div className="bg-card border border-border rounded-2xl p-5 w-80 space-y-4 shadow-xl" onClick={e => e.stopPropagation()}>
+            <p className="text-sm font-semibold">Select Platform</p>
+            <select value={launchPlatform} onChange={e => setLaunchPlatform(e.target.value)}
+              className="w-full h-10 text-sm bg-muted/50 border border-border rounded-lg px-3">
+              <option value="">Choose...</option>
+              {['Android TV', 'Apple TV', 'Fire TV', 'LG TV', 'Samsung TV', 'Roku', 'Web', 'Mobile (Android)', 'Mobile (iOS)', 'Other'].map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setLaunchSuiteId(null)} className="flex-1">Cancel</Button>
+              <Button size="sm" disabled={!launchPlatform} onClick={confirmLaunch} className="flex-1">Launch</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

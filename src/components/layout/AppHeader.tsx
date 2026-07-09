@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { signOut } from 'firebase/auth';
@@ -30,6 +30,9 @@ export default function AppHeader() {
   const router = useRouter();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Close mobile menu on route change
+  useEffect(() => { setMobileMenuOpen(false); }, [pathname]);
 
   const hideHeaderRoutes = ['/dashboard/vision', '/automation'];
   const shouldHide = hideHeaderRoutes.some(route => pathname?.startsWith(route));
