@@ -115,11 +115,12 @@ export default function RepositoryPage() {
   // Launch session from suite
   const [launchPlatform, setLaunchPlatform] = useState('');
   const [launchSuiteId, setLaunchSuiteId] = useState<string | null>(null);
+  const [launching, setLaunching] = useState(false);
 
-  const confirmLaunch = async () => {
-    const suite = suites.find(s => s.id === launchSuiteId);
-    if (!user || !suite) return;
-    const platform = launchPlatform || suite.platform || 'Other';
+  const doLaunch = async (suiteId: string, platform: string) => {
+    const suite = suites.find(s => s.id === suiteId);
+    if (!user || !suite || !platform) return;
+    setLaunching(true);
     try {
       const sessionsCol = collection(db, 'sessions');
       const sessionRef = doc(sessionsCol);
@@ -141,18 +142,13 @@ export default function RepositoryPage() {
       router.push(`/dashboard/session/${sessionRef.id}`);
     } catch (err: any) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
-    }
-    setLaunchSuiteId(null);
+    } finally { setLaunching(false); setLaunchSuiteId(null); }
   };
 
   const launchSession = (suite: TestSuite) => {
     if (suite.platform && suite.platform !== 'All') {
-      // Platform known — launch directly
-      setLaunchPlatform(suite.platform);
-      setLaunchSuiteId(suite.id);
-      confirmLaunch();
+      doLaunch(suite.id, suite.platform);
     } else {
-      // Ask for platform
       setLaunchPlatform('');
       setLaunchSuiteId(suite.id);
     }
@@ -321,22 +317,31 @@ export default function RepositoryPage() {
       </div>
 
       {/* Platform Picker for Launch */}
-      {launchSuiteId && !launchPlatform && (
+      {launchSuiteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setLaunchSuiteId(null)}>
-          <div className="bg-card border border-border rounded-2xl p-5 w-80 space-y-4 shadow-xl" onClick={e => e.stopPropagation()}>
-            <p className="text-sm font-semibold">Select Platform</p>
-            <select value={launchPlatform} onChange={e => setLaunchPlatform(e.target.value)}
-              className="w-full h-10 text-sm bg-muted/50 border border-border rounded-lg px-3">
-              <option value="">Choose...</option>
-              {['Android TV', 'Apple TV', 'Fire TV', 'LG TV', 'Samsung TV', 'Roku', 'Web', 'Mobile (Android)', 'Mobile (iOS)', 'Other'].map(p => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-            <div className="flex gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setLaunchSuiteId(null)} className="flex-1">Cancel</Button>
-              <Button size="sm" disabled={!launchPlatform} onClick={confirmLaunch} className="flex-1">Launch</Button>
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+            className="bg-card border border-border rounded-2xl p-6 w-[380px] max-w-[90vw] shadow-xl space-y-5" onClick={e => e.stopPropagation()}>
+            <div>
+              <h3 className="text-base font-semibold text-foreground">Select Platform</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Choose the platform for this test session</p>
             </div>
-          </div>
+            <div className="grid grid-cols-2 gap-2">
+              {['Android TV', 'Apple TV', 'Fire TV', 'LG TV', 'Samsung TV', 'Roku', 'Web', 'Mobile (Android)', 'Mobile (iOS)', 'Other'].map(p => (
+                <button key={p} onClick={() => setLaunchPlatform(p)}
+                  className={cn('px-3 py-2.5 rounded-xl border text-xs font-medium text-left transition-all',
+                    launchPlatform === p ? 'border-primary bg-primary/5 text-primary' : 'border-border hover:border-muted-foreground/30 text-foreground')}>
+                  {p}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button variant="ghost" size="sm" onClick={() => setLaunchSuiteId(null)} className="flex-1 text-xs">Cancel</Button>
+              <Button size="sm" disabled={!launchPlatform || launching} onClick={() => doLaunch(launchSuiteId, launchPlatform)} className="flex-1 text-xs gap-1.5">
+                {launching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                Launch
+              </Button>
+            </div>
+          </motion.div>
         </div>
       )}
     </div>
