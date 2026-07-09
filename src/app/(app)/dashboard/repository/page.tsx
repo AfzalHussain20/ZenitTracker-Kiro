@@ -13,7 +13,7 @@ import { Card } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import {
   Loader2, Upload, Play, Trash2, Search, FileSpreadsheet,
-  Layers, Calendar, Users, ArrowRight
+  Layers, Calendar, Users, ArrowRight, ArrowLeft
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { motion } from 'framer-motion';
@@ -180,9 +180,14 @@ export default function RepositoryPage() {
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Test Repository</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{suites.length} test suites · Available for all team members</p>
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-8 w-8 rounded-lg shrink-0">
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Test Repository</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">{suites.length} test suites · Available for all team members</p>
+          </div>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setShowAddForm(v => !v)} className="gap-2 text-sm">

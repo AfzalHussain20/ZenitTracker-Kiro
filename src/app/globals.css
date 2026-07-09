@@ -248,12 +248,24 @@
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
+
+  /* Remove browser default header/footer */
+  @page {
+    margin: 1cm;
+    margin-top: 0.5cm;
+    margin-bottom: 0.5cm;
+  }
   
   /* Hide non-essential UI elements */
-  header, nav, aside, footer,
+  header, nav, aside,
   button, [role="dialog"],
   .no-print {
     display: none !important;
+  }
+  
+  /* Show print-only elements */
+  .print\\:block {
+    display: block !important;
   }
   
   /* Reset fixed positioning */

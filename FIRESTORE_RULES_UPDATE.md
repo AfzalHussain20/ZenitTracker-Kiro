@@ -52,9 +52,21 @@ If you see errors like `The query requires an index`, create these composite ind
 | `testSessions` | `userId` ASC, `createdAt` DESC | |
 | `testSuites` | `createdAt` DESC | |
 
-To create: Firebase Console → Firestore → Indexes → Create Index → Select collection → Add fields → Create.
+## Firestore Rules — testSuites Collection
 
-Alternatively, Firestore will show a direct link in the error message — click it to auto-create the index.
+**IMPORTANT**: The `testSuites` collection needs read/write rules. Add this to your Firestore rules:
+
+```javascript
+match /testSuites/{suiteId} {
+  allow read: if request.auth != null;
+  allow create: if request.auth != null;
+  allow update, delete: if request.auth != null && request.auth.uid == resource.data.uploadedByUid;
+}
+```
+
+This allows:
+- Any authenticated user can read all suites and create new ones
+- Only the uploader can update/delete their own suites
 - Session READ is public so `/report/[id]` can work without login
 - Session WRITE still requires the authenticated owner
 - If you want more restrictive public access (e.g., only completed sessions), use:
