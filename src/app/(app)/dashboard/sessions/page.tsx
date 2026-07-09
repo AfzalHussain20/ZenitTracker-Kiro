@@ -9,10 +9,9 @@ import type { TestSession } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
 import {
-  Loader2, ArrowRight, Search, Calendar, Clock, CheckCircle2,
-  XCircle, ArrowLeft, Filter, Download
+  Loader2, ArrowRight, Search, Calendar, Clock,
+  CheckCircle2, XCircle, ArrowLeft, Plus
 } from 'lucide-react';
 import { format, formatDistanceStrict } from 'date-fns';
 import { motion } from 'framer-motion';
@@ -75,103 +74,110 @@ export default function SessionHistoryPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-8 w-8 rounded-lg shrink-0">
+          <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-8 w-8 rounded-lg">
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Session History</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">{sessions.length} total sessions</p>
+            <h1 className="text-xl font-bold tracking-tight">Sessions</h1>
+            <p className="text-xs text-muted-foreground">{sessions.length} total</p>
           </div>
         </div>
-        <Button asChild><Link href="/dashboard/new-session">+ New Session</Link></Button>
+        <Button size="sm" asChild className="gap-1.5 text-xs">
+          <Link href="/dashboard/new-session"><Plus className="w-3.5 h-3.5" />New</Link>
+        </Button>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by platform or tester..."
-            className="pl-9 h-9 rounded-lg" />
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search platform or tester..."
+            className="pl-9 h-8 text-xs rounded-lg" />
         </div>
-        <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
+        <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5">
           {(['all', 'In Progress', 'Completed', 'Aborted'] as const).map(s => (
             <button key={s} onClick={() => setStatusFilter(s)}
-              className={cn('px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+              className={cn('px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors',
                 statusFilter === s ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
-              {s === 'all' ? 'All' : s}
+              {s === 'all' ? 'All' : s === 'In Progress' ? 'Active' : s}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Session List */}
-      <div className="space-y-2">
-        {filtered.map((s, i) => {
-          const summary = s.summary || { pass: 0, fail: 0, na: 0, total: s.testCases?.length || 0, failKnown: 0 };
-          const total = summary.total || s.testCases?.length || 0;
-          const executed = summary.pass + summary.fail + (summary.failKnown || 0) + summary.na;
-          const rate = total > 0 ? Math.round((summary.pass / total) * 100) : 0;
-          const created = getValidDate(s.createdAt);
-          const completed = getValidDate(s.completedAt);
-          const canContinue = s.status === 'In Progress' || s.status === 'Aborted';
+      {/* Table */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-muted/40">
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Platform</th>
+              <th className="text-left px-3 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Date</th>
+              <th className="text-center px-3 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+              <th className="text-center px-3 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Results</th>
+              <th className="text-right px-4 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-20"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((s, i) => {
+              const summary = s.summary || { pass: 0, fail: 0, na: 0, total: s.testCases?.length || 0, failKnown: 0 };
+              const total = summary.total || s.testCases?.length || 0;
+              const rate = total > 0 ? Math.round((summary.pass / total) * 100) : 0;
+              const created = getValidDate(s.createdAt);
+              const completed = getValidDate(s.completedAt);
+              const canContinue = s.status === 'In Progress' || s.status === 'Aborted';
 
-          return (
-            <motion.div key={s.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }}>
-              <Card className="p-4 hover:shadow-sm transition-shadow">
-                <div className="flex items-center gap-4">
-                  {/* Platform + Status */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold text-foreground">{s.platformDetails?.platformName || 'Unknown'}</p>
-                      <Badge className={cn('text-[9px]',
-                        s.status === 'Completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' :
-                        s.status === 'In Progress' ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400' :
-                        'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400'
-                      )}>{s.status}</Badge>
-                      {s.platformDetails?.appVersion && <span className="text-[10px] text-muted-foreground">v{s.platformDetails.appVersion}</span>}
+              return (
+                <motion.tr key={s.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
+                  className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className={cn('w-2 h-2 rounded-full shrink-0',
+                        s.status === 'Completed' ? 'bg-emerald-500' : s.status === 'In Progress' ? 'bg-blue-500' : 'bg-amber-500')} />
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{s.platformDetails?.platformName || 'Unknown'}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {s.platformDetails?.appVersion ? `v${s.platformDetails.appVersion}` : ''} {s.userName && `· ${s.userName}`}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground">
-                      {created && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{format(created, 'MMM dd, h:mm a')}</span>}
-                      {completed && created && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{formatDistanceStrict(completed, created)}</span>}
-                      <span>{s.userName}</span>
+                  </td>
+                  <td className="px-3 py-3 hidden sm:table-cell">
+                    <p className="text-xs text-muted-foreground">{created ? format(created, 'MMM dd, h:mm a') : '—'}</p>
+                    {completed && created && <p className="text-[10px] text-muted-foreground/60">{formatDistanceStrict(completed, created)}</p>}
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    <Badge className={cn('text-[9px] px-1.5',
+                      s.status === 'Completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' :
+                      s.status === 'In Progress' ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400' :
+                      'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400'
+                    )}>{s.status === 'In Progress' ? 'Active' : s.status}</Badge>
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    <div className="flex items-center justify-center gap-2 text-[11px] tabular-nums">
+                      <span className="text-emerald-600 font-semibold">{summary.pass}</span>
+                      <span className="text-muted-foreground/30">|</span>
+                      <span className="text-red-600 font-semibold">{summary.fail + (summary.failKnown || 0)}</span>
+                      <span className="text-muted-foreground/30">|</span>
+                      <span className={cn('font-bold', rate >= 80 ? 'text-emerald-600' : rate >= 50 ? 'text-amber-600' : 'text-red-600')}>{rate}%</span>
                     </div>
-                  </div>
-
-                  {/* Stats */}
-                  <div className="hidden sm:flex items-center gap-3 text-xs tabular-nums">
-                    <div className="text-center">
-                      <p className="font-bold text-emerald-600">{summary.pass}</p>
-                      <p className="text-[9px] text-muted-foreground">Pass</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="font-bold text-red-600">{summary.fail + (summary.failKnown || 0)}</p>
-                      <p className="text-[9px] text-muted-foreground">Fail</p>
-                    </div>
-                    <div className="text-center">
-                      <p className={cn('font-bold', rate >= 80 ? 'text-emerald-600' : rate >= 50 ? 'text-amber-600' : 'text-red-600')}>{rate}%</p>
-                      <p className="text-[9px] text-muted-foreground">Rate</p>
-                    </div>
-                  </div>
-
-                  {/* Action */}
-                  <Button variant="outline" size="sm" className="text-xs shrink-0" asChild>
-                    <Link href={canContinue ? `/dashboard/session/${s.id}` : `/dashboard/session/${s.id}/results`}>
-                      {canContinue ? 'Continue' : 'Report'} <ArrowRight className="w-3 h-3 ml-1" />
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Link href={canContinue ? `/dashboard/session/${s.id}` : `/dashboard/session/${s.id}/results`}
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline">
+                      {canContinue ? 'Continue' : 'Report'}<ArrowRight className="w-3 h-3" />
                     </Link>
-                  </Button>
-                </div>
-              </Card>
-            </motion.div>
-          );
-        })}
+                  </td>
+                </motion.tr>
+              );
+            })}
+          </tbody>
+        </table>
         {filtered.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground">
-            <p className="text-sm">No sessions found</p>
-          </div>
+          <div className="text-center py-12 text-sm text-muted-foreground">No sessions found</div>
         )}
       </div>
     </div>
