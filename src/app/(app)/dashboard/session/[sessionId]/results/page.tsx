@@ -73,6 +73,7 @@ export default function TestSessionResultPage() {
   const { toast } = useToast();
   const [session, setSession] = useState<TestSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const [shareOpen, setShareOpen] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -144,6 +145,13 @@ export default function TestSessionResultPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {/* Print-only header */}
+      <div className="hidden print:block print:mb-4 print:pb-4 print:border-b print:border-gray-300">
+        <h1 className="text-2xl font-bold">{session.platformDetails.platformName} — Test Report</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          {createdDate ? format(createdDate, 'MMM dd, yyyy') : ''} · {duration} · Tester: {session.userName} · {session.status}
+        </p>
+      </div>
       <div className="max-w-6xl mx-auto px-4 md:px-8 py-6 space-y-8">
 
         {/* ─── Header ─── */}
@@ -151,8 +159,8 @@ export default function TestSessionResultPage() {
           className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <Button variant="ghost" size="sm" onClick={() => router.push('/dashboard')} className="h-8 -ml-2 text-muted-foreground hover:text-foreground">
-                <ArrowLeft className="w-4 h-4 mr-1" /> Dashboard
+              <Button variant="ghost" size="sm" onClick={() => router.back()} className="h-8 -ml-2 text-muted-foreground hover:text-foreground">
+                <ArrowLeft className="w-4 h-4 mr-1" /> Back
               </Button>
               {(session.status === 'In Progress' || session.status === 'Aborted') && (
                 <Button variant="outline" size="sm" onClick={() => router.push(`/dashboard/session/${session.id}`)} className="h-8 text-xs">
@@ -172,11 +180,9 @@ export default function TestSessionResultPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => {
-              const url = `${window.location.origin}/report/${session.id}`;
-              navigator.clipboard.writeText(url);
-              toast({ title: 'Link copied!', description: 'Anyone with this link can view the report.' });
-            }} className="text-xs"><ExternalLink className="w-3.5 h-3.5 mr-1.5" />Share Link</Button>
+            <Button variant="outline" size="sm" onClick={() => setShareOpen(true)} className="text-xs">
+              <ExternalLink className="w-3.5 h-3.5 mr-1.5" />Share
+            </Button>
             <Button variant="outline" size="sm" onClick={() => window.print()} className="text-xs"><Printer className="w-3.5 h-3.5 mr-1.5" />Print</Button>
             <Button size="sm" className="text-xs bg-primary hover:bg-primary/90" onClick={() => {
               if (!session) return;
@@ -400,6 +406,42 @@ export default function TestSessionResultPage() {
         </motion.div>
 
       </div>
+
+      {/* Share Dialog */}
+      {shareOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShareOpen(false)}>
+          <div className="bg-card border border-border rounded-2xl p-6 w-[360px] max-w-[90vw] space-y-4 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-foreground">Share Report</h3>
+            <div className="space-y-3">
+              {/* URL */}
+              <div className="flex items-center gap-2">
+                <input readOnly value={`${typeof window !== 'undefined' ? window.location.origin : ''}/report/${session?.id}`}
+                  className="flex-1 text-xs bg-muted border border-border rounded-lg px-3 py-2 text-foreground truncate" />
+                <Button size="sm" variant="outline" className="shrink-0 text-xs" onClick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}/report/${session?.id}`);
+                  toast({ title: 'URL copied!' });
+                }}>Copy</Button>
+              </div>
+              {/* QR Code (simple text-based representation) */}
+              <div className="flex items-center justify-center py-4 bg-white rounded-xl border">
+                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : ''}/report/${session?.id}`)}`}
+                  alt="QR Code" className="w-32 h-32" />
+              </div>
+              {/* Native Share */}
+              {typeof navigator !== 'undefined' && 'share' in navigator && (
+                <Button size="sm" className="w-full text-xs" onClick={() => {
+                  navigator.share({
+                    title: `${session?.platformDetails?.platformName} - Test Report`,
+                    url: `${window.location.origin}/report/${session?.id}`,
+                  }).catch(() => {});
+                  setShareOpen(false);
+                }}>Share via Apps</Button>
+              )}
+            </div>
+            <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground" onClick={() => setShareOpen(false)}>Close</Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -188,11 +188,11 @@ export default function RepositoryPage() {
           <Button variant="outline" onClick={() => setShowAddForm(v => !v)} className="gap-2 text-sm">
             + Add Case
           </Button>
-          <label className="cursor-pointer">
-            <Button disabled={uploading} className="gap-2">
+          <label className="cursor-pointer inline-flex">
+            <div className={cn("inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium h-9 px-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors", uploading && 'opacity-50 pointer-events-none')}>
               {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
               Upload XLSX
-            </Button>
+            </div>
             <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
           </label>
         </div>

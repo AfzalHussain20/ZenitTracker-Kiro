@@ -141,6 +141,9 @@ export default function TestSessionPage() {
   const [jiraComponents, setJiraComponents] = useState<{id: string; name: string}[]>([]);
   const [jiraComponent, setJiraComponent] = useState('');
   const [jiraAssigneeSearch, setJiraAssigneeSearch] = useState('');
+  const [assigneeHighlight, setAssigneeHighlight] = useState(-1);
+  const [jiraComponentSearch, setJiraComponentSearch] = useState('');
+  const [componentHighlight, setComponentHighlight] = useState(-1);
   const [jiraEnvironments, setJiraEnvironments] = useState<string[]>([]);
   const [jiraPriorities, setJiraPriorities] = useState<{id: string; name: string}[]>([]);
 
@@ -828,7 +831,18 @@ export default function TestSessionPage() {
                       <Input
                         placeholder="Search assignee..."
                         value={jiraAssigneeSearch}
-                        onChange={e => { setJiraAssigneeSearch(e.target.value); setJiraAssignee(''); }}
+                        onChange={e => { setJiraAssigneeSearch(e.target.value); setJiraAssignee(''); setAssigneeHighlight(-1); }}
+                        onKeyDown={e => {
+                          const filtered = jiraUsers.filter(u => u.displayName.toLowerCase().includes(jiraAssigneeSearch.toLowerCase())).slice(0, 8);
+                          if (e.key === 'ArrowDown') { e.preventDefault(); setAssigneeHighlight(h => Math.min(h + 1, filtered.length - 1)); }
+                          else if (e.key === 'ArrowUp') { e.preventDefault(); setAssigneeHighlight(h => Math.max(h - 1, 0)); }
+                          else if (e.key === 'Enter' && assigneeHighlight >= 0 && filtered[assigneeHighlight]) {
+                            e.preventDefault();
+                            setJiraAssignee(filtered[assigneeHighlight].accountId);
+                            setJiraAssigneeSearch(filtered[assigneeHighlight].displayName);
+                            setAssigneeHighlight(-1);
+                          }
+                        }}
                         className="h-9 text-sm bg-muted/50 border-border rounded-lg"
                       />
                       {jiraAssigneeSearch && !jiraAssignee && (
@@ -836,10 +850,10 @@ export default function TestSessionPage() {
                           {jiraUsers
                             .filter(u => u.displayName.toLowerCase().includes(jiraAssigneeSearch.toLowerCase()))
                             .slice(0, 8)
-                            .map(u => (
+                            .map((u, idx) => (
                               <button key={u.accountId} type="button"
-                                onClick={() => { setJiraAssignee(u.accountId); setJiraAssigneeSearch(u.displayName); }}
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors truncate">
+                                onClick={() => { setJiraAssignee(u.accountId); setJiraAssigneeSearch(u.displayName); setAssigneeHighlight(-1); }}
+                                className={cn('w-full text-left px-3 py-2 text-xs transition-colors truncate', idx === assigneeHighlight ? 'bg-primary/10 text-primary' : 'hover:bg-muted')}>
                                 {u.displayName}
                               </button>
                             ))}
@@ -865,11 +879,45 @@ export default function TestSessionPage() {
                   {jiraComponents.length > 0 && (
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-medium text-muted-foreground">Team / Component</label>
-                      <select value={jiraComponent} onChange={e => setJiraComponent(e.target.value)}
-                        className="w-full h-9 text-sm bg-muted/50 border border-border rounded-lg px-2 text-foreground">
-                        <option value="">None</option>
-                        {jiraComponents.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
+                      <div className="relative">
+                        <Input
+                          placeholder="Search team..."
+                          value={jiraComponentSearch}
+                          onChange={e => { setJiraComponentSearch(e.target.value); setJiraComponent(''); setComponentHighlight(-1); }}
+                          onKeyDown={e => {
+                            const filtered = jiraComponents.filter(c => c.name.toLowerCase().includes(jiraComponentSearch.toLowerCase())).slice(0, 8);
+                            if (e.key === 'ArrowDown') { e.preventDefault(); setComponentHighlight(h => Math.min(h + 1, filtered.length - 1)); }
+                            else if (e.key === 'ArrowUp') { e.preventDefault(); setComponentHighlight(h => Math.max(h - 1, 0)); }
+                            else if (e.key === 'Enter' && componentHighlight >= 0 && filtered[componentHighlight]) {
+                              e.preventDefault();
+                              setJiraComponent(filtered[componentHighlight].id);
+                              setJiraComponentSearch(filtered[componentHighlight].name);
+                              setComponentHighlight(-1);
+                            }
+                          }}
+                          className="h-9 text-sm bg-muted/50 border-border rounded-lg"
+                        />
+                        {jiraComponentSearch && !jiraComponent && (
+                          <div className="absolute top-full left-0 right-0 mt-1 z-10 bg-card border border-border rounded-lg shadow-lg max-h-32 overflow-y-auto">
+                            {jiraComponents
+                              .filter(c => c.name.toLowerCase().includes(jiraComponentSearch.toLowerCase()))
+                              .slice(0, 8)
+                              .map((c, idx) => (
+                                <button key={c.id} type="button"
+                                  onClick={() => { setJiraComponent(c.id); setJiraComponentSearch(c.name); setComponentHighlight(-1); }}
+                                  className={cn('w-full text-left px-3 py-2 text-xs transition-colors truncate', idx === componentHighlight ? 'bg-primary/10 text-primary' : 'hover:bg-muted')}>
+                                  {c.name}
+                                </button>
+                              ))}
+                            {jiraComponents.filter(c => c.name.toLowerCase().includes(jiraComponentSearch.toLowerCase())).length === 0 && (
+                              <p className="px-3 py-2 text-xs text-muted-foreground">No matches</p>
+                            )}
+                          </div>
+                        )}
+                        {jiraComponent && (
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-emerald-600">✓</span>
+                        )}
+                      </div>
                     </div>
                   )}
                   <div className="col-span-2 space-y-1.5">
