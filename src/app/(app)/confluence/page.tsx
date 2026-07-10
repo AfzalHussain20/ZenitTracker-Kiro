@@ -317,7 +317,7 @@ export default function ConfluencePage() {
     }
   };
 
-  // ─── Multi-Batch Generation (3 passes with 70s delays for rate limits) ────
+  // ─── Single-Shot Generation (unlimited AI keys — no batching needed) ────
   const handleGenerateTestCases = async () => {
     if (!selectedPage || isGenerating || quotaCooldown) return;
 
@@ -326,151 +326,87 @@ export default function ConfluencePage() {
     setGenerationComplete(false);
     setGenerationError(null);
     setGenerationPass(1);
-    setGenerationPassName('Functional & Sanity');
+    setGenerationPassName('All Categories');
     setGenerationTotal(0);
     setShowReviewPanel(false);
     setTestCases([]);
     setCountdown(0);
 
-    const allGeneratedCases: StoredTestCase[] = [];
     const now = new Date();
 
-    // Define 3 passes with different focus areas
-    const passes = [
-      { pass: 'functional_sanity', label: 'Functional & Sanity', passNum: 1 },
-      { pass: 'negative_edge', label: 'Negative & Edge Case', passNum: 2 },
-      { pass: 'exploratory_more', label: 'Exploratory & More', passNum: 3 },
-    ] as const;
-
     try {
-      for (let i = 0; i < passes.length; i++) {
-        const { pass, label, passNum } = passes[i];
+      // Single comprehensive pass — generates Functional, Negative, Edge Case, Sanity, Exploratory
+      const res = await fetch('/api/ai/generate-tests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pageId: selectedPage.id,
+          pass: 'all',
+          existingTestCases: [],
+        }),
+      });
 
-        // Update UI for current pass
-        setGenerationPass(passNum);
-        setGenerationPassName(label);
-        setCountdown(0);
-
-        // Build existing cases summary to avoid duplication
-        const existingSummary: TestCaseSummary[] = allGeneratedCases.map((tc) => ({
-          id: tc.testcaseId,
-          scenario: tc.testScenario,
-          category: tc.category,
-        }));
-
-        // Make API call for this pass
-        const res = await fetch('/api/ai/generate-tests', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pageId: selectedPage.id,
-            pass,
-            existingTestCases: existingSummary,
-          }),
-        });
-
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({ error: 'Unknown error' }));
-          if (res.status === 400 && errData.error?.includes('No extractable content')) {
-            throw new Error('This document has no extractable content. Please ensure the PRD has text content.');
-          }
-          // If rate limited (daily quota exhausted), show professional message and stop
-          if (res.status === 429) {
-            const resetMsg = errData.resetTimeReadable
-              ? `AI generation limit reached. Quota resets on ${errData.resetTimeReadable}.`
-              : errData.error || 'AI generation limit reached for today.';
-            // Enable 5-minute cooldown on the button
-            setQuotaCooldown(true);
-            if (quotaCooldownTimer.current) clearTimeout(quotaCooldownTimer.current);
-            quotaCooldownTimer.current = setTimeout(() => setQuotaCooldown(false), 5 * 60 * 1000);
-            // If we have partial results from earlier passes, keep them
-            if (allGeneratedCases.length > 0) {
-              setTestCases([...allGeneratedCases]);
-              setGenerationTotal(allGeneratedCases.length);
-              setShowReviewPanel(true);
-              setGenerationComplete(true);
-              setGenerationError(resetMsg);
-              break;
-            }
-            throw new Error(resetMsg);
-          }
-          throw new Error(errData.error || `Pass ${passNum} failed`);
-        } else {
-          const data: GenerateTestsResponse = await res.json();
-          const batchCases: StoredTestCase[] = data.testCases.map((tc) => ({
-            ...tc,
-            reviewStatus: 'pending' as const,
-            sourceVerified: true,
-            createdAt: now,
-            updatedAt: now,
-          }));
-          allGeneratedCases.push(...batchCases);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Unknown error' }));
+        if (res.status === 429) {
+          const resetMsg = errData.resetTimeReadable
+            ? `AI generation limit reached. Quota resets on ${errData.resetTimeReadable}.`
+            : errData.error || 'AI generation limit reached.';
+          setQuotaCooldown(true);
+          if (quotaCooldownTimer.current) clearTimeout(quotaCooldownTimer.current);
+          quotaCooldownTimer.current = setTimeout(() => setQuotaCooldown(false), 2 * 60 * 1000);
+          throw new Error(resetMsg);
         }
-
-        // Live update: show results immediately after each pass
-        setTestCases([...allGeneratedCases]);
-        setGenerationTotal(allGeneratedCases.length);
-        setShowReviewPanel(true);
-
-        // Wait 62 seconds between passes (except after the last one)
-        if (i < passes.length - 1) {
-          for (let s = 62; s > 0; s--) {
-            setCountdown(s);
-            await new Promise((r) => setTimeout(r, 1000));
-          }
-          setCountdown(0);
-        }
+        throw new Error(errData.error || 'Generation failed');
       }
 
-      // ─── All passes complete ────────────────────────────────────────────
+      const data: GenerateTestsResponse = await res.json();
+      const allGeneratedCases: StoredTestCase[] = data.testCases.map((tc) => ({
+        ...tc,
+        reviewStatus: 'pending' as const,
+        sourceVerified: true,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      setTestCases(allGeneratedCases);
+      setGenerationTotal(allGeneratedCases.length);
+      setShowReviewPanel(true);
       setGenerationComplete(true);
 
       if (allGeneratedCases.length === 0) {
-        throw new Error('No test cases could be generated. The AI response may have been empty or malformed. Please try again.');
+        throw new Error('No test cases generated. The PRD might be too short or the AI response was empty.');
       }
 
       // Compute category counts
       const categories: Record<TestCaseCategory, number> = {
-        Functional: 0,
-        Negative: 0,
-        Exploratory: 0,
-        Sanity: 0,
-        'Edge Case': 0,
+        Functional: 0, Negative: 0, Exploratory: 0, Sanity: 0, 'Edge Case': 0,
       };
-      for (const tc of allGeneratedCases) {
-        categories[tc.category]++;
-      }
+      for (const tc of allGeneratedCases) { categories[tc.category]++; }
 
       const metadata: GenerationMetadata = {
         pageId: selectedPage.id,
         pageTitle: selectedPage.title,
         generatedAt: new Date(),
         totalCount: allGeneratedCases.length,
-        modelVersion: 'gemini-2.5-flash',
+        modelVersion: 'gemini-2.0-flash-lite',
         categories,
       };
 
-      // Try to persist to Firestore in the background (non-blocking)
+      // Persist to Firestore (non-blocking)
       try {
         const { extractPlainText } = await import('@/lib/ai/extractText');
         const { extractHeadings } = await import('@/lib/ai/testCaseGenerator');
         const plainText = extractPlainText(selectedPage.body || '');
         const prdHeadings = extractHeadings(plainText);
         const allGenerated: GeneratedTestCase[] = allGeneratedCases.map((tc) => ({
-          testcaseId: tc.testcaseId,
-          module: tc.module,
-          priority: tc.priority,
-          testScenario: tc.testScenario,
-          testSteps: tc.testSteps,
-          expectedResult: tc.expectedResult,
-          category: tc.category,
+          testcaseId: tc.testcaseId, module: tc.module, priority: tc.priority,
+          testScenario: tc.testScenario, testSteps: tc.testSteps,
+          expectedResult: tc.expectedResult, category: tc.category,
         }));
         await saveGenerationResult(selectedPage.id, allGenerated, metadata, prdHeadings);
-        // Reload from Firestore to get proper sourceVerified
         const stored = await loadTestCases(selectedPage.id);
-        if (stored && stored.length > 0) {
-          setTestCases(stored);
-        }
+        if (stored && stored.length > 0) setTestCases(stored);
       } catch (saveErr) {
         console.warn('Firestore save failed (test cases still shown):', saveErr);
       }

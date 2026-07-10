@@ -16,8 +16,11 @@ import {
   ExternalLink,
   Rocket,
   UploadCloud,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { cn } from '@/lib/utils';
 import type {
   StoredTestCase,
   TestCaseCategory,
@@ -290,10 +293,16 @@ export default function TestCaseReviewPanel({
     );
   };
 
+  // ─── Fullscreen Mode ──────────────────────────────────────────────────────────
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   // ─── Render ──────────────────────────────────────────────────────────────────
 
-  return (
-    <div className="flex flex-col h-full bg-background border border-border rounded-xl shadow-lg overflow-hidden">
+  const panelContent = (
+    <div className={cn(
+      "flex flex-col bg-background border border-border shadow-lg overflow-hidden",
+      isFullscreen ? "fixed inset-0 z-[100] rounded-none" : "h-full rounded-xl"
+    )}>
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-card">
         <div className="flex items-center gap-3">
@@ -348,7 +357,14 @@ export default function TestCaseReviewPanel({
             </button>
           )}
           <button
-            onClick={onClose}
+            onClick={() => setIsFullscreen(f => !f)}
+            className="p-1.5 rounded-md hover:bg-muted/50 transition-colors"
+            title={isFullscreen ? "Exit fullscreen" : "Open fullscreen"}
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4 text-muted-foreground" /> : <Maximize2 className="h-4 w-4 text-muted-foreground" />}
+          </button>
+          <button
+            onClick={() => { setIsFullscreen(false); onClose(); }}
             className="p-1.5 rounded-md hover:bg-muted/50 transition-colors"
             title="Close"
           >
@@ -474,6 +490,8 @@ export default function TestCaseReviewPanel({
       </div>
     </div>
   );
+
+  return panelContent;
 }
 
 
