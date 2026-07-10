@@ -75,6 +75,7 @@ interface PageDetail {
   lastUpdated: string | null;
   space: { id: string };
   attachments: Attachment[];
+  comments?: { id: string; body: string; createdAt: string | null; author: string | null }[];
 }
 
 // Space color mapping for pills
@@ -758,6 +759,14 @@ export default function ConfluencePage() {
                 {formatDate(selectedPage.lastUpdated)}
               </span>
             )}
+            <button
+              onClick={() => fetchPageDetail(selectedPage.id)}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+              title="Refresh page content from Confluence"
+            >
+              <RefreshCw className="h-3 w-3" />
+              <span className="text-[10px] font-medium">Refresh</span>
+            </button>
             {mockupCount > 0 && (
               <span className="flex items-center gap-1">
                 <Palette className="h-3.5 w-3.5" />
@@ -935,6 +944,37 @@ export default function ConfluencePage() {
               />
             </div>
           </div>
+
+          {/* Comments Section */}
+          {selectedPage.comments && selectedPage.comments.length > 0 && (
+            <div className="mt-6 rounded-2xl border border-border/40 bg-card/30 backdrop-blur-sm shadow-sm">
+              <div className="px-6 py-4 border-b border-border/30 flex items-center gap-2">
+                <svg className="h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                <h3 className="text-sm font-semibold text-foreground">
+                  Comments ({selectedPage.comments.length})
+                </h3>
+              </div>
+              <div className="divide-y divide-border/20">
+                {selectedPage.comments.map((comment) => (
+                  <div key={comment.id} className="px-6 py-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      {comment.author && (
+                        <span className="text-xs font-semibold text-foreground">{comment.author}</span>
+                      )}
+                      {comment.createdAt && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {formatDate(comment.createdAt)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{comment.body}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         ) : (
           <div className="space-y-8">
             {/* Full-page mockup viewer overlay — uses /embed/ URL which Adobe allows */}

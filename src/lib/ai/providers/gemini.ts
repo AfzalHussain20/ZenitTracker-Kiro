@@ -1,4 +1,5 @@
 import type { AIProvider, AskAIParams, AskAIResult } from './types';
+import { throttle } from '../cache';
 
 const MODEL = 'gemini-2.0-flash-lite';
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -74,6 +75,9 @@ export const geminiProvider: AIProvider = {
     if (supportsSystemInstruction) {
       requestBody.systemInstruction = { parts: [{ text: systemPrompt }] };
     }
+
+    // Throttle to respect free tier RPM limit
+    await throttle();
 
     const response = await fetch(
       `${BASE_URL}/${MODEL}:generateContent?key=${apiKey}`,

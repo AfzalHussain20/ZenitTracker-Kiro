@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import { Toaster } from '@/components/ui/toaster';
-import TopLoader from '@/components/ui/top-loader';
+import FloatingNotesWidget from '@/components/notes/FloatingNotesWidget';
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -17,6 +17,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         {children}
       </main>
       <Toaster />
+      <FloatingNotesWidget />
     </div>
   );
 }

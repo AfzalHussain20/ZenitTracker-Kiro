@@ -15,7 +15,7 @@ import {
   CheckCircle2, XCircle, ChevronLeft, ChevronRight,
   Menu, X, Loader2, Search, Bug, ExternalLink,
   ArrowRight, Zap, ListChecks, Target, Keyboard,
-  SkipForward, Clock
+  SkipForward, Clock, Plus
 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
@@ -122,6 +122,7 @@ export default function TestSessionPage() {
   const [naOpen, setNaOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
   const [bugId, setBugId] = useState('');
+  const [linkedBugs, setLinkedBugs] = useState<{id: string; title: string | null}[]>([]);
   const [bugDesc, setBugDesc] = useState('');
   const [incompleteReason, setIncompleteReason] = useState('');
   const [naReason, setNaReason] = useState('');
@@ -228,6 +229,7 @@ export default function TestSessionPage() {
       setJiraIssueKey(data.issueKey);
       setJiraIssueLink(data.issueLink);
       setBugId(data.issueKey);
+      setLinkedBugs(prev => [...prev, { id: data.issueKey, title: tc.testCaseTitle }]);
       toast({ title: `Created ${data.issueKey}` });
     } catch (e: any) {
       toast({ title: 'Jira Error', description: e.message, variant: 'destructive' });
@@ -272,7 +274,7 @@ export default function TestSessionPage() {
   // Reset on index change
   useEffect(() => {
     setVerdict(null); setJiraIssueKey(null); setJiraIssueLink(null);
-    setBugId(''); setBugDesc(''); setNaReason('');
+    setBugId(''); setLinkedBugs([]); setBugDesc(''); setNaReason('');
   }, [currentIndex]);
 
   // Firestore sync
@@ -310,6 +312,7 @@ export default function TestSessionPage() {
     updated[currentIndex] = {
       ...currentTc, status: base, lastModified: new Date(),
       bugId: details?.bugId || null, bugTitle: details?.bugTitle || null,
+      linkedBugs: details?.linkedBugs || [],
       naReason: details?.naReason || null,
       notes: details?.bugDesc ? (currentTc.notes || '') + `\nBug: ${details.bugDesc}` : currentTc.notes,
       actualResult: base === 'Pass' ? currentTc.expectedResult : (currentTc.actualResult || ''),
@@ -615,6 +618,24 @@ export default function TestSessionPage() {
                     rows={2}
                     className="resize-none text-[13px] bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 rounded-lg focus:border-primary/30 focus:ring-1 focus:ring-primary/20 min-h-0" />
                 </div>
+
+                {/* Linked Bugs Display */}
+                {tc?.linkedBugs && tc.linkedBugs.length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <Bug className="w-3.5 h-3.5 text-red-500" />
+                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Linked Bugs</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {tc.linkedBugs.map((bugKey: string) => (
+                        <span key={bugKey} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-[11px] font-mono text-red-600 dark:text-red-400">
+                          <Bug className="w-2.5 h-2.5" />
+                          {bugKey}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Verdict buttons — always visible at bottom */}
@@ -729,7 +750,7 @@ export default function TestSessionPage() {
       </AnimatePresence>
 
       {/* ─── Fail Dialog ─── */}
-      <Dialog open={failOpen} onOpenChange={v => { setFailOpen(v); if (!v) { setJiraIssueKey(null); setJiraIssueLink(null); setShowJiraForm(false); setBugId(''); setBugDesc(''); } }}>
+      <Dialog open={failOpen} onOpenChange={v => { setFailOpen(v); if (!v) { setJiraIssueKey(null); setJiraIssueLink(null); setShowJiraForm(false); setBugId(''); setLinkedBugs([]); setBugDesc(''); } }}>
         <DialogContent className="sm:max-w-[480px] lg:max-w-[560px] bg-card border-border text-foreground rounded-2xl p-0 gap-0 max-h-[90vh] flex flex-col">
           <div className="px-5 pt-5 pb-3 shrink-0">
             <DialogHeader className="space-y-1">
@@ -748,20 +769,63 @@ export default function TestSessionPage() {
           <div className="flex-1 overflow-y-auto px-5 pb-3 space-y-3 min-h-0">
             {!showJiraForm ? (
               <>
-                {/* Quick mode: Bug ID + Notes */}
+                {/* Quick mode: Bug ID + Notes + Multi-bug mapping */}
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-medium text-muted-foreground">Bug ID (existing)</label>
-                  <Input placeholder="e.g. SUN-1234" value={bugId}
-                    onChange={e => setBugId(e.target.value.toUpperCase())}
-                    className="h-9 text-sm font-mono bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 focus:border-primary/40 rounded-lg" />
+                  <label className="text-[11px] font-medium text-muted-foreground">Link Bug (type ID and press Enter)</label>
+                  <div className="flex gap-2">
+                    <Input placeholder="e.g. SUN-1234" value={bugId}
+                      onChange={e => setBugId(e.target.value.toUpperCase())}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && bugId.trim() && /^[A-Z]{2,10}-\d+$/.test(bugId.trim())) {
+                          e.preventDefault();
+                          if (!linkedBugs.find(b => b.id === bugId.trim())) {
+                            setLinkedBugs(prev => [...prev, { id: bugId.trim(), title: bugTitle || null }]);
+                          }
+                          setBugId('');
+                        }
+                      }}
+                      className="h-9 text-sm font-mono bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 focus:border-primary/40 rounded-lg" />
+                    <Button variant="outline" size="sm" disabled={!bugId.trim() || !/^[A-Z]{2,10}-\d+$/.test(bugId.trim())}
+                      onClick={() => {
+                        if (bugId.trim() && !linkedBugs.find(b => b.id === bugId.trim())) {
+                          setLinkedBugs(prev => [...prev, { id: bugId.trim(), title: bugTitle || null }]);
+                        }
+                        setBugId('');
+                      }}
+                      className="h-9 px-3 shrink-0">
+                      <Plus className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
                   {bugFetching && <p className="text-[10px] text-muted-foreground flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" />Fetching...</p>}
-                  {bugTitle && !bugFetching && (
+                  {bugTitle && !bugFetching && bugId && (
                     <div className="text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/[0.06] border border-emerald-200 dark:border-emerald-500/20 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
                       <CheckCircle2 className="w-3 h-3 shrink-0" /><span className="truncate">{bugId} — {bugTitle}</span>
                     </div>
                   )}
                   {bugFetchError && !bugFetching && <p className="text-[10px] text-amber-600 flex items-center gap-1.5"><XCircle className="w-3 h-3" />{bugFetchError}</p>}
                 </div>
+
+                {/* Linked bugs list */}
+                {linkedBugs.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-muted-foreground">Linked Bugs ({linkedBugs.length})</label>
+                    <div className="space-y-1">
+                      {linkedBugs.map((bug, idx) => (
+                        <div key={idx} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-red-50 dark:bg-red-500/[0.06] border border-red-200 dark:border-red-500/20">
+                          <Bug className="w-3 h-3 text-red-500 shrink-0" />
+                          <span className="text-[11px] font-mono text-foreground flex-1 truncate">
+                            {bug.id}{bug.title ? ` — ${bug.title}` : ''}
+                          </span>
+                          <button onClick={() => setLinkedBugs(prev => prev.filter((_, i) => i !== idx))}
+                            className="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-500/20">
+                            <X className="w-3 h-3 text-red-500" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-medium text-muted-foreground">Notes</label>
                   <Textarea placeholder="What went wrong..." value={bugDesc} onChange={e => setBugDesc(e.target.value)}
@@ -969,6 +1033,7 @@ export default function TestSessionPage() {
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.error || 'Jira error');
                     setJiraIssueKey(data.issueKey); setJiraIssueLink(data.issueLink); setBugId(data.issueKey);
+                    setLinkedBugs(prev => [...prev, { id: data.issueKey, title: jiraSummary }]);
                     setShowJiraForm(false);
                     toast({ title: `${data.issueKey} created in Jira` });
                   } catch (e: any) { toast({ title: 'Jira Error', description: e.message, variant: 'destructive' }); }
@@ -980,7 +1045,7 @@ export default function TestSessionPage() {
               </Button>
             ) : (
               <Button size="sm"
-                onClick={() => markStatus('Fail', { bugId: bugId || undefined, bugDesc: bugDesc || undefined, bugTitle: bugTitle || undefined })}
+                onClick={() => markStatus('Fail', { bugId: bugId || linkedBugs[0]?.id || undefined, bugDesc: bugDesc || undefined, bugTitle: bugTitle || undefined, linkedBugs: linkedBugs.map(b => b.id) })}
                 className="h-8 text-xs bg-red-600 hover:bg-red-700 text-white border-0 rounded-lg px-4">
                 Confirm Fail
               </Button>

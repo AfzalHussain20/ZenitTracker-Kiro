@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { extractPlainText, truncateForContext } from '@/lib/ai/extractText';
 import { generateTestCasesForPass, extractHeadings } from '@/lib/ai/testCaseGenerator';
 import { getAIProvider } from '@/lib/ai/providers';
+import { getCachedPageContent, setCachedPageContent } from '@/lib/ai/cache';
 import type { GenerateTestsRequest, GenerateTestsResponse, GenerationPass } from '@/types/test-cases';
 
 export const dynamic = 'force-dynamic';
@@ -89,7 +90,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ─── Fetch Confluence page content ────────────────────────────────────
+    // ─── Fetch Confluence page content (cached or fresh) ─────────────────
     const baseUrl = process.env.CONFLUENCE_BASE_URL;
     const email = process.env.CONFLUENCE_EMAIL;
     const token = process.env.CONFLUENCE_API_TOKEN;
@@ -101,49 +102,57 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Ensure base URL doesn't have trailing slash
-    const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
-    const authHeader = `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`;
+    let plainText: string;
+    const cachedPage = getCachedPageContent(pageId);
 
-    let pageRes;
-    try {
-      pageRes = await fetch(
-        `${cleanBaseUrl}/api/v2/pages/${pageId}?body-format=storage`,
-        {
-          headers: { Authorization: authHeader, Accept: 'application/json' },
-          cache: 'no-store',
-          signal: AbortSignal.timeout(8000), // 8s timeout for Confluence fetch
-        }
-      );
-    } catch (fetchErr: any) {
-      console.error('[generate-tests] Confluence fetch error:', fetchErr.message);
-      return NextResponse.json(
-        { error: `Failed to reach Confluence: ${fetchErr.message}` },
-        { status: 502 }
-      );
+    if (cachedPage) {
+      plainText = cachedPage.plainText;
+    } else {
+      // Ensure base URL doesn't have trailing slash
+      const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
+      const authHeader = `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`;
+
+      let pageRes;
+      try {
+        pageRes = await fetch(
+          `${cleanBaseUrl}/api/v2/pages/${pageId}?body-format=storage`,
+          {
+            headers: { Authorization: authHeader, Accept: 'application/json' },
+            cache: 'no-store',
+            signal: AbortSignal.timeout(8000), // 8s timeout for Confluence fetch
+          }
+        );
+      } catch (fetchErr: any) {
+        console.error('[generate-tests] Confluence fetch error:', fetchErr.message);
+        return NextResponse.json(
+          { error: `Failed to reach Confluence: ${fetchErr.message}` },
+          { status: 502 }
+        );
+      }
+
+      if (!pageRes.ok) {
+        const errText = await pageRes.text().catch(() => '');
+        console.error('[generate-tests] Confluence API error:', pageRes.status, errText.substring(0, 200));
+        return NextResponse.json(
+          { error: `Confluence returned ${pageRes.status}. Check page ID and credentials.` },
+          { status: pageRes.status === 404 ? 404 : 502 }
+        );
+      }
+
+      const pageData = await pageRes.json();
+      const pageBody = pageData.body?.storage?.value || '';
+
+      if (!pageBody) {
+        return NextResponse.json(
+          { error: 'No extractable content from PRD' },
+          { status: 400 }
+        );
+      }
+
+      plainText = extractPlainText(pageBody);
+      // Cache for subsequent passes on same page
+      setCachedPageContent(pageId, plainText, pageData.title || 'Untitled');
     }
-
-    if (!pageRes.ok) {
-      const errText = await pageRes.text().catch(() => '');
-      console.error('[generate-tests] Confluence API error:', pageRes.status, errText.substring(0, 200));
-      return NextResponse.json(
-        { error: `Confluence returned ${pageRes.status}. Check page ID and credentials.` },
-        { status: pageRes.status === 404 ? 404 : 502 }
-      );
-    }
-
-    const pageData = await pageRes.json();
-    const pageBody = pageData.body?.storage?.value || '';
-
-    if (!pageBody) {
-      return NextResponse.json(
-        { error: 'No extractable content from PRD' },
-        { status: 400 }
-      );
-    }
-
-    // ─── Extract plain text and headings ──────────────────────────────────
-    const plainText = extractPlainText(pageBody);
 
     if (!plainText || plainText.trim() === '') {
       return NextResponse.json(

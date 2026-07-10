@@ -325,6 +325,17 @@ export default function TestSessionResultPage() {
                         {tc.bugId}{tc.bugTitle ? ` — ${tc.bugTitle}` : ''}
                       </a>
                     )}
+                    {tc.linkedBugs && tc.linkedBugs.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {tc.linkedBugs.filter((b: string) => b !== tc.bugId).map((bugKey: string) => (
+                          <a key={bugKey} href={`${JIRA_BASE}/browse/${bugKey}`} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline bg-primary/5 px-1.5 py-0.5 rounded">
+                            <ExternalLink className="w-2.5 h-2.5" />
+                            {bugKey}
+                          </a>
+                        ))}
+                      </div>
+                    )}
                     {tc.notes && <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">{tc.notes}</p>}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -396,6 +407,16 @@ export default function TestSessionResultPage() {
                         </a>
                       ) : (
                         <span className="truncate block">{tc.naReason || tc.notes || tc.actualResult || '—'}</span>
+                      )}
+                      {tc.linkedBugs && tc.linkedBugs.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {tc.linkedBugs.filter((b: string) => b !== tc.bugId).map((bugKey: string) => (
+                            <a key={bugKey} href={`${JIRA_BASE}/browse/${bugKey}`} target="_blank" rel="noopener noreferrer"
+                              className="text-[10px] text-primary hover:underline">
+                              +{bugKey}
+                            </a>
+                          ))}
+                        </div>
                       )}
                     </td>
                   </tr>

@@ -38,6 +38,7 @@ export interface TestCase {
   bugTitle?: string; // Auto-fetched title from Jira
   naReason?: string; // If status is "N/A"
   attachments?: string[]; // URLs to attachments if any
+  linkedBugs?: string[]; // Multiple Jira bug IDs mapped to this test case
   lastModified: Date | Timestamp;
   priority?: "High" | "Medium" | "Low";
   platform?: string;
@@ -146,6 +147,26 @@ export interface Bug {
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
   resolvedAt?: Date | Timestamp;
+}
+
+// ─── Daily Notes ──────────────────────────────────────────────────────────────
+export type NoteCategory = 'meeting' | 'todo' | 'idea' | 'reference' | 'bug' | 'general';
+
+export interface Note {
+  id: string;
+  title: string;
+  content: string;
+  plainText: string;
+  tags: string[];
+  createdAt: Date | Timestamp;
+  updatedAt: Date | Timestamp;
+  userId: string;
+  userName: string;
+  pinned: boolean;
+  archived: boolean;
+  category: NoteCategory;
+  linkedBugs?: string[];
+  linkedSession?: string;
 }
 
 // ─── Firebase Schema Exports ──────────────────────────────────────────────────

@@ -21,7 +21,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuPortal
 } from '@/components/ui/dropdown-menu';
-import { LogOut, UserCircle, LayoutDashboard, Sun, Moon, Monitor, Settings, ChevronDown, ClipboardList, Info, BookOpen, Menu, X } from 'lucide-react';
+import { LogOut, UserCircle, LayoutDashboard, Sun, Moon, Monitor, Settings, ChevronDown, ClipboardList, Info, BookOpen, Menu, X, StickyNote } from 'lucide-react';
 import { LogoIcon } from '@/components/ui/Logo';
 
 export default function AppHeader() {
@@ -82,6 +82,12 @@ export default function AppHeader() {
           <Link href="/bugs">
             <Button variant={pathname === '/bugs' ? 'secondary' : 'ghost'} size="sm">
               Bugs
+            </Button>
+          </Link>
+          <Link href="/notes">
+            <Button variant={pathname === '/notes' ? 'secondary' : 'ghost'} size="sm">
+              <StickyNote className="h-4 w-4 mr-1.5" />
+              Notes
             </Button>
           </Link>
           {userRole === 'lead' && (
@@ -177,6 +183,7 @@ export default function AppHeader() {
             { href: '/apps', label: 'Apps' },
             { href: '/analytics/bugs', label: 'Jira KPI' },
             { href: '/bugs', label: 'Bug Tracker' },
+            { href: '/notes', label: 'Notes' },
             ...(userRole === 'lead' ? [{ href: '/team', label: 'Team Performance' }] : []),
             { href: '/dashboard/sessions', label: 'Session History' },
           ].map(item => (

@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import {
   Clock, Shield, Library, Wand2, Users, Bug, FileText,
-  BarChart3, ArrowRight, Zap, TestTube, Layers
+  BarChart3, ArrowRight, Zap, TestTube, Layers, StickyNote, BookOpen
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -19,6 +19,8 @@ const apps = [
   { id: 'repository', name: 'Test Repository', desc: 'Managed test case library', icon: Library, href: '/dashboard/repository', color: 'text-green-600 bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/20' },
   { id: 'clevertap', name: 'CleverTap Tracker', desc: 'Analytics event validation', icon: Wand2, href: '/dashboard/clevertap-tracker', color: 'text-pink-600 bg-pink-50 dark:bg-pink-500/10 border-pink-200 dark:border-pink-500/20' },
   { id: 'performance', name: 'Performance Lab', desc: 'Device performance monitoring', icon: Zap, href: '/performance', color: 'text-amber-600 bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20' },
+  { id: 'confluence', name: 'Confluence PRDs', desc: 'Browse PRDs, generate test cases with AI', icon: BookOpen, href: '/confluence', color: 'text-blue-600 bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20' },
+  { id: 'notes', name: 'Daily Notes', desc: 'Quick capture notes with AI titles & tags', icon: StickyNote, href: '/notes', color: 'text-yellow-600 bg-yellow-50 dark:bg-yellow-500/10 border-yellow-200 dark:border-yellow-500/20' },
 ];
 
 export default function AppsPage() {
