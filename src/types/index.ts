@@ -150,7 +150,7 @@ export interface Bug {
 }
 
 // ─── Daily Notes ──────────────────────────────────────────────────────────────
-export type NoteCategory = 'meeting' | 'todo' | 'idea' | 'reference' | 'bug' | 'general';
+export type NoteCategory = 'meeting' | 'todo' | 'idea' | 'reference' | 'bug' | 'general' | 'dailyTask';
 
 export interface Note {
   id: string;

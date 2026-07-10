@@ -18,6 +18,7 @@ import type { Note, NoteCategory } from '@/types';
 
 const CATEGORIES: { value: NoteCategory | 'all'; label: string; color: string }[] = [
   { value: 'all', label: 'All', color: 'bg-muted' },
+  { value: 'dailyTask', label: 'Daily Tasks', color: 'bg-orange-100 dark:bg-orange-500/15' },
   { value: 'meeting', label: 'Meeting', color: 'bg-blue-100 dark:bg-blue-500/15' },
   { value: 'todo', label: 'To-Do', color: 'bg-amber-100 dark:bg-amber-500/15' },
   { value: 'idea', label: 'Idea', color: 'bg-purple-100 dark:bg-purple-500/15' },
@@ -266,18 +267,27 @@ export default function NotesPage() {
     }
   };
 
-  // Group notes by date
-  const groupedNotes = notes.reduce((groups: Record<string, any[]>, note) => {
-    const date = new Date(note.createdAt).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-    if (!groups[date]) groups[date] = [];
-    groups[date].push(note);
-    return groups;
-  }, {});
+  // Separate daily tasks from other notes
+  const dailyTasks = notes.filter(n => n.category === 'dailyTask');
+  const otherNotes = notes.filter(n => n.category !== 'dailyTask');
 
-  // Sort pinned first within each group
-  Object.keys(groupedNotes).forEach(date => {
-    groupedNotes[date].sort((a: any, b: any) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
-  });
+  // Group notes by CREATION date (editing yesterday's note today won't move it)
+  const groupByDate = (items: any[]) => {
+    const groups: Record<string, any[]> = {};
+    for (const note of items) {
+      const date = new Date(note.createdAt).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+      if (!groups[date]) groups[date] = [];
+      groups[date].push(note);
+    }
+    // Sort pinned first within each group
+    Object.keys(groups).forEach(date => {
+      groups[date].sort((a: any, b: any) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+    });
+    return groups;
+  };
+
+  const groupedTasks = groupByDate(dailyTasks);
+  const groupedNotes = groupByDate(otherNotes);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -328,7 +338,7 @@ export default function NotesPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Notes List */}
-        <div className={cn('space-y-4', editingNote ? 'lg:col-span-1' : 'lg:col-span-3')}>
+        <div className={cn('space-y-6', editingNote ? 'lg:col-span-1' : 'lg:col-span-3')}>
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -344,65 +354,127 @@ export default function NotesPage() {
               </Button>
             </div>
           ) : (
-            Object.entries(groupedNotes).map(([date, dateNotes]) => (
-              <div key={date} className="space-y-2">
-                <div className="flex items-center gap-2 px-1">
-                  <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
-                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{date}</span>
-                </div>
-                <div className="space-y-2">
-                  {dateNotes.map((note: any) => (
-                    <motion.div
-                      key={note.id}
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className={cn(
-                        'group relative p-4 rounded-xl border cursor-pointer transition-all',
-                        editingNote?.id === note.id
-                          ? 'border-primary/30 bg-primary/5 shadow-sm'
-                          : 'border-border bg-card hover:border-primary/20 hover:shadow-sm'
-                      )}
-                      onClick={() => { setEditingNote(note); setIsCreating(false); }}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            {note.pinned && <Pin className="w-3 h-3 text-primary shrink-0" />}
-                            <h3 className="text-sm font-semibold text-foreground truncate">
-                              {note.title || 'Untitled Note'}
-                            </h3>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                            {note.plainText?.substring(0, 120) || note.content?.substring(0, 120)}
-                          </p>
-                          <div className="flex items-center gap-2 mt-2 flex-wrap">
-                            {note.tags?.slice(0, 3).map((tag: string) => (
-                              <Badge key={tag} variant="secondary" className="text-[10px] px-1.5 py-0">
-                                #{tag}
-                              </Badge>
-                            ))}
-                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                              <Clock className="w-2.5 h-2.5" />
-                              {new Date(note.updatedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={(e) => { e.stopPropagation(); togglePin(note); }}
-                            className="p-1 rounded hover:bg-muted">
-                            <Pin className={cn('w-3.5 h-3.5', note.pinned ? 'text-primary' : 'text-muted-foreground')} />
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); handleDelete(note.id); }}
-                            className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-500/10">
-                            <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-red-500" />
-                          </button>
-                        </div>
+            <>
+              {/* ─── Daily Tasks Section ─── */}
+              {Object.keys(groupedTasks).length > 0 && (selectedCategory === 'all' || selectedCategory === 'dailyTask') && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 px-1 pb-1 border-b border-orange-200 dark:border-orange-500/20">
+                    <div className="w-5 h-5 rounded bg-orange-100 dark:bg-orange-500/15 flex items-center justify-center">
+                      <CheckSquare className="w-3 h-3 text-orange-600 dark:text-orange-400" />
+                    </div>
+                    <span className="text-sm font-bold text-orange-600 dark:text-orange-400">Daily Tasks</span>
+                  </div>
+                  {Object.entries(groupedTasks).map(([date, dateNotes]) => (
+                    <div key={`task-${date}`} className="space-y-2">
+                      <div className="flex items-center gap-2 px-1">
+                        <Calendar className="w-3 h-3 text-muted-foreground" />
+                        <span className="text-[11px] font-medium text-muted-foreground">{date}</span>
                       </div>
-                    </motion.div>
+                      <div className="space-y-1.5">
+                        {dateNotes.map((note: any) => (
+                          <motion.div key={note.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
+                            className={cn('group relative p-3 rounded-xl border cursor-pointer transition-all',
+                              editingNote?.id === note.id ? 'border-orange-300 bg-orange-50/50 dark:bg-orange-500/5 shadow-sm' : 'border-border bg-card hover:border-orange-200 hover:shadow-sm'
+                            )}
+                            onClick={() => { setEditingNote(note); setIsCreating(false); }}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <h3 className="text-sm font-semibold text-foreground truncate">{note.title || 'Untitled Task'}</h3>
+                                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{note.plainText?.substring(0, 80) || note.content?.substring(0, 80)}</p>
+                                {note.updatedAt !== note.createdAt && (
+                                  <span className="text-[9px] text-muted-foreground/60 mt-1 inline-block">edited {new Date(note.updatedAt).toLocaleDateString()}</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={(e) => { e.stopPropagation(); handleDelete(note.id); }} className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-500/10">
+                                  <Trash2 className="w-3 h-3 text-muted-foreground hover:text-red-500" />
+                                </button>
+                              </div>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
-              </div>
-            ))
+              )}
+
+              {/* ─── Notes Section ─── */}
+              {Object.keys(groupedNotes).length > 0 && selectedCategory !== 'dailyTask' && (
+                <div className="space-y-3">
+                  {Object.keys(groupedTasks).length > 0 && selectedCategory === 'all' && (
+                    <div className="flex items-center gap-2 px-1 pb-1 border-b border-border">
+                      <StickyNote className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-bold text-foreground">Notes</span>
+                    </div>
+                  )}
+                  {Object.entries(groupedNotes).map(([date, dateNotes]) => (
+                    <div key={date} className="space-y-2">
+                      <div className="flex items-center gap-2 px-1">
+                        <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{date}</span>
+                      </div>
+                      <div className="space-y-2">
+                        {dateNotes.map((note: any) => (
+                          <motion.div
+                            key={note.id}
+                            initial={{ opacity: 0, y: 5 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className={cn(
+                              'group relative p-4 rounded-xl border cursor-pointer transition-all',
+                              editingNote?.id === note.id
+                                ? 'border-primary/30 bg-primary/5 shadow-sm'
+                                : 'border-border bg-card hover:border-primary/20 hover:shadow-sm'
+                            )}
+                            onClick={() => { setEditingNote(note); setIsCreating(false); }}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  {note.pinned && <Pin className="w-3 h-3 text-primary shrink-0" />}
+                                  <h3 className="text-sm font-semibold text-foreground truncate">
+                                    {note.title || 'Untitled Note'}
+                                  </h3>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                  {note.plainText?.substring(0, 120) || note.content?.substring(0, 120)}
+                                </p>
+                                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                  {note.tags?.slice(0, 3).map((tag: string) => (
+                                    <Badge key={tag} variant="secondary" className="text-[10px] px-1.5 py-0">
+                                      #{tag}
+                                    </Badge>
+                                  ))}
+                                  <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                    <Clock className="w-2.5 h-2.5" />
+                                    {new Date(note.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                  {note.updatedAt !== note.createdAt && (
+                                    <span className="text-[9px] text-muted-foreground/60">
+                                      (edited {new Date(note.updatedAt).toLocaleDateString()})
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={(e) => { e.stopPropagation(); togglePin(note); }}
+                                  className="p-1 rounded hover:bg-muted">
+                                  <Pin className={cn('w-3.5 h-3.5', note.pinned ? 'text-primary' : 'text-muted-foreground')} />
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); handleDelete(note.id); }}
+                                  className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-500/10">
+                                  <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-red-500" />
+                                </button>
+                              </div>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
 

@@ -10,44 +10,50 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get('search')?.toLowerCase();
     const category = searchParams.get('category');
     const tag = searchParams.get('tag');
-    const limit = parseInt(searchParams.get('limit') || '50');
+    const limit = parseInt(searchParams.get('limit') || '100');
 
     if (!userId) {
       return NextResponse.json({ error: 'userId required' }, { status: 400 });
     }
 
-    let query = adminDb.collection('zenit_notes')
+    // Simple query without composite index requirement
+    // Fetch all user's non-archived notes, sort client-side
+    const snapshot = await adminDb.collection('zenit_notes')
       .where('userId', '==', userId)
-      .where('archived', '==', false)
-      .orderBy('updatedAt', 'desc')
-      .limit(limit);
+      .limit(limit)
+      .get();
 
+    let notes = snapshot.docs
+      .map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt?.toDate?.()?.toISOString() || data.updatedAt || new Date().toISOString(),
+        };
+      })
+      // Filter out archived notes client-side (avoids composite index)
+      .filter((n: any) => !n.archived)
+      // Sort by createdAt descending (newest first)
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // Category filter
     if (category && category !== 'all') {
-      query = adminDb.collection('zenit_notes')
-        .where('userId', '==', userId)
-        .where('archived', '==', false)
-        .where('category', '==', category)
-        .orderBy('updatedAt', 'desc')
-        .limit(limit);
+      notes = notes.filter((n: any) => n.category === category);
     }
 
-    const snapshot = await query.get();
-    let notes = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      updatedAt: doc.data().updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-    }));
-
-    // Client-side search filter (for full-text search on plainText)
+    // Search filter
     if (search) {
       notes = notes.filter((n: any) =>
         n.title?.toLowerCase().includes(search) ||
         n.plainText?.toLowerCase().includes(search) ||
+        n.content?.toLowerCase().includes(search) ||
         n.tags?.some((t: string) => t.toLowerCase().includes(search))
       );
     }
 
+    // Tag filter
     if (tag) {
       notes = notes.filter((n: any) => n.tags?.includes(tag));
     }
@@ -66,15 +72,16 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { title, content, plainText, tags, userId, userName, category, linkedBugs, linkedSession, pinned } = body;
 
-    if (!userId || !content) {
-      return NextResponse.json({ error: 'userId and content required' }, { status: 400 });
+    if (!userId) {
+      return NextResponse.json({ error: 'userId required' }, { status: 400 });
     }
 
+    // Allow saving even with empty content (for drafts)
     const now = new Date();
     const noteData = {
       title: title || '',
-      content,
-      plainText: plainText || content.replace(/[#*`_~\[\]]/g, '').trim(),
+      content: content || '',
+      plainText: plainText || (content || '').replace(/[#*`_~\[\]]/g, '').trim(),
       tags: tags || [],
       createdAt: now,
       updatedAt: now,

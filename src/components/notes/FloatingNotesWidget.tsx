@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import { StickyNote, X, Send, Loader2, Sparkles } from 'lucide-react';
+import { StickyNote, X, Send, Loader2, Sparkles, CheckSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function FloatingNotesWidget() {
@@ -12,10 +12,8 @@ export default function FloatingNotesWidget() {
   const [content, setContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [autoSaved, setAutoSaved] = useState(false);
-  const [draftId, setDraftId] = useState<string | null>(null);
+  const [mode, setMode] = useState<'note' | 'task'>('note');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const autoSaveRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (open && textareaRef.current) {
@@ -35,113 +33,68 @@ export default function FloatingNotesWidget() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Auto-save draft every 2s as user types
-  const autoSaveDraft = useCallback(async (text: string) => {
-    if (!text.trim() || !user) return;
-
-    try {
-      if (draftId) {
-        // Update existing draft
-        await fetch(`/api/notes/${draftId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            content: text,
-            plainText: text.replace(/[#*`_~\[\]]/g, '').trim(),
-          }),
-        });
-      } else {
-        // Create new draft
-        const res = await fetch('/api/notes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: '',
-            content: text,
-            plainText: text.replace(/[#*`_~\[\]]/g, '').trim(),
-            tags: [],
-            category: 'general',
-            userId: user.uid,
-            userName: user.displayName || 'Unknown',
-          }),
-        });
-        const data = await res.json();
-        if (data.id) setDraftId(data.id);
-      }
-      setAutoSaved(true);
-      setTimeout(() => setAutoSaved(false), 2000);
-    } catch (err) {
-      console.error('Auto-save failed:', err);
-    }
-  }, [user, draftId]);
-
-  // Debounced auto-save on content change
-  const handleContentChange = (value: string) => {
-    setContent(value);
-    if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
-    if (value.trim().length >= 10) {
-      autoSaveRef.current = setTimeout(() => autoSaveDraft(value), 2000);
-    }
-  };
-
-  // Final save with AI title generation
   const handleSave = useCallback(async () => {
     if (!content.trim() || !user || saving) return;
     setSaving(true);
     try {
-      // Generate AI title + tags
-      const aiRes = await fetch('/api/notes/generate-title', {
+      // Generate AI title + tags (skip for tasks — use content as title)
+      let title = '';
+      let tags: string[] = [];
+      let category = mode === 'task' ? 'dailyTask' : 'general';
+
+      if (mode === 'note' && content.length >= 30) {
+        try {
+          const aiRes = await fetch('/api/notes/generate-title', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content }),
+          });
+          const aiData = await aiRes.json();
+          title = aiData.title || content.substring(0, 50);
+          tags = aiData.tags || [];
+          category = aiData.category || 'general';
+        } catch {
+          title = content.substring(0, 50).replace(/\n/g, ' ').trim();
+        }
+      } else {
+        title = content.split('\n')[0].substring(0, 80).trim() || content.substring(0, 50);
+      }
+
+      // Save note
+      const res = await fetch('/api/notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({
+          title,
+          content,
+          plainText: content.replace(/[#*`_~\[\]]/g, '').trim(),
+          tags,
+          category,
+          userId: user.uid,
+          userName: user.displayName || 'Unknown',
+        }),
       });
-      const aiData = await aiRes.json();
 
-      if (draftId) {
-        // Update the auto-saved draft with AI metadata
-        await fetch(`/api/notes/${draftId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: aiData.title || content.substring(0, 50),
-            content,
-            plainText: content.replace(/[#*`_~\[\]]/g, '').trim(),
-            tags: aiData.tags || [],
-            category: aiData.category || 'general',
-          }),
-        });
-      } else {
-        // Create fresh note with AI metadata
-        await fetch('/api/notes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: aiData.title || content.substring(0, 50),
-            content,
-            plainText: content.replace(/[#*`_~\[\]]/g, '').trim(),
-            tags: aiData.tags || [],
-            category: aiData.category || 'general',
-            userId: user.uid,
-            userName: user.displayName || 'Unknown',
-          }),
-        });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Save failed');
       }
 
       setSaved(true);
       setTimeout(() => {
         setContent('');
         setSaved(false);
-        setDraftId(null);
         setOpen(false);
         // Signal notes page to refresh
         window.dispatchEvent(new CustomEvent('note-created'));
-      }, 1200);
+      }, 1000);
     } catch (err) {
       console.error('Failed to save quick note:', err);
+      setSaving(false);
     } finally {
       setSaving(false);
     }
-  }, [content, user, saving, draftId]);
+  }, [content, user, saving, mode]);
 
   // Handle Ctrl+Enter to save
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -197,22 +150,30 @@ export default function FloatingNotesWidget() {
                   animate={{ rotate: 0, opacity: 1 }}
                   transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
                 >
-                  <StickyNote className="w-3.5 h-3.5 text-primary" />
+                  {mode === 'task' ? <CheckSquare className="w-3.5 h-3.5 text-orange-500" /> : <StickyNote className="w-3.5 h-3.5 text-primary" />}
                 </motion.div>
-                <span className="text-sm font-semibold text-foreground">Quick Note</span>
+                <span className="text-sm font-semibold text-foreground">
+                  {mode === 'task' ? 'Daily Task' : 'Quick Note'}
+                </span>
               </div>
-              <div className="flex items-center gap-2">
-                {autoSaved && (
-                  <motion.span
-                    initial={{ opacity: 0, x: 5 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0 }}
-                    className="text-[10px] text-emerald-500 font-medium"
-                  >
-                    ✓ Draft saved
-                  </motion.span>
-                )}
-                <span className="text-[10px] text-muted-foreground">Ctrl+Enter to finish</span>
+              {/* Mode toggle */}
+              <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-0.5">
+                <button
+                  onClick={() => setMode('note')}
+                  className={cn('px-2 py-1 rounded-md text-[10px] font-medium transition-colors',
+                    mode === 'note' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  Note
+                </button>
+                <button
+                  onClick={() => setMode('task')}
+                  className={cn('px-2 py-1 rounded-md text-[10px] font-medium transition-colors',
+                    mode === 'task' ? 'bg-orange-100 dark:bg-orange-500/15 text-orange-600 shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  Task
+                </button>
               </div>
             </div>
 
@@ -221,18 +182,29 @@ export default function FloatingNotesWidget() {
               <textarea
                 ref={textareaRef}
                 value={content}
-                onChange={e => handleContentChange(e.target.value)}
+                onChange={e => setContent(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="What's on your mind? Markdown supported...&#10;&#10;Auto-saves as you type."
-                className="w-full h-32 resize-none text-sm bg-muted/30 border border-border rounded-xl p-3 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
+                placeholder={mode === 'task'
+                  ? "What needs to be done today?"
+                  : "What's on your mind? Markdown supported..."
+                }
+                className={cn(
+                  "w-full h-32 resize-none text-sm border rounded-xl p-3 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1",
+                  mode === 'task'
+                    ? "bg-orange-50/30 dark:bg-orange-500/5 border-orange-200 dark:border-orange-500/20 focus:border-orange-300 focus:ring-orange-200"
+                    : "bg-muted/30 border-border focus:border-primary/40 focus:ring-primary/20"
+                )}
               />
             </div>
 
             {/* Footer */}
             <div className="px-4 py-3 border-t border-border flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                <Sparkles className="w-3 h-3" />
-                AI title on save
+                {mode === 'note' ? (
+                  <><Sparkles className="w-3 h-3" /> AI title on save</>
+                ) : (
+                  <><CheckSquare className="w-3 h-3" /> Saved as Daily Task</>
+                )}
               </div>
               <button
                 onClick={handleSave}
@@ -241,7 +213,9 @@ export default function FloatingNotesWidget() {
                   'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
                   saved
                     ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                    : 'bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed'
+                    : mode === 'task'
+                      ? 'bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed'
+                      : 'bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed'
                 )}
               >
                 {saving ? (
