@@ -304,6 +304,13 @@ export default function NotesPage() {
     return groups;
   };
 
+  // Check if note was meaningfully edited (more than 30s after creation)
+  const wasEdited = (note: any) => {
+    if (!note.updatedAt || !note.createdAt) return false;
+    const diff = Math.abs(new Date(note.updatedAt).getTime() - new Date(note.createdAt).getTime());
+    return diff > 30000; // 30 seconds
+  };
+
   const groupedTasks = groupByDate(dailyTasks);
   const groupedNotes = groupByDate(otherNotes);
 
@@ -403,7 +410,7 @@ export default function NotesPage() {
                               <div className="min-w-0 flex-1">
                                 <h3 className="text-sm font-semibold text-foreground truncate">{note.title || 'Untitled Task'}</h3>
                                 <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{note.plainText?.substring(0, 80) || note.content?.substring(0, 80)}</p>
-                                {note.updatedAt !== note.createdAt && (
+                                {wasEdited(note) && (
                                   <span className="text-[9px] text-muted-foreground/60 mt-1 inline-block">edited {new Date(note.updatedAt).toLocaleDateString()}</span>
                                 )}
                               </div>
@@ -471,7 +478,7 @@ export default function NotesPage() {
                                     <Clock className="w-2.5 h-2.5" />
                                     {new Date(note.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                                   </span>
-                                  {note.updatedAt !== note.createdAt && (
+                                  {wasEdited(note) && (
                                     <span className="text-[9px] text-muted-foreground/60">
                                       (edited {new Date(note.updatedAt).toLocaleDateString()})
                                     </span>

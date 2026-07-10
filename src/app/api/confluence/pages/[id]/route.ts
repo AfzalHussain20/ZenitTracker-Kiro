@@ -58,25 +58,23 @@ export async function GET(
     // Fetch comments (footer comments on the page)
     let comments: any[] = [];
     try {
-      // Try v2 footer-comments endpoint
-      let commentsRes = await fetch(
-        `${baseUrl}/api/v2/pages/${id}/footer-comments?limit=20&sort=-created-date`,
+      // Use v1 endpoint which includes full author info with expand
+      const commentsRes = await fetch(
+        `${baseUrl}/rest/api/content/${id}/child/comment?limit=25&expand=body.storage,version,extensions.inlineProperties&orderby=-created`,
         { headers: { Authorization: authHeader, Accept: 'application/json' }, cache: 'no-store' }
       );
-      // Fallback to v1 endpoint if v2 fails
-      if (!commentsRes.ok) {
-        commentsRes = await fetch(
-          `${baseUrl}/rest/api/content/${id}/child/comment?limit=20&expand=body.storage,version&orderby=-created`,
-          { headers: { Authorization: authHeader, Accept: 'application/json' }, cache: 'no-store' }
-        );
-      }
       if (commentsRes.ok) {
         const commentsData = await commentsRes.json();
         comments = (commentsData.results || []).map((c: any) => ({
           id: c.id,
-          body: (c.body?.storage?.value || '').replace(/<[^>]+>/g, '').trim(),
-          createdAt: c.version?.createdAt || c.version?.when || null,
-          author: c.version?.by?.displayName || c.version?.authorId || null,
+          body: (c.body?.storage?.value || c.body?.view?.value || '')
+            .replace(/<ac:[^>]*>[\s\S]*?<\/ac:[^>]*>/gi, '')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .trim(),
+          createdAt: c.version?.when || c.history?.createdDate || null,
+          author: c.version?.by?.displayName || c.version?.by?.publicName || c.history?.createdBy?.displayName || 'Unknown',
         }));
       }
     } catch (e) {
