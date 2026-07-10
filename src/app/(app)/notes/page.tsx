@@ -38,15 +38,17 @@ export default function NotesPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [savingAI, setSavingAI] = useState(false);
   const autoSaveRef = useRef<NodeJS.Timeout | null>(null);
+  const searchRef = useRef<NodeJS.Timeout | null>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
 
   // Fetch notes
-  const fetchNotes = useCallback(async () => {
+  const fetchNotes = useCallback(async (overrideSearch?: string) => {
     if (!user) return;
     setLoading(true);
     try {
       const params = new URLSearchParams({ userId: user.uid });
-      if (searchQuery) params.set('search', searchQuery);
+      const search = overrideSearch !== undefined ? overrideSearch : searchQuery;
+      if (search) params.set('search', search);
       if (selectedCategory !== 'all') params.set('category', selectedCategory);
 
       const res = await fetch(`/api/notes?${params}`);
@@ -57,9 +59,10 @@ export default function NotesPage() {
     } finally {
       setLoading(false);
     }
-  }, [user, searchQuery, selectedCategory]);
+  }, [user, selectedCategory, searchQuery]);
 
-  useEffect(() => { fetchNotes(); }, [fetchNotes]);
+  // Initial fetch + on category change
+  useEffect(() => { fetchNotes(); }, [user, selectedCategory]);
 
   // Sync: refresh notes when Quick Notes widget saves (custom event) or tab refocuses
   useEffect(() => {
@@ -172,28 +175,43 @@ export default function NotesPage() {
     }
   };
 
-  // Delete note
+  // Delete note — optimistic
   const handleDelete = async (noteId: string) => {
+    // Optimistic: remove from UI immediately
+    const previousNotes = notes;
+    setNotes(prev => prev.filter(n => n.id !== noteId));
+    if (editingNote?.id === noteId) setEditingNote(null);
+    toast({ title: 'Note deleted' });
+
     try {
-      await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
-      setNotes(prev => prev.filter(n => n.id !== noteId));
-      if (editingNote?.id === noteId) setEditingNote(null);
-      toast({ title: 'Note archived' });
+      const res = await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
     } catch (err) {
-      toast({ title: 'Failed to delete', variant: 'destructive' });
+      // Rollback on failure
+      setNotes(previousNotes);
+      toast({ title: 'Failed to delete — restored', variant: 'destructive' });
     }
   };
 
-  // Toggle pin
+  // Toggle pin — optimistic
   const togglePin = async (note: any) => {
+    const newPinned = !note.pinned;
+    // Optimistic: update UI immediately
+    setNotes(prev => prev.map(n => n.id === note.id ? { ...n, pinned: newPinned } : n));
+    if (editingNote?.id === note.id) {
+      setEditingNote((prev: any) => prev ? { ...prev, pinned: newPinned } : null);
+    }
+
     try {
-      await fetch(`/api/notes/${note.id}`, {
+      const res = await fetch(`/api/notes/${note.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pinned: !note.pinned }),
+        body: JSON.stringify({ pinned: newPinned }),
       });
-      setNotes(prev => prev.map(n => n.id === note.id ? { ...n, pinned: !n.pinned } : n));
+      if (!res.ok) throw new Error('Pin failed');
     } catch (err) {
+      // Rollback on failure
+      setNotes(prev => prev.map(n => n.id === note.id ? { ...n, pinned: !newPinned } : n));
       toast({ title: 'Failed to pin', variant: 'destructive' });
     }
   };
@@ -314,7 +332,11 @@ export default function NotesPage() {
           <Input
             placeholder="Search notes by keyword, tag, or content..."
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={e => {
+              setSearchQuery(e.target.value);
+              if (searchRef.current) clearTimeout(searchRef.current);
+              searchRef.current = setTimeout(() => fetchNotes(), 500);
+            }}
             className="pl-10 h-10"
           />
         </div>
@@ -525,7 +547,7 @@ export default function NotesPage() {
                       ))}
                     </select>
                     <button
-                      onClick={() => { setEditingNote(null); fetchNotes(); }}
+                      onClick={() => { setEditingNote(null); if (isCreating) fetchNotes(); setIsCreating(false); }}
                       className="p-1 rounded-lg hover:bg-muted text-muted-foreground"
                     >
                       <X className="w-4 h-4" />
