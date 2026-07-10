@@ -1,4 +1,5 @@
 import type { AIProvider, AskAIParams, AskAIResult } from './types';
+import { keyPool } from './key-pool';
 
 const MODEL = 'llama-3.3-70b-versatile';
 
@@ -6,8 +7,8 @@ export const groqProvider: AIProvider = {
   name: 'groq',
 
   async askAI({ systemPrompt, history, question }: AskAIParams): Promise<AskAIResult> {
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) throw new Error('GROQ_API_KEY not configured');
+    const apiKey = keyPool.getGroqKey();
+    if (!apiKey) throw new Error('All Groq API keys exhausted');
 
     const messages = [
       { role: 'system', content: systemPrompt },
@@ -31,6 +32,9 @@ export const groqProvider: AIProvider = {
 
     if (!response.ok) {
       const errText = await response.text();
+      if (response.status === 429) {
+        keyPool.markGroqExhausted();
+      }
       throw new Error(`Groq API error (${response.status}): ${errText}`);
     }
 

@@ -1,5 +1,6 @@
 import type { AIProvider, AskAIParams, AskAIResult } from './types';
 import { throttle } from '../cache';
+import { keyPool } from './key-pool';
 
 const MODEL = 'gemini-2.0-flash-lite';
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -34,8 +35,8 @@ export const geminiProvider: AIProvider = {
   name: 'gemini',
 
   async askAI({ systemPrompt, history, question }: AskAIParams): Promise<AskAIResult> {
-    const apiKey = process.env.GOOGLE_AI_API_KEY;
-    if (!apiKey) throw new Error('GOOGLE_AI_API_KEY not configured');
+    const apiKey = keyPool.getGeminiKey();
+    if (!apiKey) throw new Error('429: All Gemini API keys exhausted. Quota will reset in ~1 hour.');
 
     // Use higher defaults suitable for structured generation (test cases)
     // These work fine for Q&A too — Gemini stops early if the answer is short
@@ -97,6 +98,7 @@ export const geminiProvider: AIProvider = {
       } catch { /* use raw text */ }
 
       if (response.status === 429) {
+        keyPool.markGeminiExhausted();
         throw new Error(`429: Gemini rate limit exceeded. ${errMessage}`);
       }
       throw new Error(`Gemini API error (${response.status}): ${errMessage}`);
