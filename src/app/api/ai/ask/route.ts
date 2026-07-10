@@ -100,8 +100,16 @@ export async function POST(req: NextRequest) {
         question,
       });
     } catch (providerErr: any) {
-      console.error(`${provider.name} provider error:`, providerErr.message);
-      return NextResponse.json({ answer: providerErr.message || 'AI request failed. Please try again.' });
+      const msg = providerErr?.message || '';
+      console.error(`${provider.name} provider error:`, msg);
+      
+      // Friendly error for quota issues
+      if (msg.includes('429') || msg.includes('quota') || msg.includes('Quota')) {
+        return NextResponse.json({ 
+          answer: "AI quota reached for today. Add a GROQ_API_KEY to your environment for unlimited fallback, or try again after midnight PT." 
+        });
+      }
+      return NextResponse.json({ answer: 'AI request failed. Please try again in a moment.' });
     }
 
     // Cache the response for repeat questions

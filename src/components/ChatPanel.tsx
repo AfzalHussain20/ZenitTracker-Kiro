@@ -85,7 +85,7 @@ export default function ChatPanel({ pageId, pageTitle, onJumpToSection }: ChatPa
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-3 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl hover:scale-105 transition-all"
+          className="fixed bottom-6 right-20 z-40 flex items-center gap-2 px-4 py-3 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl hover:scale-105 transition-all"
         >
           <MessageCircle className="h-4 w-4" />
           <span className="text-sm font-medium">Ask about this PRD</span>
