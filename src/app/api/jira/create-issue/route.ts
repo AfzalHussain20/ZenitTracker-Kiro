@@ -76,7 +76,9 @@ export async function POST(req: Request) {
             ...(frequency ? { customfield_10202: frequency } : {}),
             ...(labels?.length ? { labels } : {}),
             ...(assigneeAccountId ? { assignee: { accountId: assigneeAccountId } } : {}),
-            ...(componentId ? { components: [{ id: componentId }] } : {}),
+            // Only send componentId if it looks like a valid Jira component ID (numeric)
+            // Team IDs from Atlassian Teams API are UUIDs and are NOT valid component IDs
+            ...(componentId && /^\d+$/.test(componentId) ? { components: [{ id: componentId }] } : {}),
         };
 
         const response = await fetch(`${JIRA_BASE}/rest/api/3/issue`, {
