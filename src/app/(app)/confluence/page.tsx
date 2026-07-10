@@ -918,6 +918,7 @@ export default function ConfluencePage() {
 
         {/* Tab Content */}
         {activeTab === 'document' ? (
+          <>
           <div className="rounded-2xl border border-border/40 bg-card/30 backdrop-blur-sm shadow-sm">
             <div className="p-6 md:p-10 lg:p-12 overflow-x-auto">
               <article
@@ -975,6 +976,7 @@ export default function ConfluencePage() {
               </div>
             </div>
           )}
+        </>
         ) : (
           <div className="space-y-8">
             {/* Full-page mockup viewer overlay — uses /embed/ URL which Adobe allows */}
