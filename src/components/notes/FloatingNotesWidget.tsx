@@ -133,6 +133,8 @@ export default function FloatingNotesWidget() {
         setSaved(false);
         setDraftId(null);
         setOpen(false);
+        // Signal notes page to refresh
+        window.dispatchEvent(new CustomEvent('note-created'));
       }, 1200);
     } catch (err) {
       console.error('Failed to save quick note:', err);

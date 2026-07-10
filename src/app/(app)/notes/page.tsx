@@ -60,6 +60,20 @@ export default function NotesPage() {
 
   useEffect(() => { fetchNotes(); }, [fetchNotes]);
 
+  // Sync: refresh notes when Quick Notes widget saves (custom event) or tab refocuses
+  useEffect(() => {
+    const handleNoteCreated = () => fetchNotes();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') fetchNotes();
+    };
+    window.addEventListener('note-created', handleNoteCreated);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('note-created', handleNoteCreated);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [fetchNotes]);
+
   // Create new note
   const handleCreate = () => {
     setEditingNote({
