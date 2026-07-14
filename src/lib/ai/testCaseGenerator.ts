@@ -73,38 +73,40 @@ function buildSystemPrompt(
 
   switch (pass) {
     case 'all':
-      return `You are an expert senior QA engineer. Generate a COMPREHENSIVE set of test cases covering ALL platforms (Web, TV, Mobile) and ALL testing types from this PRD.
+      return `You are an expert senior QA engineer generating a COMPREHENSIVE test suite from a PRD.
 
-You MUST generate test cases for EACH of these 3 platforms:
-1. WEB (Chrome, Firefox, Safari, Edge - desktop & mobile browsers)
-2. TV (Android TV, Fire TV, Apple TV, Samsung Tizen, LG webOS, Roku - remote/D-pad navigation)
-3. MOBILE (iOS iPhone/iPad, Android phones/tablets - touch, gestures, offline)
+Generate test cases covering ALL 3 platforms with MANDATORY category distribution:
 
-For EACH platform, cover these testing types:
-- Functional: Happy path, core feature verification
-- Negative: Invalid inputs, error states, boundary values
-- UI/UX: Layout, navigation, accessibility
-- Integration: Cross-feature, API, third-party interactions
-- Edge Case: Race conditions, extreme data, unusual workflows
-- Sanity: Basic smoke tests
+PLATFORMS (include ALL three):
+• WEB — Chrome, Firefox, Safari, Edge (desktop + mobile browsers)
+• TV — Android TV, Fire TV, Apple TV, Samsung Tizen, LG webOS, Roku (D-pad/remote)
+• MOBILE — iOS (iPhone/iPad), Android (phones/tablets) — touch, gestures, offline
 
-Each test case MUST include a "platform" indicator in the module field like "[Web] Module Name" or "[TV] Module Name" or "[Mobile] Module Name".
+MANDATORY CATEGORY COUNTS (you MUST hit these minimums):
+• "Functional" — 20 test cases (happy path flows, core feature verification)
+• "Negative" — 15 test cases (invalid inputs, errors, boundary values, permission denied)
+• "Edge Case" — 10 test cases (race conditions, extreme data, unusual workflows, device quirks)
+• "Sanity" — 10 test cases (basic smoke tests that verify app doesn't crash on core actions)
+• "Exploratory" — 5 test cases (creative scenarios, unusual user journeys)
+
+TOTAL: At least 60 test cases. Distribute across all 3 platforms evenly (20+ per platform).
+
+Each module MUST start with platform prefix: "[Web] Feature", "[TV] Feature", or "[Mobile] Feature"
 
 Available PRD sections:
 ${headingsList}
 
-Return ONLY a valid JSON array (NO markdown, NO code fences, NO explanation before/after):
+Return ONLY a valid JSON array (NO markdown, NO code fences, NO explanation):
 ${jsonStructure}
 
 CRITICAL RULES:
-- Generate AT LEAST 60 test cases total (20+ per platform)
-- Set category to: "Functional", "Negative", "Edge Case", or "Sanity"
-- Leave testcaseId as empty string
+- MINIMUM 60 test cases total
+- MUST have at least: 20 Functional, 15 Negative, 10 Edge Case, 10 Sanity, 5 Exploratory
+- testcaseId = empty string always
 - Priority: P0 = critical/blocker, P1 = major, P2 = minor
-- Module MUST start with [Web], [TV], or [Mobile] prefix
-- Test steps: 3-5 actionable steps each
-- Each test case must be unique and platform-specific
-- Output ONLY the JSON array, nothing else${existingSummary}`;
+- Test steps: 3-6 actionable steps each
+- Each test case unique, specific, and platform-aware
+- Output ONLY the JSON array${existingSummary}`;
 
     case 'web':
       return `You are a senior QA engineer generating COMPREHENSIVE test cases for WEB platform from a PRD.

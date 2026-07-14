@@ -283,6 +283,7 @@ export default function ConfluencePage() {
   const [countdown, setCountdown] = useState(0);
   const [quotaCooldown, setQuotaCooldown] = useState(false);
   const quotaCooldownTimer = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // ─── Check for Existing Generation on Page Load ─────────────────────────────
   useEffect(() => {
@@ -336,6 +337,7 @@ export default function ConfluencePage() {
 
     try {
       // Single comprehensive pass — generates Functional, Negative, Edge Case, Sanity, Exploratory
+      abortControllerRef.current = new AbortController();
       const res = await fetch('/api/ai/generate-tests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -344,6 +346,7 @@ export default function ConfluencePage() {
           pass: 'all',
           existingTestCases: [],
         }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!res.ok) {
@@ -411,11 +414,17 @@ export default function ConfluencePage() {
         console.warn('Firestore save failed (test cases still shown):', saveErr);
       }
     } catch (err: any) {
-      console.error('Test case generation error:', err);
-      setGenerationError(err.message || 'Test case generation failed. Please try again.');
+      if (err.name === 'AbortError') {
+        // User cancelled — not an error
+        setGenerationError(null);
+      } else {
+        console.error('Test case generation error:', err);
+        setGenerationError(err.message || 'Test case generation failed. Please try again.');
+      }
     } finally {
       setIsGenerating(false);
       setCountdown(0);
+      abortControllerRef.current = null;
     }
   };
 
@@ -722,6 +731,17 @@ export default function ConfluencePage() {
               >
                 <FlaskConical className="h-4 w-4" />
                 {quotaCooldown ? 'Quota Exhausted' : 'Generate Test Cases'}
+              </Button>
+            )}
+            {isGenerating && (
+              <Button
+                onClick={() => { abortControllerRef.current?.abort(); setIsGenerating(false); }}
+                variant="destructive"
+                size="sm"
+                className="gap-2"
+              >
+                <X className="h-4 w-4" />
+                Cancel Generation
               </Button>
             )}
             {showReviewPanel && !isGenerating && (
