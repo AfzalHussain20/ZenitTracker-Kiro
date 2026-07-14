@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractPlainText, truncateForContext } from '@/lib/ai/extractText';
-import { generateTestCasesForPass, extractHeadings } from '@/lib/ai/testCaseGenerator';
+import { generateTestCasesForPass, extractHeadings, generateAnalyticsTestCases } from '@/lib/ai/testCaseGenerator';
 import { getAIProvider } from '@/lib/ai/providers';
 import { getCachedPageContent, setCachedPageContent } from '@/lib/ai/cache';
-import type { GenerateTestsRequest, GenerateTestsResponse, GenerationPass } from '@/types/test-cases';
+import type { GenerateTestsRequest, GenerateTestsResponse, GenerationPass, GenerateAnalyticsResponse } from '@/types/test-cases';
+import { isAIEnabled } from '@/lib/ai/feature-flags';
+import { trackTokenUsage, estimateTokens } from '@/lib/ai/token-tracker';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,8 +83,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // ─── Feature flag check ───────────────────────────────────────────────
+    const featureKey = pass === 'analytics' ? 'analytics-events' : 'generate-tests';
+    if (!await isAIEnabled(featureKey)) {
+      return NextResponse.json(
+        { error: `${pass === 'analytics' ? 'Analytics Events' : 'Test Case Generation'} AI is currently disabled. Enable it in AI Settings.` },
+        { status: 403 }
+      );
+    }
+
     // Validate pass value — support both original and platform-based passes
-    const validPasses = ['functional', 'negative', 'exploratory', 'web', 'tv', 'mobile', 'all', 'functional_sanity', 'negative_edge', 'exploratory_more'];
+    const validPasses = ['functional', 'negative', 'exploratory', 'web', 'tv', 'mobile', 'all', 'functional_sanity', 'negative_edge', 'exploratory_more', 'analytics'];
     if (!validPasses.includes(pass)) {
       return NextResponse.json(
         { error: `pass must be one of: ${validPasses.join(', ')}` },
@@ -165,6 +176,41 @@ export async function POST(req: NextRequest) {
     // Keep context small for faster Gemini response (critical for Vercel 10s timeout)
     const truncatedText = truncateForContext(plainText, 8000);
 
+    // ─── Analytics pass — separate flow with different response shape ────
+    if (pass === 'analytics') {
+      const provider = getAIProvider();
+      try {
+        const analyticsTestCases = await generateAnalyticsTestCases(
+          truncatedText,
+          prdHeadings,
+          { maxTokens: 8192, temperature: 0.4, maxRetries: 1, contextTokenBudget: 8000 },
+          provider,
+        );
+
+        const platforms = [...new Set(analyticsTestCases.map(tc => tc.platform))];
+
+        const analyticsResponse: GenerateAnalyticsResponse = {
+          analyticsTestCases,
+          totalEvents: analyticsTestCases.length,
+          platforms,
+          modelUsed: provider.name,
+        };
+
+        return NextResponse.json(analyticsResponse);
+      } catch (aiError: any) {
+        const errorMessage = aiError?.message || 'AI generation failed';
+        if (errorMessage.includes('429')) {
+          const { iso, readableIST } = getNextResetTime();
+          return NextResponse.json(
+            { error: `AI generation limit reached. Quota resets on ${readableIST}.`, resetTime: iso, resetTimeReadable: readableIST },
+            { status: 429, headers: { 'Retry-After': '60' } }
+          );
+        }
+        console.error('[generate-tests/analytics] AI error:', errorMessage);
+        return NextResponse.json({ error: `AI generation failed: ${errorMessage.substring(0, 100)}` }, { status: 502 });
+      }
+    }
+
     // ─── Generate test cases for the specified pass ───────────────────────
     const provider = getAIProvider();
 
@@ -220,6 +266,20 @@ export async function POST(req: NextRequest) {
     }
 
     // ─── Return structured response ──────────────────────────────────────
+    // Track token usage (estimate since generateTestCasesForPass doesn't expose usage directly)
+    const estimatedPrompt = estimateTokens(truncatedText) + estimateTokens(prdHeadings.join('\n'));
+    const estimatedCompletion = estimateTokens(testCases.map(tc => tc.testScenario).join('\n'));
+    trackTokenUsage({
+      feature: 'generate-tests',
+      provider: provider.name,
+      model: 'gemini-2.0-flash-lite',
+      promptTokens: estimatedPrompt,
+      completionTokens: estimatedCompletion,
+      totalTokens: estimatedPrompt + estimatedCompletion,
+      timestamp: Date.now(),
+      pageId,
+    });
+
     const response: GenerateTestsResponse = {
       testCases,
       pass: PASS_NUMBER_MAP[pass] || 1,

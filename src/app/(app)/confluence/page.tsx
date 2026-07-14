@@ -10,6 +10,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import ChatPanel from '@/components/ChatPanel';
 import TestGenProgress from '@/components/TestGenProgress';
 import TestCaseReviewPanel from '@/components/TestCaseReviewPanel';
+import AnalyticsEventsPanel from '@/components/AnalyticsEventsPanel';
+import { useStreamingGeneration } from '@/hooks/useStreamingGeneration';
 import {
   saveGenerationResult,
   loadTestCases,
@@ -40,6 +42,7 @@ import {
   FlaskConical,
   RefreshCw,
   AlertCircle,
+  Zap,
 } from 'lucide-react';
 
 // Types
@@ -260,7 +263,7 @@ export default function ConfluencePage() {
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [pages, setPages] = useState<PageSummary[]>([]);
   const [selectedPage, setSelectedPage] = useState<PageDetail | null>(null);
-  const [activeTab, setActiveTab] = useState<'document' | 'mockups'>('document');
+  const [activeTab, setActiveTab] = useState<'document' | 'mockups' | 'analytics'>('document');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -284,6 +287,33 @@ export default function ConfluencePage() {
   const [quotaCooldown, setQuotaCooldown] = useState(false);
   const quotaCooldownTimer = useRef<NodeJS.Timeout | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // ─── PRD Categorization State ───────────────────────────────────────────────
+  const [prdMetadataMap, setPrdMetadataMap] = useState<Record<string, { featureArea: string; platforms: string[]; module: string; tags: string[] }>>({});
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
+  // ─── Phase 7: Streaming Generation ──────────────────────────────────────────
+  const streaming = useStreamingGeneration();
+
+  // When streaming completes, merge streamed cases into the review panel
+  useEffect(() => {
+    if (streaming.isComplete && streaming.testCases.length > 0 && selectedPage) {
+      const now = new Date();
+      const storedCases: StoredTestCase[] = streaming.testCases.map(tc => ({
+        ...tc,
+        reviewStatus: 'pending' as const,
+        sourceVerified: false,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      setTestCases(storedCases);
+      setShowReviewPanel(true);
+      setGenerationComplete(true);
+      setIsGenerating(false);
+      // Persist to Firestore
+      saveGenerationResult(selectedPage.id, selectedPage.title, storedCases).catch(console.error);
+    }
+  }, [streaming.isComplete, streaming.testCases.length]); // eslint-disable-line
 
   // ─── Check for Existing Generation on Page Load ─────────────────────────────
   useEffect(() => {
@@ -521,6 +551,19 @@ export default function ConfluencePage() {
   useEffect(() => {
     fetchSpaces();
     fetchPages();
+    // Fetch PRD metadata for category badges
+    fetch('/api/ai/categorize-prd')
+      .then(res => res.json())
+      .then(data => {
+        if (data.metadata) {
+          const map: Record<string, { featureArea: string; platforms: string[]; module: string; tags: string[] }> = {};
+          for (const m of data.metadata) {
+            map[m.pageId] = { featureArea: m.featureArea, platforms: m.platforms, module: m.module, tags: m.tags };
+          }
+          setPrdMetadataMap(map);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const fetchSpaces = async () => {
@@ -560,6 +603,21 @@ export default function ConfluencePage() {
       if (data.page) {
         setSelectedPage(data.page);
         setActiveTab('document');
+        // Auto-categorize PRD in background (non-blocking)
+        if (!prdMetadataMap[pageId]) {
+          fetch('/api/ai/categorize-prd', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pageId, pageTitle: data.page.title, bodyHtml: data.page.body }),
+          })
+            .then(r => r.json())
+            .then(catData => {
+              if (catData.metadata) {
+                setPrdMetadataMap(prev => ({ ...prev, [pageId]: catData.metadata }));
+              }
+            })
+            .catch(() => {});
+        }
       }
     } catch (err) {
       console.error('Failed to fetch page detail:', err);
@@ -722,18 +780,35 @@ export default function ConfluencePage() {
 
           {/* Test Case Generation Controls */}
           <div className="mt-4 flex items-center gap-3 flex-wrap">
-            {!showReviewPanel && !isGenerating && (
-              <Button
-                onClick={handleGenerateTestCases}
-                disabled={isGenerating || loadingExistingCases || quotaCooldown}
-                size="sm"
-                className="gap-2"
-              >
-                <FlaskConical className="h-4 w-4" />
-                {quotaCooldown ? 'Quota Exhausted' : 'Generate Test Cases'}
-              </Button>
+            {!showReviewPanel && !isGenerating && !streaming.isStreaming && (
+              <>
+                <Button
+                  onClick={handleGenerateTestCases}
+                  disabled={isGenerating || loadingExistingCases || quotaCooldown}
+                  size="sm"
+                  className="gap-2"
+                >
+                  <FlaskConical className="h-4 w-4" />
+                  {quotaCooldown ? 'Quota Exhausted' : 'Generate Test Cases'}
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (!selectedPage) return;
+                    setIsGenerating(true);
+                    streaming.startStream(selectedPage.id);
+                  }}
+                  disabled={loadingExistingCases || quotaCooldown}
+                  size="sm"
+                  variant="outline"
+                  className="gap-2 border-primary/40 text-primary hover:bg-primary/5"
+                  title="Stream test cases as they generate — see results instantly"
+                >
+                  <Zap className="h-4 w-4" />
+                  Stream Live
+                </Button>
+              </>
             )}
-            {isGenerating && (
+            {isGenerating && !streaming.isStreaming && (
               <Button
                 onClick={() => { abortControllerRef.current?.abort(); setIsGenerating(false); }}
                 variant="destructive"
@@ -742,6 +817,17 @@ export default function ConfluencePage() {
               >
                 <X className="h-4 w-4" />
                 Cancel Generation
+              </Button>
+            )}
+            {streaming.isStreaming && (
+              <Button
+                onClick={() => { streaming.cancelStream(); setIsGenerating(false); }}
+                variant="destructive"
+                size="sm"
+                className="gap-2"
+              >
+                <X className="h-4 w-4" />
+                Cancel Stream
               </Button>
             )}
             {showReviewPanel && !isGenerating && (
@@ -786,7 +872,7 @@ export default function ConfluencePage() {
         </div>
 
         {/* Generation Progress */}
-        {isGenerating && (
+        {isGenerating && !streaming.isStreaming && (
           <div className="mb-6">
             <TestGenProgress
               currentPass={generationPass}
@@ -795,6 +881,45 @@ export default function ConfluencePage() {
               isComplete={generationComplete}
               countdown={countdown}
             />
+          </div>
+        )}
+
+        {/* Phase 7: Streaming Generation Progress */}
+        {streaming.isStreaming && (
+          <div className="mb-6 rounded-xl border border-primary/20 bg-primary/5 overflow-hidden">
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-primary/10">
+              <div className="flex gap-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <p className="text-sm font-medium text-foreground">
+                {streaming.progress?.message || 'Generating…'}
+              </p>
+              {streaming.totalGenerated > 0 && (
+                <span className="ml-auto text-xs font-bold text-primary">{streaming.totalGenerated} so far</span>
+              )}
+            </div>
+
+            {/* Live batch cards as they arrive */}
+            {streaming.batches.length > 0 && (
+              <div className="px-4 py-3 space-y-2">
+                {streaming.batches.map((batch, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Pass {batch.pass} — {batch.passName}</span>
+                    <span className="font-semibold text-primary">+{batch.batchCount} test cases</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Streaming error */}
+        {streaming.error && !streaming.isStreaming && (
+          <div className="mb-4 rounded-xl border border-red-200 dark:border-red-500/20 bg-red-50 dark:bg-red-500/5 p-4 flex items-center gap-3">
+            <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
+            <p className="text-sm text-red-700 dark:text-red-400">{streaming.error}</p>
           </div>
         )}
 
@@ -870,6 +995,17 @@ export default function ConfluencePage() {
               </Badge>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              activeTab === 'analytics'
+                ? 'border-amber-500 text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <FlaskConical className="h-4 w-4" />
+            Analytics Events
+          </button>
         </div>
 
         {/* Tab Content */}
@@ -933,7 +1069,7 @@ export default function ConfluencePage() {
             </div>
           )}
         </>
-        ) : (
+        ) : activeTab === 'mockups' ? (
           <div className="space-y-8">
             {/* Full-page mockup viewer overlay — uses /embed/ URL which Adobe allows */}
             {lightboxImage && (
@@ -1018,9 +1154,17 @@ export default function ConfluencePage() {
               </div>
             )}
           </div>
+        ) : null}
+
+        {/* Analytics Events Tab */}
+        {activeTab === 'analytics' && (
+          <AnalyticsEventsPanel
+            pageId={selectedPage.id}
+            pageTitle={selectedPage.title}
+          />
         )}
 
-        {/* AI Chat Panel — floating, available on both tabs */}
+        {/* AI Chat Panel — floating, available on all tabs */}
         <ChatPanel
           pageId={selectedPage.id}
           pageTitle={selectedPage.title}
@@ -1102,6 +1246,28 @@ export default function ConfluencePage() {
             ))}
       </div>
 
+      {/* Category Filter */}
+      {Object.keys(prdMetadataMap).length > 0 && (
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xs text-muted-foreground font-medium">Category:</span>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="text-xs border border-border rounded-lg px-2.5 py-1.5 bg-background text-foreground"
+          >
+            <option value="all">All Categories</option>
+            {[...new Set(Object.values(prdMetadataMap).map(m => m.featureArea))].sort().map(cat => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+          {categoryFilter !== 'all' && (
+            <button onClick={() => setCategoryFilter('all')} className="text-xs text-primary hover:underline">
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Pages Grid */}
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1126,8 +1292,15 @@ export default function ConfluencePage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {pages.map((page) => {
+          {pages
+            .filter((page) => {
+              if (categoryFilter === 'all') return true;
+              const meta = prdMetadataMap[page.id];
+              return meta?.featureArea === categoryFilter;
+            })
+            .map((page) => {
             const space = getSpaceForPage(page);
+            const meta = prdMetadataMap[page.id];
             return (
               <button
                 key={page.id}
@@ -1138,7 +1311,7 @@ export default function ConfluencePage() {
                   {page.title}
                 </h3>
 
-                <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
                   {(space || page.spaceName || page.spaceKey) && (
                     <Badge
                       variant="outline"
@@ -1149,6 +1322,11 @@ export default function ConfluencePage() {
                       {space?.name || page.spaceName || page.spaceKey || 'Space'}
                     </Badge>
                   )}
+                  {meta && (
+                    <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/30">
+                      {meta.featureArea}
+                    </Badge>
+                  )}
                   {page.lastUpdated && (
                     <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
@@ -1156,6 +1334,22 @@ export default function ConfluencePage() {
                     </span>
                   )}
                 </div>
+
+                {/* Platform badges */}
+                {meta && meta.platforms.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {meta.platforms.slice(0, 4).map(p => (
+                      <span key={p} className="text-[9px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground border border-border/30">
+                        {p}
+                      </span>
+                    ))}
+                    {meta.platforms.length > 4 && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">
+                        +{meta.platforms.length - 4}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {page.excerpt && (
                   <p className="text-xs text-muted-foreground/80 line-clamp-2 leading-relaxed">

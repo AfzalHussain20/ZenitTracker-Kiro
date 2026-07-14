@@ -21,8 +21,9 @@ import {
   DropdownMenuSubContent,
   DropdownMenuPortal
 } from '@/components/ui/dropdown-menu';
-import { LogOut, UserCircle, LayoutDashboard, Sun, Moon, Monitor, Settings, ChevronDown, ClipboardList, Info, BookOpen, Menu, X, StickyNote } from 'lucide-react';
+import { LogOut, UserCircle, LayoutDashboard, Sun, Moon, Monitor, Settings, ChevronDown, ClipboardList, Info, BookOpen, Menu, X, StickyNote, Brain } from 'lucide-react';
 import { LogoIcon } from '@/components/ui/Logo';
+import TokenQuotaBadge from '@/components/ai/TokenQuotaBadge';
 
 export default function AppHeader() {
   const { user, userRole } = useAuth();
@@ -101,6 +102,9 @@ export default function AppHeader() {
 
         {/* User Menu + Mobile Toggle */}
         <div className="flex items-center gap-2">
+          {/* Token Quota Badge */}
+          <TokenQuotaBadge />
+
           {/* Mobile menu toggle */}
           <Button variant="ghost" size="icon" className="md:hidden h-8 w-8" onClick={() => setMobileMenuOpen(v => !v)}>
             {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
@@ -130,6 +134,13 @@ export default function AppHeader() {
                 <Link href="/profile" className="cursor-pointer">
                   <UserCircle className="mr-2 h-4 w-4" />
                   Profile
+                </Link>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem asChild>
+                <Link href="/ai-settings" className="cursor-pointer">
+                  <Brain className="mr-2 h-4 w-4" />
+                  AI Settings
                 </Link>
               </DropdownMenuItem>
 
@@ -184,6 +195,7 @@ export default function AppHeader() {
             { href: '/analytics/bugs', label: 'Jira KPI' },
             { href: '/bugs', label: 'Bug Tracker' },
             { href: '/notes', label: 'Notes' },
+            { href: '/ai-settings', label: 'AI Settings' },
             ...(userRole === 'lead' ? [{ href: '/team', label: 'Team Performance' }] : []),
             { href: '/dashboard/sessions', label: 'Session History' },
           ].map(item => (

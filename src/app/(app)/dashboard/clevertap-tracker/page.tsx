@@ -19,20 +19,23 @@ import {
     Rocket, ArrowLeft, CheckCircle2, PlusCircle, FileJson, FileDown,
     Database, AlertCircle, XCircle, FileSpreadsheet, UploadCloud,
     Zap, Shield, ChevronRight, Tv, Film, Music, Laugh, Radio, Smartphone,
-    Globe, Monitor, Apple, Play, BarChart3, ChevronLeft, Layers, BookOpen,
+    Globe, Monitor, Apple, Play, BarChart3, ChevronLeft, Layers, BookOpen, Wand2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
 import { buildPhase1Tabs, buildPhase2Tabs } from '@/lib/export-to-sheets';
+import EventCoverageMatrix from '@/components/clevertap/EventCoverageMatrix';
+import EventComposer from '@/components/clevertap/EventComposer';
+import { useAuth } from '@/context/AuthContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Step = 1 | 2 | 3;
 type Platform = { id: string; label: string; icon: React.ElementType; gradient: string };
 type ContentType = { id: string; label: string; icon: React.ElementType; color: string };
 type ValidationStatus = 'VALUE_REQUIRED' | 'UNEXPECTED_VALUE' | 'CAPITAL_ATTR' | 'MISSING' | 'EXTRA' | 'PASS' | 'WEB_NA';
-type InHousePhase = 'choose' | 'phase1' | 'phase2';
+type InHousePhase = 'choose' | 'phase1' | 'phase2' | 'coverage';
 
 interface AttrResult {
     attr: string;
@@ -491,6 +494,7 @@ function lsSet(key: string, value: any) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function CleverTapTrackerPage() {
     const { toast } = useToast();
+    const { user } = useAuth();
     const xlsxInputRef = useRef<HTMLInputElement>(null);
     const [mounted, setMounted] = useState(false);
 
@@ -509,6 +513,10 @@ export default function CleverTapTrackerPage() {
     // In-House modal state
     const [isInHouseOpen, setIsInHouseOpen] = useState(false);
     const [inHousePhase, setInHousePhase] = useState<InHousePhase>('choose');
+
+    // Coverage matrix state — built from Phase 1 & 2 results
+    const [coverageEvents, setCoverageEvents] = useState<{ eventName: string; platforms: Record<string, 'validated' | 'pending' | 'failed' | 'not_applicable'> }[]>([]);
+    const [sessionId, setSessionId] = useState<string | null>(null);
 
     // Phase 1 state: eventName -> { json, results }
     const [phase1Inputs, setPhase1Inputs] = useState<Record<string, string>>({});
@@ -804,6 +812,51 @@ export default function CleverTapTrackerPage() {
         const filename = `CleverTap_Phase1_${PLATFORMS.find(p => p.id === config?.platform)?.label || ''}_${format(new Date(), 'ddMMMyyy_HHmm')}`;
         downloadAsExcel(tabs, filename);
         toast({ title: '✅ Exported to Excel!', description: 'File downloaded successfully' });
+
+        // Persist session to Firestore in background
+        if (user) {
+            const platformLabel = PLATFORMS.find(p => p.id === config?.platform)?.label || config?.platform || 'Unknown';
+            const sessionEvents = PHASE1_EVENTS.map(ev => {
+                const results = phase1Results[ev.name];
+                const score = results ? calcScore(results) : 0;
+                return {
+                    eventName: ev.name,
+                    status: (results ? (score === 100 ? 'pass' : 'fail') : 'pending') as 'pass' | 'fail' | 'pending' | 'skipped',
+                    score,
+                    validatedAt: Date.now(),
+                };
+            });
+            const validated = sessionEvents.filter(e => e.status === 'pass').length;
+            fetch('/api/clevertap/sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ...(sessionId ? { id: sessionId } : {}),
+                    userId: user.uid,
+                    userName: user.displayName || user.email || 'Unknown',
+                    platform: platformLabel,
+                    appVersion: config?.appVersion || '',
+                    environment: config?.environment || 'Production',
+                    events: sessionEvents,
+                    coverageMatrix: PHASE1_EVENTS.map(ev => ({
+                        eventName: ev.name,
+                        platforms: { [platformLabel]: phase1Results[ev.name] ? (calcScore(phase1Results[ev.name]) >= 70 ? 'validated' : 'failed') : 'pending' },
+                    })),
+                    summary: {
+                        totalEvents: PHASE1_EVENTS.length,
+                        validated,
+                        passed: validated,
+                        failed: PHASE1_EVENTS.length - validated,
+                        pending: 0,
+                        overallScore: Math.round((validated / PHASE1_EVENTS.length) * 100),
+                    },
+                    status: 'in_progress',
+                }),
+            })
+                .then(r => r.json())
+                .then(data => { if (data.id && !sessionId) setSessionId(data.id); })
+                .catch(() => {});
+        }
     };
 
     // ── Export Phase 2 to Excel ──
@@ -1216,23 +1269,44 @@ export default function CleverTapTrackerPage() {
     const onStep1Submit = (data: ConfigForm) => { setConfig(data); setStep(2); };
     const onStep2Submit = () => setStep(3);
 
+    // ─── Mode: 'composer' = original HTML→Excel flow | 'validator' = In-House schema validation ───
+    const [mode, setMode] = useState<'composer' | 'validator'>('composer');
+
     return (
         <div className="space-y-6 animate-fade-in relative max-w-7xl mx-auto">
 
             {/* ── Header ── */}
             <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-orange-500/10 via-red-500/10 to-pink-500/10 border border-orange-500/20 p-8">
-                <div className="relative z-10 flex items-center gap-4">
+                <div className="relative z-10 flex items-center gap-4 flex-wrap">
                     <Link href="/apps">
                         <Button variant="ghost" size="icon" className="rounded-full"><ArrowLeft className="h-5 w-5" /></Button>
                     </Link>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20 text-xs font-medium mb-3">
                             <Database className="w-3 h-3" /> Telemetry Composer
                         </div>
                         <h1 className="text-4xl font-bold tracking-tight"><span className="text-gradient">CleverTap Tracker</span></h1>
                         <p className="text-muted-foreground text-lg mt-1">Capture • Validate • Export analytics events</p>
                     </div>
-                    <div className="hidden md:flex items-center gap-2">
+                    {/* ── Mode Switcher ── */}
+                    <div className="flex items-center gap-1 p-1 bg-black/20 rounded-xl backdrop-blur-sm border border-white/10">
+                        <button
+                            onClick={() => setMode('composer')}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${mode === 'composer' ? 'bg-orange-500 text-white shadow-lg' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                            <Wand2 className="w-4 h-4" /> Event Composer
+                        </button>
+                        <button
+                            onClick={() => setMode('validator')}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${mode === 'validator' ? 'bg-purple-600 text-white shadow-lg' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                            <Shield className="w-4 h-4" /> In-House Validator
+                        </button>
+                    </div>
+                </div>
+                {/* Validator step progress pills */}
+                {mode === 'validator' && (
+                    <div className="relative z-10 flex items-center gap-2 mt-4">
                         {([1, 2, 3] as Step[]).map(s => (
                             <div key={s} className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${step === s ? 'bg-orange-500 text-white' : step > s ? 'bg-emerald-500/20 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>
                                 {step > s ? <CheckCircle2 className="w-3 h-3" /> : <span>{s}</span>}
@@ -1240,10 +1314,21 @@ export default function CleverTapTrackerPage() {
                             </div>
                         ))}
                     </div>
-                </div>
+                )}
                 <div className="absolute top-0 right-0 w-64 h-64 bg-orange-500/20 rounded-full blur-3xl" />
             </div>
 
+            {/* ══════════════════════════════════════════════════════
+                EVENT COMPOSER MODE
+            ══════════════════════════════════════════════════════ */}
+            {mode === 'composer' && (
+                <EventComposer platforms={PLATFORMS} contentTypes={CONTENT_TYPES} />
+            )}
+
+            {/* ══════════════════════════════════════════════════════
+                IN-HOUSE VALIDATOR MODE
+            ══════════════════════════════════════════════════════ */}
+            {mode === 'validator' && (<>
             <AnimatePresence mode="wait">
                 {/* ── STEP 1 ── */}
                 {step === 1 && (
@@ -1409,8 +1494,9 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                     </motion.div>
                 )}
             </AnimatePresence>
+            </>) } {/* end mode === 'validator' */}
 
-            {/* ── HTML Modal ── */}
+            {/* ── HTML Modal — shared across modes ── */}
             {activeHtmlModal && (() => {
                 const ct = CONTENT_TYPES.find(c => c.id === activeHtmlModal)!;
                 const eventNames = ['Content Started', 'Content Played', ...(includeAds ? ['Ads Played'] : [])];
@@ -1457,6 +1543,7 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                             {inHousePhase === 'choose' && 'Select a validation phase to begin'}
                             {inHousePhase === 'phase1' && 'Phase 1 - Core Events: app_launch • content_click • content_attempted • content_played'}
                             {inHousePhase === 'phase2' && 'Phase 2 - Full Sheet Validation: select a sheet and paste your JSON'}
+                            {inHousePhase === 'coverage' && 'Event Coverage Matrix — track validation status across all platforms and events'}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -1506,6 +1593,61 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                                     <ChevronRight className="absolute top-6 right-6 w-5 h-5 text-muted-foreground group-hover:text-emerald-500 transition-colors" />
                                 </button>
                             </div>
+
+                            {/* Coverage Matrix card — spans full width */}
+                            <button
+                                onClick={() => {
+                                    // Build coverage entries from phase1 + phase2 results
+                                    const entries: { eventName: string; platforms: Record<string, 'validated' | 'pending' | 'failed' | 'not_applicable'> }[] = [];
+                                    const platformLabel = config ? (PLATFORMS.find(p => p.id === config.platform)?.label || config.platform) : 'Unknown';
+
+                                    // Phase 1 events
+                                    PHASE1_EVENTS.forEach(ev => {
+                                        const results = phase1Results[ev.name];
+                                        const score = results ? calcScore(results) : null;
+                                        entries.push({
+                                            eventName: ev.name,
+                                            platforms: {
+                                                [platformLabel]: score === null ? 'pending' : score === 100 ? 'validated' : score >= 70 ? 'validated' : 'failed',
+                                            },
+                                        });
+                                    });
+
+                                    // Phase 2 saved events
+                                    Object.entries(p2SavedEvents).forEach(([eventName, data]) => {
+                                        const status = data.score === 100 ? 'validated' : data.score >= 70 ? 'validated' : 'failed';
+                                        const existing = entries.find(e => e.eventName === eventName);
+                                        if (existing) {
+                                            existing.platforms[platformLabel] = status;
+                                        } else {
+                                            entries.push({ eventName, platforms: { [platformLabel]: status } });
+                                        }
+                                    });
+
+                                    setCoverageEvents(entries);
+                                    setInHousePhase('coverage');
+                                }}
+                                className="group relative w-full p-6 rounded-2xl border-2 border-border hover:border-pink-500 bg-card hover:bg-pink-500/5 transition-all text-left"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-3 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600">
+                                        <BarChart3 className="w-6 h-6 text-white" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-lg">Coverage Matrix</h3>
+                                        <p className="text-xs text-muted-foreground">Events × Platforms — validated / pending / failed</p>
+                                    </div>
+                                    <ChevronRight className="ml-auto w-5 h-5 text-muted-foreground group-hover:text-pink-500 transition-colors" />
+                                </div>
+                                <p className="text-sm text-muted-foreground mt-3">
+                                    Visual grid showing which events have been validated on which platforms. Built from your Phase 1 & Phase 2 results.
+                                </p>
+                                {(Object.keys(phase1Results).length + Object.keys(p2SavedEvents).length) > 0 && (
+                                    <p className="text-xs text-pink-600 font-medium mt-2">
+                                        {Object.keys(phase1Results).length + Object.keys(p2SavedEvents).length} events with results available
+                                    </p>
+                                )}
+                            </button>
                         </div>
                     )}
 
@@ -1830,6 +1972,82 @@ ld">Scope Configuration</h2><p className="text-sm text-muted-foreground">Select 
                         </div>
                     )}
                     <input ref={importInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportExcel} />
+
+                    {/* ── Coverage Matrix Phase ── */}
+                    {inHousePhase === 'coverage' && (
+                        <div className="space-y-4 py-2">
+                            <div className="flex items-center justify-between">
+                                <Button variant="ghost" size="sm" onClick={() => setInHousePhase('choose')} className="gap-1">
+                                    <ChevronLeft className="w-4 h-4" /> Back
+                                </Button>
+                                {user && coverageEvents.length > 0 && (
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={async () => {
+                                            const platformLabel = config ? (PLATFORMS.find(p => p.id === config.platform)?.label || config.platform) : 'Unknown';
+                                            const validated = coverageEvents.filter(e => Object.values(e.platforms).some(s => s === 'validated')).length;
+                                            const failed = coverageEvents.filter(e => Object.values(e.platforms).some(s => s === 'failed')).length;
+                                            const payload = {
+                                                userId: user.uid,
+                                                userName: user.displayName || user.email || 'Unknown',
+                                                platform: platformLabel,
+                                                appVersion: config?.appVersion || '',
+                                                environment: config?.environment || 'Production',
+                                                events: coverageEvents.map(e => ({
+                                                    eventName: e.eventName,
+                                                    status: (Object.values(e.platforms)[0] || 'pending') as 'pass' | 'fail' | 'pending' | 'skipped',
+                                                    score: Object.values(e.platforms)[0] === 'validated' ? 100 : Object.values(e.platforms)[0] === 'failed' ? 0 : 50,
+                                                })),
+                                                coverageMatrix: coverageEvents,
+                                                summary: {
+                                                    totalEvents: coverageEvents.length,
+                                                    validated,
+                                                    passed: validated,
+                                                    failed,
+                                                    pending: coverageEvents.length - validated - failed,
+                                                    overallScore: coverageEvents.length > 0 ? Math.round((validated / coverageEvents.length) * 100) : 0,
+                                                },
+                                                status: 'in_progress' as const,
+                                                ...(sessionId ? { id: sessionId } : {}),
+                                            };
+                                            try {
+                                                const res = await fetch('/api/clevertap/sessions', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify(payload),
+                                                });
+                                                const data = await res.json();
+                                                if (data.id) setSessionId(data.id);
+                                                toast({ title: '✅ Session saved', description: `${coverageEvents.length} events persisted to Firestore` });
+                                            } catch {
+                                                toast({ title: 'Save failed', description: 'Could not persist session', variant: 'destructive' });
+                                            }
+                                        }}
+                                        className="gap-1.5"
+                                    >
+                                        <Database className="w-3.5 h-3.5" />
+                                        Save Session
+                                    </Button>
+                                )}
+                            </div>
+
+                            {coverageEvents.length > 0 ? (
+                                <EventCoverageMatrix
+                                    events={coverageEvents}
+                                    onCellClick={(eventName, platform) => {
+                                        toast({ title: `${eventName} · ${platform}`, description: 'Click Phase 1 or Phase 2 to validate this event' });
+                                    }}
+                                />
+                            ) : (
+                                <div className="rounded-xl border border-dashed border-border p-12 text-center space-y-3">
+                                    <BarChart3 className="w-10 h-10 text-muted-foreground/30 mx-auto" />
+                                    <p className="text-sm text-muted-foreground">No validation results yet.</p>
+                                    <p className="text-xs text-muted-foreground">Complete Phase 1 or Phase 2 validation first, then return here to see coverage.</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </DialogContent>
             </Dialog>
 

@@ -40,6 +40,16 @@ export const groqProvider: AIProvider = {
 
     const data = await response.json();
     const answer = data.choices?.[0]?.message?.content ?? "Sorry, I couldn't generate an answer.";
-    return { answer };
+
+    // Extract token usage from Groq response (OpenAI-compatible format)
+    const usage = data.usage
+      ? {
+          promptTokens: data.usage.prompt_tokens ?? 0,
+          completionTokens: data.usage.completion_tokens ?? 0,
+          totalTokens: data.usage.total_tokens ?? 0,
+        }
+      : undefined;
+
+    return { answer, usage };
   },
 };

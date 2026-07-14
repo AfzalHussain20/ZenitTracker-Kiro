@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { useJiraKPI, type PersonKPI, type JiraIssueRaw } from '@/hooks/useJiraKPI';
 import { useExport } from '@/hooks/useExport';
 import { TeamCard } from '@/components/dashboard/TeamCard';
+import JiraInsightsChat from '@/components/JiraInsightsChat';
 
 // --- Status sets --------------------------------------------------------------
 const CLOSED_SET = new Set([
@@ -2925,6 +2926,7 @@ export default function KPIDashboard() {
                 </TabsContent>
             </Tabs>
             </div>
+            <JiraInsightsChat />
         </div>
     );
 }

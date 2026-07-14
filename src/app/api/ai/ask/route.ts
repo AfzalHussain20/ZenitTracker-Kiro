@@ -5,6 +5,8 @@ import {
   getCacheKey, getCachedResponse, setCachedResponse,
   getCachedPageContent, setCachedPageContent,
 } from '@/lib/ai/cache';
+import { withTokenTracking } from '@/lib/ai/token-tracker';
+import { isAIEnabled } from '@/lib/ai/feature-flags';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +38,11 @@ export async function POST(req: NextRequest) {
         { error: 'pageId and question are required' },
         { status: 400 }
       );
+    }
+
+    // ─── Feature flag check ───────────────────────────────────────────────
+    if (!await isAIEnabled('ask-prd')) {
+      return NextResponse.json({ answer: 'PRD Chat AI is currently disabled. Enable it in AI Settings to use this feature.' });
     }
 
     // ─── Get PRD content (cached or fresh) ────────────────────────────────
@@ -96,11 +103,13 @@ export async function POST(req: NextRequest) {
     const provider = getAIProvider();
     let result;
     try {
-      result = await provider.askAI({
-        systemPrompt: fullSystemPrompt,
-        history,
-        question,
-      });
+      result = await withTokenTracking(
+        'ask-prd',
+        provider.name,
+        'gemini-2.0-flash-lite',
+        () => provider.askAI({ systemPrompt: fullSystemPrompt, history, question }),
+        { pageId, question }
+      );
     } catch (providerErr: any) {
       const msg = providerErr?.message || '';
       console.error(`${provider.name} provider error:`, msg);
@@ -125,6 +134,7 @@ export async function POST(req: NextRequest) {
       answer: result.answer,
       citedSection,
       provider: provider.name,
+      usage: result.usage,
     });
   } catch (err: any) {
     console.error('Error in /api/ai/ask:', err.message);

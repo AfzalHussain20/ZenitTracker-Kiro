@@ -10,6 +10,8 @@ import type {
   TestCaseSummary,
   GenerationConfig,
   GenerationPass,
+  AnalyticsTestCase,
+  AnalyticsPlatform,
 } from '@/types/test-cases';
 
 // ─── Default Generation Configuration ────────────────────────────────────────
@@ -308,6 +310,40 @@ Rules:
 - Priority: P0=critical, P1=major, P2=minor
 - Test steps: 3-5 clear actions
 - Think creatively about unusual scenarios${existingSummary}`;
+
+    case 'analytics':
+      return `You are a senior QA engineer specializing in analytics event validation. Extract ALL analytics/tracking events from this PRD and generate validation test cases.
+
+Your job is to identify every analytics event mentioned or implied in the PRD, including:
+- Explicit event names (fire_event, track_action, logEvent, trackEvent, sendEvent patterns)
+- Screen view events (page_view, screen_view)
+- User action events (button clicks, form submissions, navigation)
+- Conversion/funnel events (sign_up, purchase, subscription)
+- Error/state events (error_shown, timeout, retry)
+
+For EACH event, generate a test case with:
+- eventName: The exact event name as it should fire (snake_case format)
+- platform: Which platform this applies to (Android, iOS, Web, Android TV, Fire TV, Apple TV, Samsung TV, LG TV, Roku, or All)
+- triggerAction: Step-by-step how to trigger this event (user actions)
+- fields: Array of required fields with name, expectedValue, and required (boolean)
+- openSearchQuery: A ready-to-use OpenSearch/DQL query to validate this event fired
+- priority: P0 (critical conversion/revenue events), P1 (core user flow events), P2 (nice-to-have tracking)
+- module: The PRD section this event belongs to
+
+OpenSearch query format example:
+event_name: "event_name_here" AND platform: "android" AND timestamp > now-1h
+
+Return ONLY a valid JSON array (NO markdown, NO code fences, NO explanation):
+[{"eventName": "...", "platform": "...", "triggerAction": "...", "fields": [{"name": "...", "expectedValue": "...", "required": true}], "openSearchQuery": "...", "priority": "P0|P1|P2", "module": "...", "notes": "..."}]
+
+RULES:
+- Extract EVERY event from the PRD — don't miss any
+- If the PRD mentions a flow (e.g., "user subscribes"), infer the analytics events that SHOULD exist
+- Include platform-specific events (e.g., deep_link_opened on mobile, page_view on web)
+- For each event, include at minimum: event_name, user_id, platform, timestamp as required fields
+- Add flow-specific fields (e.g., plan_name for subscription events, content_id for playback events)
+- Generate 15-40 event test cases depending on PRD complexity
+- Group by module/feature area${existingSummary}`;
 
     default:
       return `You are a senior QA engineer. Generate test cases from this PRD.
@@ -661,4 +697,165 @@ export async function generateTestCasesForPass(
   const casesWithIds = assignTestCaseIds(casesToUse, pass, startCounters);
 
   return casesWithIds;
+}
+
+// ─── Analytics Events Generation ─────────────────────────────────────────────
+
+const VALID_ANALYTICS_PLATFORMS: Set<string> = new Set([
+  'Android', 'iOS', 'Web', 'Android TV', 'Fire TV',
+  'Apple TV', 'Samsung TV', 'LG TV', 'Roku', 'All',
+]);
+
+/**
+ * Parses AI response for analytics event test cases.
+ * Validates each entry against the AnalyticsTestCase schema.
+ */
+export function parseAnalyticsResponse(raw: string): AnalyticsTestCase[] {
+  if (!raw || typeof raw !== 'string') return [];
+
+  // Strip markdown code fences if present
+  let cleaned = raw.trim();
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+  }
+  cleaned = cleaned.trim();
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    // Try to extract individual JSON objects
+    const objects: unknown[] = [];
+    const objRegex = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*(?:\[[^\[\]]*(?:\{[^{}]*\}[^\[\]]*)*\][^{}]*)*\}/g;
+    const matches = cleaned.matchAll(objRegex);
+    for (const m of matches) {
+      try {
+        objects.push(JSON.parse(m[0]));
+      } catch {
+        // Try a more lenient extraction — find objects with eventName field
+        try {
+          const fixed = m[0].replace(/,\s*$/, '');
+          objects.push(JSON.parse(fixed));
+        } catch { /* skip */ }
+      }
+    }
+    if (objects.length > 0) {
+      parsed = objects;
+    } else {
+      // Try wrapping/fixing truncated array
+      try {
+        const fixedJson = cleaned.endsWith(']') ? cleaned : cleaned.replace(/,?\s*$/, '') + ']';
+        const reParsed = fixedJson.startsWith('[') ? fixedJson : '[' + fixedJson;
+        parsed = JSON.parse(reParsed);
+      } catch {
+        console.error('[parseAnalyticsResponse] All parse attempts failed');
+        return [];
+      }
+    }
+  }
+
+  if (!Array.isArray(parsed)) {
+    if (parsed && typeof parsed === 'object') {
+      const obj = parsed as Record<string, unknown>;
+      const arrKey = Object.keys(obj).find((k) => Array.isArray(obj[k]));
+      if (arrKey) parsed = obj[arrKey];
+      else return [];
+    } else {
+      return [];
+    }
+  }
+
+  const validCases: AnalyticsTestCase[] = [];
+  let counter = 0;
+
+  for (const entry of parsed as unknown[]) {
+    if (!entry || typeof entry !== 'object') continue;
+    const obj = entry as Record<string, unknown>;
+
+    // Validate required fields
+    if (typeof obj.eventName !== 'string' || obj.eventName.trim() === '') continue;
+    if (typeof obj.triggerAction !== 'string' || obj.triggerAction.trim() === '') continue;
+    if (typeof obj.priority !== 'string' || !VALID_PRIORITIES.has(obj.priority)) continue;
+
+    // Normalize platform
+    let platform: AnalyticsPlatform = 'All';
+    if (typeof obj.platform === 'string') {
+      const platLower = obj.platform.trim().toLowerCase();
+      if (platLower.includes('android tv')) platform = 'Android TV';
+      else if (platLower.includes('fire tv')) platform = 'Fire TV';
+      else if (platLower.includes('apple tv')) platform = 'Apple TV';
+      else if (platLower.includes('samsung')) platform = 'Samsung TV';
+      else if (platLower.includes('lg')) platform = 'LG TV';
+      else if (platLower.includes('roku')) platform = 'Roku';
+      else if (platLower.includes('android')) platform = 'Android';
+      else if (platLower.includes('ios') || platLower.includes('iphone') || platLower.includes('ipad')) platform = 'iOS';
+      else if (platLower.includes('web') || platLower.includes('browser')) platform = 'Web';
+      else if (VALID_ANALYTICS_PLATFORMS.has(obj.platform.trim())) platform = obj.platform.trim() as AnalyticsPlatform;
+    }
+
+    // Parse fields array
+    let fields: AnalyticsTestCase['fields'] = [];
+    if (Array.isArray(obj.fields)) {
+      fields = (obj.fields as unknown[])
+        .filter((f): f is Record<string, unknown> => f !== null && typeof f === 'object')
+        .map((f) => ({
+          name: typeof f.name === 'string' ? f.name.trim() : 'unknown',
+          expectedValue: typeof f.expectedValue === 'string' ? f.expectedValue.trim() : '',
+          required: f.required === true || f.required === 'true',
+        }))
+        .filter((f) => f.name !== 'unknown');
+    }
+
+    // Generate OpenSearch query if not provided
+    let openSearchQuery = '';
+    if (typeof obj.openSearchQuery === 'string' && obj.openSearchQuery.trim()) {
+      openSearchQuery = obj.openSearchQuery.trim();
+    } else {
+      openSearchQuery = `event_name: "${obj.eventName.trim()}" AND platform: "${platform.toLowerCase()}" AND timestamp > now-1h`;
+    }
+
+    counter++;
+    validCases.push({
+      id: `AE_${String(counter).padStart(3, '0')}`,
+      eventName: obj.eventName.trim(),
+      platform,
+      triggerAction: obj.triggerAction.trim(),
+      fields,
+      openSearchQuery,
+      priority: obj.priority as AnalyticsTestCase['priority'],
+      module: typeof obj.module === 'string' ? obj.module.trim() : 'General',
+      notes: typeof obj.notes === 'string' ? obj.notes.trim() : undefined,
+    });
+  }
+
+  return validCases;
+}
+
+/**
+ * Generates analytics event test cases from a PRD.
+ * Uses the 'analytics' pass prompt to extract all trackable events.
+ */
+export async function generateAnalyticsTestCases(
+  prdText: string,
+  prdHeadings: string[],
+  config: GenerationConfig = DEFAULT_GENERATION_CONFIG,
+  provider?: AIProvider,
+): Promise<AnalyticsTestCase[]> {
+  if (!prdText || prdText.trim() === '') {
+    throw new Error('No extractable content from PRD');
+  }
+
+  const aiProvider = provider || getAIProvider();
+  const truncatedText = truncateForContext(prdText, config.contextTokenBudget);
+  const systemPrompt = buildSystemPrompt('analytics', prdHeadings, []);
+  const question = `Here is the PRD document to extract analytics events from:\n\n${truncatedText}`;
+
+  const result = await retryWithBackoff(
+    () => aiProvider.askAI({ systemPrompt, history: [], question }),
+    config.maxRetries,
+    1000
+  );
+
+  return parseAnalyticsResponse(result.answer);
 }

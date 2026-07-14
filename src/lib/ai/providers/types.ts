@@ -9,8 +9,15 @@ export interface AskAIParams {
   question: string;
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 export interface AskAIResult {
   answer: string;
+  usage?: TokenUsage;
 }
 
 export interface AIProvider {

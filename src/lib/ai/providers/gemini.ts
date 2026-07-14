@@ -116,6 +116,16 @@ export const geminiProvider: AIProvider = {
     }
 
     const answer = candidate.content?.parts?.map((p: any) => p.text).join('') ?? "Sorry, I couldn't generate an answer.";
-    return { answer };
+
+    // Extract token usage from Gemini response
+    const usage = data.usageMetadata
+      ? {
+          promptTokens: data.usageMetadata.promptTokenCount ?? 0,
+          completionTokens: data.usageMetadata.candidatesTokenCount ?? 0,
+          totalTokens: data.usageMetadata.totalTokenCount ?? 0,
+        }
+      : undefined;
+
+    return { answer, usage };
   },
 };

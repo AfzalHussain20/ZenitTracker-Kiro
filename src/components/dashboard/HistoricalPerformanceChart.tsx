@@ -56,10 +56,25 @@ export default function HistoricalPerformanceChart({ sessions }: HistoricalPerfo
                     <CardDescription>30-day trailing performance analysis.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <div className="h-[250px]">
+                    {/* Legend — positioned above chart, separated cleanly */}
+                    <div className="flex items-center gap-4 mb-3">
+                        <div className="flex items-center gap-1.5">
+                            <span className="inline-block w-3 h-3 rounded-full bg-[hsl(var(--chart-2))]" />
+                            <span className="text-xs font-semibold text-muted-foreground">Passed</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <span className="inline-block w-3 h-3 rounded-full bg-destructive" />
+                            <span className="text-xs font-semibold text-muted-foreground">Failed</span>
+                        </div>
+                    </div>
+                    <div className="h-[220px]">
                         {hasData ? (
                             <ChartContainer config={chartConfig} className="w-full h-full">
-                                <AreaChart accessibilityLayer data={historicalData} margin={{ top: 5, right: 20, left: -20, bottom: 0 }}>
+                                <AreaChart
+                                    accessibilityLayer
+                                    data={historicalData}
+                                    margin={{ top: 5, right: 20, left: -20, bottom: 10 }}
+                                >
                                     <defs>
                                         <linearGradient id="colorPass" x1="0" y1="0" x2="0" y2="1">
                                             <stop offset="5%" stopColor="hsl(var(--chart-2))" stopOpacity={0.8} />
@@ -83,8 +98,8 @@ export default function HistoricalPerformanceChart({ sessions }: HistoricalPerfo
                                         cursor={{ stroke: 'hsl(var(--border))', strokeWidth: 1, strokeDasharray: '3 3' }}
                                         content={<ChartTooltipContent indicator="dot" />}
                                     />
-                                    <Area type="monotone" dataKey="pass" stroke="hsl(var(--chart-2))" strokeWidth={2} fill="url(#colorPass)" isAnimationActive={true} animationDuration={1000} />
-                                    <Area type="monotone" dataKey="fail" stroke="hsl(var(--destructive))" strokeWidth={2} fill="url(#colorFail)" isAnimationActive={true} animationDuration={1000} />
+                                    <Area type="monotone" dataKey="pass" name="Passed" stroke="hsl(var(--chart-2))" strokeWidth={2} fill="url(#colorPass)" isAnimationActive={true} animationDuration={1000} dot={false} />
+                                    <Area type="monotone" dataKey="fail" name="Failed" stroke="hsl(var(--destructive))" strokeWidth={2} fill="url(#colorFail)" isAnimationActive={true} animationDuration={1000} dot={false} />
                                 </AreaChart>
                             </ChartContainer>
                         ) : (
