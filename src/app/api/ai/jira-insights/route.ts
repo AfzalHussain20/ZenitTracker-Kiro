@@ -9,7 +9,7 @@ export const maxDuration = 60;
 const JIRA_BASE = process.env.JIRA_BASE_URL!;
 const JIRA_AUTH = () => Buffer.from(`${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64');
 const PROJECT_KEY = process.env.JIRA_PROJECT_KEY || 'SUN';
-const FIELDS = ['summary', 'status', 'priority', 'assignee', 'reporter', 'created', 'updated', 'resolutiondate', 'issuetype', 'labels', 'customfield_10103', 'customfield_10201'];
+const FIELDS = ['summary', 'status', 'priority', 'assignee', 'reporter', 'created', 'updated', 'resolutiondate', 'issuetype', 'labels', 'customfield_10103', 'customfield_10201', 'customfield_10237'];
 
 interface JiraInsightsRequest {
   question: string;
@@ -26,14 +26,21 @@ Your capabilities:
 - Provide detailed breakdowns by person, platform, priority, status
 - Flag specific ticket IDs when relevant
 
+For POSTMORTEM / deep investigation queries, your job is to:
+1. Summarize all key findings from the structured data provided
+2. Call out the SAME-DAY MULTI-PLATFORM section — explain what it means (filing the same bug title across platforms on the same day to inflate counts)
+3. Call out SAME-TITLE REPEAT FILINGS — these are potential duplicate bugs
+4. Explain the VELOCITY SPIKES — what triggered them and what it means
+5. Give a VERDICT with risk level: Low / Medium / High / Critical
+6. Give concrete NEXT STEPS for a QA lead to investigate or escalate
+
 Response rules:
-- Lead with the key finding in one sentence, then the data
-- Use tables (plain text) for comparisons: pad with spaces for alignment
-- Show exact numbers — not "several" or "many"
-- Include ticket IDs when citing specific examples
-- End investigation answers with "Verdict:" summarizing the risk level (Low/Medium/High/Critical)
-- For alias analysis, include: total bugs, avg per day, platform spread, status spread, resolution rate, comparison to team average
+- Lead with the key finding in one sentence
+- Use the structured data as-is — do not make up numbers
+- Show exact bug counts and ticket IDs from the data
 - Plain text only — no markdown headers, no code blocks
+- End with "Verdict: [Low/Medium/High/Critical] — [one line reason]"
+- Then "Next Steps: [3 bullet points for QA lead]"
 
 You have access to the following raw Jira data for this query:`;
 
@@ -196,8 +203,8 @@ function buildDeepAnalysis(issues: any[], question: string): string {
   const sortedAssignees = Object.entries(assigneeStats).sort((a, b) => b[1].assigned - a[1].assigned);
 
   // Detect alias-specific investigation — handle both quoted and unquoted names
-  const quotedAlias = question.match(/(?:alias|investigate|about|analyze|who is|what about|fishy|suspicious)\s+"([^"]+)"/i);
-  const unquotedAlias = !quotedAlias && question.match(/(?:alias|about|from|investigate|analyze|who is|what about|fishy|suspicious)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,3})/i);
+  const quotedAlias = question.match(/(?:alias|investigate|about|analyze|who is|what about|fishy|suspicious|postmortem|scam|pattern)\s+"([^"]+)"/i);
+  const unquotedAlias = !quotedAlias && question.match(/(?:alias|about|from|investigate|analyze|who is|what about|fishy|suspicious|postmortem|scam|pattern)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,3})/i);
   const targetAlias = (quotedAlias?.[1] || unquotedAlias?.[1] || '').toLowerCase().trim();
 
   let aliasDetail = '';
@@ -205,39 +212,164 @@ function buildDeepAnalysis(issues: any[], question: string): string {
     const matched = Object.entries(reporterStats).find(([name]) => name.toLowerCase().includes(targetAlias));
     if (matched) {
       const [name, stats] = matched;
+
+      // Get all issues filed by this person for deep analysis
+      const personIssues = issues.filter(i =>
+        (i.fields.reporter?.displayName || '').toLowerCase().includes(targetAlias)
+      );
+
       const resRate = stats.filed > 0 ? Math.round((stats.resolved / stats.filed) * 100) : 0;
       const teamAvgNum = parseFloat(avgPerReporter);
       const filedVsAvg = stats.filed > teamAvgNum * 2 ? '⚠ ABOVE AVERAGE (2x+)' : stats.filed > teamAvgNum ? 'Above average' : 'Below average';
       const recentTotal = Object.values(stats.recentDays).reduce((a, b) => a + b, 0);
-      const recentDays = Object.keys(stats.recentDays).length;
-      const avgPerDay = recentDays > 0 ? (recentTotal / recentDays).toFixed(1) : '0';
-      const platformList = [...stats.platforms].filter(p => p !== 'Unknown').join(', ') || 'Not specified';
-      const topPriority = top(stats.priorities, 3).map(([k, v]) => `${k}: ${v}`).join(', ');
-      const topType = top(stats.types, 3).map(([k, v]) => `${k}: ${v}`).join(', ');
+      const recentDayCount = Object.keys(stats.recentDays).length;
+      const avgPerDay = recentDayCount > 0 ? (recentTotal / recentDayCount).toFixed(1) : '0';
 
-      // Detect spikes
-      const spikeDay = Object.entries(stats.recentDays).sort((a, b) => b[1] - a[1])[0];
-      const spikeWarning = spikeDay && spikeDay[1] >= 5 ? `\n⚠ Spike detected: ${spikeDay[1]} bugs on ${spikeDay[0]}` : '';
+      // ── All-time daily rate ────────────────────────────────────────────────
+      const allTimeDays: Record<string, number> = {};
+      personIssues.forEach(i => {
+        const d = i.fields.created?.substring(0, 10) || '';
+        if (d) allTimeDays[d] = (allTimeDays[d] || 0) + 1;
+      });
+      const totalActiveDays = Object.keys(allTimeDays).length;
+      const allTimeAvgPerDay = totalActiveDays > 0 ? (personIssues.length / totalActiveDays).toFixed(1) : '0';
+
+      // ── Spike detection — top 10 highest days ─────────────────────────────
+      const topSpikeDays = Object.entries(allTimeDays)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+
+      // ── Same-day multi-platform detection ─────────────────────────────────
+      // Group by date, then check if same/similar titles appear across platforms
+      type DayEntry = { summary: string; platform: string; key: string };
+      const issuesByDay: Record<string, DayEntry[]> = {};
+      personIssues.forEach(i => {
+        const d = i.fields.created?.substring(0, 10) || '';
+        const summary = (i.fields.summary || '').trim();
+        const platform = i.fields.customfield_10103?.[0]?.value || 'Unknown';
+        if (!issuesByDay[d]) issuesByDay[d] = [];
+        issuesByDay[d].push({ summary, platform, key: i.key });
+      });
+
+      // Find days where multiple bugs have very similar titles (first 40 chars match)
+      const suspiciousDays: string[] = [];
+      const sameDayMultiPlatform: string[] = [];
+
+      Object.entries(issuesByDay).forEach(([day, dayIssues]) => {
+        if (dayIssues.length < 3) return;
+
+        // Check for similar titles (strip platform/version info, compare base text)
+        const normalise = (s: string) => s.toLowerCase()
+          .replace(/\b(v\d+[\.\d]*|version\s*\d+|720p|1080p|preprod|prod|production|pre-production)\b/gi, '')
+          .replace(/\|\s*/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .substring(0, 50);
+
+        const normTitles = dayIssues.map(i => ({ norm: normalise(i.summary), ...i }));
+
+        // Group by normalised prefix
+        const titleGroups: Record<string, typeof normTitles> = {};
+        normTitles.forEach(item => {
+          const prefix = item.norm.substring(0, 35);
+          (titleGroups[prefix] = titleGroups[prefix] || []).push(item);
+        });
+
+        const duplicateGroups = Object.values(titleGroups).filter(g => g.length >= 2);
+        if (duplicateGroups.length > 0) {
+          duplicateGroups.forEach(group => {
+            const platforms = [...new Set(group.map(g => g.platform))];
+            if (platforms.length >= 2) {
+              sameDayMultiPlatform.push(
+                `  ${day} — "${group[0].summary.substring(0, 60)}" filed across: ${platforms.join(', ')} (${group.length} bugs)`
+              );
+            } else {
+              suspiciousDays.push(
+                `  ${day} — Similar title filed ${group.length}x: "${group[0].summary.substring(0, 55)}..."`
+              );
+            }
+          });
+        }
+      });
+
+      // ── Duplicate title detection across all time ──────────────────────────
+      const titleMap: Record<string, string[]> = {};
+      personIssues.forEach(i => {
+        const norm = (i.fields.summary || '')
+          .toLowerCase()
+          .replace(/\b(v\d+[\.\d]*|version\s*\d+|720p|1080p|preprod|prod)\b/gi, '')
+          .replace(/\|\s*/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .substring(0, 50);
+        (titleMap[norm] = titleMap[norm] || []).push(i.key);
+      });
+      const duplicateTitles = Object.entries(titleMap)
+        .filter(([, keys]) => keys.length >= 2)
+        .sort((a, b) => b[1].length - a[1].length)
+        .slice(0, 10);
+
+      // ── Platform abuse detection ───────────────────────────────────────────
+      const platformByDay: Record<string, Set<string>> = {};
+      personIssues.forEach(i => {
+        const d = i.fields.created?.substring(0, 10) || '';
+        const pl = i.fields.customfield_10103?.[0]?.value || 'Unknown';
+        if (!platformByDay[d]) platformByDay[d] = new Set();
+        platformByDay[d].add(pl);
+      });
+      const multiPlatformDays = Object.entries(platformByDay)
+        .filter(([, platforms]) => platforms.size >= 4)
+        .sort((a, b) => (issuesByDay[b[0]]?.length || 0) - (issuesByDay[a[0]]?.length || 0))
+        .slice(0, 5);
+
+      // ── Platform distribution ──────────────────────────────────────────────
+      const platformDist: Record<string, number> = {};
+      personIssues.forEach(i => {
+        const pl = i.fields.customfield_10103?.[0]?.value || 'Unknown';
+        platformDist[pl] = (platformDist[pl] || 0) + 1;
+      });
+
+      // ── Velocity spike scoring ─────────────────────────────────────────────
+      const bugsPerDayValues = Object.values(allTimeDays);
+      const medianDay = bugsPerDayValues.sort((a, b) => a - b)[Math.floor(bugsPerDayValues.length / 2)] || 1;
+      const maxDay = Math.max(...bugsPerDayValues);
+
+      const spikeWarning = maxDay >= 10 ? `⚠ CRITICAL SPIKE: ${maxDay} bugs in single day (${maxDay / medianDay}x normal)` :
+        maxDay >= 5 ? `⚠ NOTABLE SPIKE: ${maxDay} bugs in single day` : '';
 
       aliasDetail = `
-ALIAS INVESTIGATION: ${name}
-${'─'.repeat(50)}
-Total bugs filed:  ${stats.filed} (${filedVsAvg})
-Team average:      ${avgPerReporter} bugs/person
-Open bugs:         ${stats.open} (${stats.filed > 0 ? Math.round((stats.open / stats.filed) * 100) : 0}% unresolved)
-Resolved:          ${stats.resolved} (${resRate}% resolution rate)
-Last 7 days:       ${recentTotal} bugs (${avgPerDay}/day avg)${spikeWarning}
-Platforms:         ${platformList}
-Platform spread:   ${stats.platforms.size} platform(s)
-Priorities:        ${topPriority}
-Issue types:       ${topType}
+${'═'.repeat(60)}
+FORENSIC POSTMORTEM: ${name}
+${'═'.repeat(60)}
 
-${stats.platforms.size === 1 && stats.filed > 5 ? '⚠ SINGLE-PLATFORM FOCUS: All bugs on one platform. Check if this is legitimate or cherry-picked testing.' : ''}
-${resRate < 20 && stats.filed > 5 ? '⚠ LOW RESOLUTION RATE: Less than 20% of filed bugs are resolved. Could indicate quality issues.' : ''}
-${parseFloat(avgPerDay) > 3 ? '⚠ HIGH DAILY RATE: Filing more than 3 bugs/day on average. Review for duplicate/trivial bugs.' : ''}
+CORE METRICS
+  Total bugs filed:    ${stats.filed} (${filedVsAvg}, team avg: ${avgPerReporter})
+  Open / Resolved:     ${stats.open} open | ${stats.resolved} resolved | ${resRate}% resolution rate
+  Active days:         ${totalActiveDays} days with at least 1 bug filed
+  All-time avg/day:    ${allTimeAvgPerDay} bugs/day (across active days only)
+  Last 7-day avg:      ${avgPerDay} bugs/day
+  ${spikeWarning}
 
-Recent daily breakdown (last 7 days):
-${Object.entries(stats.recentDays).sort((a, b) => a[0].localeCompare(b[0])).map(([d, c]) => `  ${d}: ${c} bug${c !== 1 ? 's' : ''}`).join('\n') || '  No recent activity'}`;
+PLATFORM DISTRIBUTION
+${Object.entries(platformDist).sort((a, b) => b[1] - a[1]).map(([p, c]) => `  ${p.padEnd(18)} ${c}`).join('\n')}
+
+TOP 10 FILING SPIKES (highest single-day counts)
+${topSpikeDays.map(([d, c]) => `  ${d}: ${c} bugs  ${'█'.repeat(Math.min(c, 30))} ${c >= 8 ? '⚠' : ''}`).join('\n') || '  No spikes detected'}
+
+SAME-DAY MULTI-PLATFORM DUPLICATES${sameDayMultiPlatform.length === 0 ? '\n  None detected' : '\n' + sameDayMultiPlatform.join('\n')}
+  ↑ These are the same bug title filed across multiple platforms on the same day.
+
+SAME-TITLE REPEAT FILINGS (possible duplicate bugs)
+${duplicateTitles.length === 0 ? '  None detected' : duplicateTitles.map(([title, keys]) => `  [${keys.length}x] "${title.substring(0, 55)}"\n       Keys: ${keys.slice(0, 5).join(', ')}${keys.length > 5 ? ' ...' : ''}`).join('\n')}
+
+DAYS WITH 4+ PLATFORMS TESTED (unusual breadth)
+${multiPlatformDays.length === 0 ? '  None' : multiPlatformDays.map(([d, platforms]) => `  ${d}: ${platforms.size} platforms | ${issuesByDay[d]?.length || 0} bugs filed that day`).join('\n')}
+
+SUSPICIOUS SAME-DAY TITLE CLUSTERS (same day, same title, same platform)
+${suspiciousDays.length === 0 ? '  None detected' : suspiciousDays.slice(0, 5).join('\n')}
+
+RECENT DAILY BREAKDOWN (last 7 days)
+${Object.entries(stats.recentDays).sort((a, b) => a[0].localeCompare(b[0])).map(([d, c]) => `  ${d}: ${c} bug${c !== 1 ? 's' : ''}  ${'■'.repeat(Math.min(c, 20))}`).join('\n') || '  No recent activity'}`;
     }
   }
 
@@ -299,9 +431,9 @@ export async function POST(req: NextRequest) {
 
     const jql = buildJQL(question);
 
-    // Fetch more data for investigative queries
-    const isInvestigation = /alias|fishy|suspicious|gaming|cheat|trick|manipulate|inflate|analyze|investigate|who is|what about/i.test(question);
-    const issues = await fetchAll(jql, isInvestigation ? 10 : 5);
+    // Fetch more data for investigative queries — need all bugs to detect duplicates
+    const isInvestigation = /alias|fishy|suspicious|gaming|cheat|trick|manipulate|inflate|analyze|investigate|who is|what about|postmortem|scam|pattern|duplicate/i.test(question);
+    const issues = await fetchAll(jql, isInvestigation ? 20 : 5); // 20 pages = up to 2000 issues
 
     if (issues.length === 0) {
       return NextResponse.json({ answer: "No Jira issues found for this query. Try broadening the search — e.g., remove time/status filters.", issueCount: 0 });
