@@ -15,6 +15,7 @@ import { getAIProvider } from '@/lib/ai/providers';
 import { withTokenTracking } from '@/lib/ai/token-tracker';
 import { isAIEnabled } from '@/lib/ai/feature-flags';
 import { buildInvestigationReport } from '@/lib/jira/investigation-builder';
+import { buildInvestigationReportV2, type InvestigationType } from '@/lib/jira/investigation-engine-v2';
 import type { AIFindings, RiskLevel } from '@/types/investigation';
 
 export const dynamic = 'force-dynamic';
@@ -23,8 +24,18 @@ export const maxDuration = 60;
 const JIRA_BASE = process.env.JIRA_BASE_URL!;
 const JIRA_AUTH = () => Buffer.from(`${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64');
 const PROJECT_KEY = process.env.JIRA_PROJECT_KEY || 'SUN';
-const FIELDS = ['summary', 'status', 'priority', 'assignee', 'reporter', 'created', 'updated',
-  'resolutiondate', 'issuetype', 'labels', 'customfield_10103', 'customfield_10201', 'customfield_10237'];
+const FIELDS = [
+  // Core fields (existing)
+  'summary', 'status', 'priority', 'assignee', 'reporter', 'created', 'updated',
+  'resolutiondate', 'issuetype', 'labels', 'customfield_10103', 'customfield_10201', 'customfield_10237',
+  // v2 additions (Phase 1 Step 1)
+  'resolution',       // Confirmed duplicate detection — CRITICAL
+  'issuelinks',       // Linked-as-duplicate signal — CRITICAL
+  'components',       // Component-based clustering — HIGH
+  'fixVersions',      // Version-based clustering — HIGH
+  'versions',         // Affected version — HIGH
+  'description',      // Description similarity — MEDIUM
+];
 
 // ─── Name extraction — same regex as jira-insights/route.ts ──────────────────
 function extractName(question: string): string | null {
@@ -179,6 +190,49 @@ async function persistInvestigation(report: ReturnType<typeof buildInvestigation
   }
 }
 
+// ─── Persist v2 report to Firestore ──────────────────────────────────────────
+async function persistInvestigationV2(report: ReturnType<typeof buildInvestigationReportV2>): Promise<void> {
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+  if (!projectId || !clientEmail || !privateKey) return;
+
+  try {
+    const { initializeApp, getApps, cert } = await import('firebase-admin/app');
+    const { getFirestore } = await import('firebase-admin/firestore');
+    const appName = 'investigation-store';
+    const existing = getApps().find(a => a.name === appName);
+    const app = existing || initializeApp({ credential: cert({ projectId, clientEmail, privateKey }), projectId }, appName);
+    const db = getFirestore(app);
+
+    // Store full v2 report under its own collection to preserve v1 data
+    await db.collection('investigations_v2').doc(report.metadata.id).set(report);
+
+    // Update the shared index with v2 data
+    const topEvidence = report.findings.evidence[0];
+    const confirmedPairs = report.findings.duplicatePairs.filter(
+      p => p.confidenceLabel === 'CONFIRMED' || p.confidenceLabel === 'LIKELY'
+    ).length;
+
+    await db.collection('investigation_index').doc(report.metadata.id).set({
+      id: report.metadata.id,
+      schema: '2.1',
+      reporterName: report.metadata.scope,
+      query: report.metadata.query,
+      generatedAt: report.metadata.generatedAt,
+      totalIssuesAnalyzed: report.metadata.totalIssuesAnalyzed,
+      investigationType: report.investigationType,
+      dataCompleteness: report.dataQuality.overallCompleteness,
+      evidenceCount: report.findings.evidence.length,
+      confirmedDuplicatePairs: confirmedPairs,
+      unusualDays: report.findings.velocity.unusualDays.length,
+      topFinding: topEvidence ? topEvidence.title : null,
+    }, { merge: true });
+  } catch (err: any) {
+    console.error('[investigate-v2] Firestore persist failed:', err.message);
+  }
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
@@ -230,13 +284,17 @@ export async function POST(req: NextRequest) {
     report.aiFindings = aiFindings;
     report.metadata.riskLevel = aiFindings.verdict;
 
-    // Persist in background
+    // ─── Build v2 structured report (Phase 1 — runs alongside v1) ────────
+    const reportV2 = buildInvestigationReportV2(issues, name, question, jql, 'reporter');
+
+    // Persist in background — store both v1 and v2
     persistInvestigation(report).catch(err => console.error('[investigate] persist error:', err.message));
+    persistInvestigationV2(reportV2).catch(err => console.error('[investigate-v2] persist error:', err.message));
 
     // Return compact response for chat + investigation ID for deep-link
     return NextResponse.json({
-      investigationId: report.metadata.id,
-      reporterName: report.metadata.reporterName,
+      investigationId: reportV2.metadata.id,  // v2 ID is canonical going forward
+      reporterName: name,
       totalIssues: issues.length,
       investigationScore: report.metadata.investigationScore,
       riskLevel: report.metadata.riskLevel,
@@ -244,20 +302,25 @@ export async function POST(req: NextRequest) {
       verdict: aiFindings.verdict,
       verdictReason: aiFindings.verdictReason,
       nextSteps: aiFindings.nextSteps,
-      // Key stats for chat preview
       stats: {
         filed: report.reporter.totalFiled,
         open: report.reporter.open,
         resolved: report.reporter.resolved,
         resolutionRate: report.reporter.resolutionRate,
         maxSpikeDay: report.velocity.maxSingleDay,
-        duplicateClusters: report.duplicateClusters.length,
+        duplicateClusters: reportV2.findings.duplicatePairs.filter(p =>
+          p.confidenceLabel === 'CONFIRMED' || p.confidenceLabel === 'LIKELY'
+        ).length,
         crossPlatformIncidents: report.sameDayClusters.filter(c => c.isCrossPlatform).length,
         rank: report.teamComparison.reporterRank,
         totalReporters: report.teamComparison.totalReporters,
+        dataCompleteness: reportV2.dataQuality.overallCompleteness,
+        evidenceCount: reportV2.findings.evidence.length,
       },
-      // Full report embedded so report page can render without a second fetch
-      report,
+      // v2 report is the primary payload for the new report page
+      report: reportV2,
+      // v1 kept for backward compatibility during transition
+      reportV1: report,
     });
   } catch (err: any) {
     console.error('[investigate]', err.message);
