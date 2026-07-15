@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   X, Send, Copy, Check, RotateCcw, BarChart2,
   Database, Loader2, Users, AtSign, Search,
@@ -102,6 +102,124 @@ function fmt(text: string) {
     .replace(/\*([^*]+)\*/g, '$1')
     .replace(/^#{1,3}\s+/gm, '')
     .trim();
+}
+
+function detectSectionType(header: string): string {
+  const h = header.toLowerCase();
+  if (h.includes('verdict')) return 'verdict';
+  if (h.includes('next step')) return 'nextsteps';
+  if (h.includes('duplicate') || h.includes('repeat')) return 'duplicate';
+  if (h.includes('same-day') || h.includes('multi-platform')) return 'multiplatform';
+  if (h.includes('spike') || h.includes('velocity')) return 'spike';
+  if (h.includes('suspicious')) return 'suspicious';
+  if (h.includes('overview')) return 'overview';
+  return 'default';
+}
+
+function getSectionColors(type: string) {
+  switch (type) {
+    case 'verdict': return { border: 'border-red-500/40', headerBg: 'bg-red-500/15', headerText: 'text-red-400' };
+    case 'nextsteps': return { border: 'border-blue-500/30', headerBg: 'bg-blue-500/10', headerText: 'text-blue-400' };
+    case 'duplicate': return { border: 'border-amber-500/40', headerBg: 'bg-amber-500/15', headerText: 'text-amber-400' };
+    case 'multiplatform': return { border: 'border-orange-500/40', headerBg: 'bg-orange-500/15', headerText: 'text-orange-400' };
+    case 'spike': return { border: 'border-rose-500/40', headerBg: 'bg-rose-500/15', headerText: 'text-rose-400' };
+    case 'suspicious': return { border: 'border-yellow-500/40', headerBg: 'bg-yellow-500/15', headerText: 'text-yellow-400' };
+    case 'overview': return { border: 'border-cyan-500/30', headerBg: 'bg-cyan-500/10', headerText: 'text-cyan-400' };
+    default: return { border: 'border-emerald-900/50', headerBg: 'bg-emerald-950/50', headerText: 'text-emerald-500' };
+  }
+}
+
+function getVerdictColor(line: string): string {
+  const l = line.toLowerCase();
+  if (l.includes('critical')) return 'text-red-400 font-bold';
+  if (l.includes('high')) return 'text-orange-400 font-bold';
+  if (l.includes('medium')) return 'text-yellow-400 font-bold';
+  if (l.includes('low')) return 'text-emerald-400 font-bold';
+  return 'text-emerald-200';
+}
+
+// Renders structured ┌ │ └ box output from the AI into styled section cards
+function renderOutput(text: string): React.ReactNode {
+  const lines = fmt(text).split('\n');
+  const sections: { header: string; body: string[]; type: string }[] = [];
+  let current: { header: string; body: string[]; type: string } | null = null;
+
+  for (const line of lines) {
+    if (line.startsWith('═══') || line.startsWith('===')) {
+      sections.push({ header: line.replace(/[═=]/g, '').trim(), body: [], type: 'title' });
+    } else if (line.startsWith('┌') || line.startsWith('+--')) {
+      const header = line.replace(/^[┌+\-\s]+/, '').trim();
+      current = { header, body: [], type: detectSectionType(header) };
+    } else if ((line.startsWith('│') || line.startsWith('|')) && current) {
+      const content = line.replace(/^[│|]\s?/, '').trim();
+      if (content) current.body.push(content);
+    } else if ((line.startsWith('└') || line.startsWith('+')) && current) {
+      sections.push(current);
+      current = null;
+    } else if (line.trim()) {
+      if (current) {
+        current.body.push(line.trim());
+      } else {
+        sections.push({ header: '', body: [line.trim()], type: 'text' });
+      }
+    }
+  }
+  if (current) sections.push(current);
+
+  // If no structured sections found, render plain
+  if (sections.length === 0 || sections.every(s => s.type === 'text')) {
+    return (
+      <pre className="text-[11px] text-emerald-200 font-mono leading-relaxed whitespace-pre-wrap break-words">
+        {fmt(text)}
+      </pre>
+    );
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {sections.map((s, i) => {
+        if (s.type === 'title') {
+          return (
+            <p key={i} className="text-emerald-400 font-mono font-bold text-[12px] border-b border-emerald-800/60 pb-1.5 pt-0.5">
+              {s.header}
+            </p>
+          );
+        }
+        if (s.type === 'text') {
+          return (
+            <p key={i} className="text-[11px] text-emerald-300/80 font-mono leading-relaxed">
+              {s.body.join(' ')}
+            </p>
+          );
+        }
+        const colors = getSectionColors(s.type);
+        return (
+          <div key={i} className={`rounded-lg border overflow-hidden ${colors.border}`}>
+            {s.header && (
+              <div className={`px-3 py-1.5 border-b ${colors.border} ${colors.headerBg}`}>
+                <span className={`text-[10px] font-bold font-mono uppercase tracking-widest ${colors.headerText}`}>
+                  {s.header}
+                </span>
+              </div>
+            )}
+            <div className="px-3 py-2 space-y-0.5 bg-black/30">
+              {s.body.map((line, li) => (
+                <p key={li} className={`text-[11px] font-mono leading-relaxed ${
+                  line.startsWith('⚠') || line.startsWith('!') ? 'text-amber-400 font-semibold' :
+                  s.type === 'verdict' ? getVerdictColor(line) :
+                  s.type === 'nextsteps' ? 'text-blue-300' :
+                  /SUN-\d+/.test(line) ? 'text-cyan-300' :
+                  'text-emerald-200'
+                }`}>
+                  {line}
+                </p>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -366,10 +484,8 @@ export default function JiraInsightsChat() {
                       )}
                     </div>
                     <div className="bg-black/50 border border-emerald-900/50 rounded-xl p-3 overflow-x-auto">
-                      <pre className="text-[11px] text-emerald-200 font-mono leading-relaxed whitespace-pre-wrap break-words">
-                        {fmt(msg.content)}
-                      </pre>
-                      {/* Verdict badge */}
+                      {renderOutput(msg.content)}
+                      {/* Verdict highlight badge — shown inside the output box */}
                       {/verdict:/i.test(msg.content) && (
                         <div className={cn('mt-2 px-3 py-1.5 rounded-lg border text-[11px] font-mono font-bold inline-flex items-center gap-1.5',
                           /critical/i.test(msg.content) ? 'border-red-500/40 bg-red-500/10 text-red-400' :

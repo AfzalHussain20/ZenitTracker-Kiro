@@ -16,33 +16,59 @@ interface JiraInsightsRequest {
   history?: { role: 'user' | 'assistant'; content: string }[];
 }
 
-const SYSTEM_PROMPT = `You are a forensic Jira intelligence analyst for the Zenit QA team. You have access to raw Jira data and must provide precise, actionable analysis.
+const SYSTEM_PROMPT = `You are a forensic Jira intelligence analyst for the Zenit QA team. Output structured, terminal-friendly reports.
 
-Your capabilities:
-- Detect suspicious patterns: rapid bug filing, duplicate-like bugs, bugs with minimal reproduction steps
-- Surface exact numbers, names, percentages — never approximate when you have data
-- Identify outliers: who files the most vs resolves the least, unusual time patterns, same reporter/platform combinations
-- Call out gaming patterns: rapid filing sprees, single-platform focus, unusually high counts in short periods
-- Provide detailed breakdowns by person, platform, priority, status
-- Flag specific ticket IDs when relevant
+STRICT OUTPUT FORMAT — follow this exact structure for postmortem queries:
 
-For POSTMORTEM / deep investigation queries, your job is to:
-1. Summarize all key findings from the structured data provided
-2. Call out the SAME-DAY MULTI-PLATFORM section — explain what it means (filing the same bug title across platforms on the same day to inflate counts)
-3. Call out SAME-TITLE REPEAT FILINGS — these are potential duplicate bugs
-4. Explain the VELOCITY SPIKES — what triggered them and what it means
-5. Give a VERDICT with risk level: Low / Medium / High / Critical
-6. Give concrete NEXT STEPS for a QA lead to investigate or escalate
+═══ FORENSIC REPORT: [NAME] ═══
 
-Response rules:
-- Lead with the key finding in one sentence
-- Use the structured data as-is — do not make up numbers
-- Show exact bug counts and ticket IDs from the data
-- Plain text only — no markdown headers, no code blocks
-- End with "Verdict: [Low/Medium/High/Critical] — [one line reason]"
-- Then "Next Steps: [3 bullet points for QA lead]"
+┌ OVERVIEW
+│ Total Filed:   [N]   Open: [N]   Resolved: [N]   Rate: [N]%
+│ Active Days:   [N]   All-time avg: [N]/day   Last 7-day avg: [N]/day
+│ vs Team Avg:   [N] bugs/person   [above/below/at] average
+└
 
-You have access to the following raw Jira data for this query:`;
+┌ PLATFORM BREAKDOWN
+│ [Platform]    [N] bugs  [bar]
+└
+
+┌ VELOCITY SPIKES (highest single-day counts)
+│ [date]  [N] bugs  [bar]  [⚠ if spike]
+└
+
+┌ DUPLICATE / REPEAT FILINGS
+│ [N]×  "[title snippet]"
+│       IDs: [SUN-xxx, SUN-xxx, ...]
+└
+
+┌ SAME-DAY MULTI-PLATFORM (same bug across platforms same day)
+│ [date]  "[title]"
+│         LG: SUN-xxx | Fire TV: SUN-xxx | Android: SUN-xxx
+└
+
+┌ SUSPICIOUS SIGNALS
+│ ⚠ [signal description with exact numbers]
+└
+
+┌ VERDICT
+│ Risk: [CRITICAL/HIGH/MEDIUM/LOW]
+│ Reason: [one sentence]
+└
+
+┌ NEXT STEPS
+│ 1. [specific action with ticket IDs where possible]
+│ 2. [specific action]
+│ 3. [specific action]
+└
+
+RULES:
+- Use the exact data provided — never invent numbers or ticket IDs
+- Always show ticket IDs (SUN-xxx format) in duplicate/multi-platform sections
+- Use the ┌ │ └ box format for every section — this renders cleanly in the terminal
+- Keep each line under 80 characters
+- If the data has real ticket IDs, list them explicitly
+- Do NOT output a wall of prose — every section must be its own box`;
+
 
 function buildJQL(question: string): string {
   const q = question.toLowerCase();
@@ -51,7 +77,7 @@ function buildJQL(question: string): string {
   // ─── Name/alias extraction — try quoted first, then unquoted ─────────────
   // Handles: investigate alias "Tamil Arasi" and investigate alias Tamil Arasi
   const quotedNameMatch = question.match(/(?:alias|investigate|about|analyze|who is|what about|postmortem on|postmortem)\s+"([^"]+)"/i);
-  const unquotedNameMatch = !quotedNameMatch && question.match(/(?:alias|about|from|investigate|analyze|who is|what about|postmortem on|postmortem)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,3})/i);
+  const unquotedNameMatch = quotedNameMatch ? null : question.match(/(?:alias|about|from|investigate|analyze|who is|what about|postmortem on|postmortem)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,3})/i);
   const extractedName = quotedNameMatch?.[1] || unquotedNameMatch?.[1] || null;
 
   // If this is a person-investigation query, skip most other filters
@@ -204,7 +230,7 @@ function buildDeepAnalysis(issues: any[], question: string): string {
 
   // Detect alias-specific investigation — handle both quoted and unquoted names
   const quotedAlias = question.match(/(?:alias|investigate|about|analyze|who is|what about|fishy|suspicious|postmortem|scam|pattern)\s+"([^"]+)"/i);
-  const unquotedAlias = !quotedAlias && question.match(/(?:alias|about|from|investigate|analyze|who is|what about|fishy|suspicious|postmortem|scam|pattern)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,3})/i);
+  const unquotedAlias = quotedAlias ? null : question.match(/(?:alias|about|from|investigate|analyze|who is|what about|fishy|suspicious|postmortem|scam|pattern)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,3})/i);
   const targetAlias = (quotedAlias?.[1] || unquotedAlias?.[1] || '').toLowerCase().trim();
 
   let aliasDetail = '';
