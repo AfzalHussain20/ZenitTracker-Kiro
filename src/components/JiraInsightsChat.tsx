@@ -58,12 +58,42 @@ const STATUS_OPTIONS: MentionOption[] = [
 ];
 
 const INVESTIGATIONS = [
-  { q: 'How many bugs filed this sprint? Break down by priority and reporter.', icon: '🏃', label: 'Sprint Bugs' },
-  { q: 'Who filed the most bugs this month? Flag anyone suspicious.', icon: '📊', label: 'Top Filers' },
-  { q: 'P1/Highest bugs still unresolved — list them all.', icon: '🔥', label: 'P1 Open' },
-  { q: 'Which reporters have the lowest resolution rate this month?', icon: '⚠️', label: 'Low Resolve Rate' },
-  { q: 'Show bug concentration per platform — any single-platform focus?', icon: '📱', label: 'Platform Spread' },
-  { q: 'Who is filing bugs the fastest? Show daily rate per person.', icon: '⚡', label: 'Filing Rate' },
+  {
+    q: 'Full postmortem — duplicate bugs, same-day multi-platform filings, velocity spikes, all suspicious patterns, verdict and next steps',
+    icon: '🔬',
+    label: 'Full Postmortem',
+    tip: 'Type @ to select a person first',
+  },
+  {
+    q: 'Who filed the most bugs this month? Show count, daily rate, platform spread. Flag anyone above 2x team average.',
+    icon: '🏆',
+    label: 'Top Filers',
+    tip: null,
+  },
+  {
+    q: 'Show all duplicate and repeat bug filings this month — same title filed multiple times by the same person, list ticket IDs',
+    icon: '♻️',
+    label: 'Duplicate Bugs',
+    tip: null,
+  },
+  {
+    q: 'Who has the lowest resolution rate this month? Show filed vs resolved per person. Flag suspicious patterns.',
+    icon: '⚠️',
+    label: 'Low Resolve Rate',
+    tip: null,
+  },
+  {
+    q: 'P1 and Highest priority bugs still unresolved — list all with reporter name, date filed, and current status',
+    icon: '🔥',
+    label: 'P1 Unresolved',
+    tip: null,
+  },
+  {
+    q: 'Show velocity spikes this month — anyone who filed 5+ bugs in a single day? List dates, person, and count.',
+    icon: '⚡',
+    label: 'Velocity Spikes',
+    tip: null,
+  },
 ];
 
 function fmt(text: string) {
@@ -144,7 +174,7 @@ export default function JiraInsightsChat() {
         sublabel: u.email,
         avatar: u.avatarUrl,
         category: 'alias' as const,
-        query: `investigate alias "${u.displayName}" — show all bugs ever filed/assigned, daily filing rate, platform distribution, resolution rate, suspicious patterns`,
+        query: `full postmortem on "${u.displayName}" — duplicate bugs, same-day multi-platform filings, velocity spikes, suspicious patterns, verdict and next steps`,
       }));
 
     const teamOptions: MentionOption[] = allTeams
@@ -291,7 +321,7 @@ export default function JiraInsightsChat() {
               <div className="space-y-4">
                 <div className="text-[11px] font-mono space-y-0.5">
                   <p className="text-emerald-500">{'>'} Jira Intelligence Terminal ready</p>
-                  <p className="text-emerald-800">{'>'} Type <span className="text-amber-400">@</span> to select an alias, team, platform or filter</p>
+                  <p className="text-emerald-800">{'>'} Type <span className="text-amber-400">@</span> to select a person, team, platform or filter</p>
                   <p className="text-emerald-800">{'>'} Or pick a quick investigation below</p>
                   <p className="text-emerald-500 animate-pulse">{'>'} _</p>
                 </div>
@@ -300,9 +330,12 @@ export default function JiraInsightsChat() {
                 <div className="grid grid-cols-2 gap-1.5">
                   {INVESTIGATIONS.map(inv => (
                     <button key={inv.label} onClick={() => send(inv.q)}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-950/50 border border-emerald-900/40 hover:border-emerald-700/60 hover:bg-emerald-950 text-left transition-all group">
-                      <span className="text-sm shrink-0">{inv.icon}</span>
-                      <span className="text-[11px] font-bold text-emerald-600 group-hover:text-emerald-400">{inv.label}</span>
+                      className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-emerald-950/50 border border-emerald-900/40 hover:border-emerald-700/60 hover:bg-emerald-950 text-left transition-all group">
+                      <span className="text-sm shrink-0 mt-0.5">{inv.icon}</span>
+                      <div className="min-w-0">
+                        <span className="text-[11px] font-bold text-emerald-600 group-hover:text-emerald-400 block">{inv.label}</span>
+                        {inv.tip && <span className="text-[9px] text-emerald-800 block mt-0.5">{inv.tip}</span>}
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -448,7 +481,7 @@ export default function JiraInsightsChat() {
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder="Type @ to filter by alias / team / platform…"
+              placeholder="Type @ to select a person / team / platform…"
               disabled={loading}
               className="flex-1 h-8 text-[12px] bg-transparent border-none text-emerald-200 placeholder:text-emerald-900 font-mono focus:outline-none"
             />

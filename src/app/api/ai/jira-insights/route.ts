@@ -50,8 +50,8 @@ function buildJQL(question: string): string {
 
   // ─── Name/alias extraction — try quoted first, then unquoted ─────────────
   // Handles: investigate alias "Tamil Arasi" and investigate alias Tamil Arasi
-  const quotedNameMatch = question.match(/(?:alias|investigate|about|analyze|who is|what about)\s+"([^"]+)"/i);
-  const unquotedNameMatch = !quotedNameMatch && question.match(/(?:alias|about|from|investigate|analyze|who is|what about)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,3})/i);
+  const quotedNameMatch = question.match(/(?:alias|investigate|about|analyze|who is|what about|postmortem on|postmortem)\s+"([^"]+)"/i);
+  const unquotedNameMatch = !quotedNameMatch && question.match(/(?:alias|about|from|investigate|analyze|who is|what about|postmortem on|postmortem)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,3})/i);
   const extractedName = quotedNameMatch?.[1] || unquotedNameMatch?.[1] || null;
 
   // If this is a person-investigation query, skip most other filters
