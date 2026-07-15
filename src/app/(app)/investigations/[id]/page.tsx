@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import type { InvestigationReport, RiskLevel, DuplicateCluster, SameDayCluster, Evidence } from '@/types/investigation';
+import type { InvestigationReportV2 } from '@/lib/jira/investigation-engine-v2';
 import {
   ArrowLeft, AlertTriangle, CheckCircle2, XCircle, Clock,
   ChevronDown, ChevronRight, ExternalLink, Copy, Check,
@@ -14,8 +15,122 @@ import {
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell, RadarChart, Radar, PolarGrid, PolarAngleAxis,
+  BarChart, Bar, Cell,
 } from 'recharts';
+
+// ─── Schema adapter — normalises v2 report to v1 display shape ────────────────
+function adaptV2ToV1(r: InvestigationReportV2): InvestigationReport {
+  const f = r.findings;
+  const facts = r.facts;             // facts is TOP-LEVEL in v2, not inside findings
+  const meta = r.metadata;
+  const rc = f.reportingCharacteristics;
+  const ra = f.reporterActivity;
+  const vel = f.velocity;
+
+  // Map v2 duplicate pairs to v1 DuplicateCluster[]
+  const duplicateClusters: DuplicateCluster[] = f.duplicatePairs
+    .filter(p => p.confidenceLabel !== 'INSUFFICIENT_EVIDENCE')
+    .map(p => ({
+      id: `${p.issueA}-${p.issueB}`,
+      normalisedTitle: p.signals.find(s => s.name === 'titleSimilarity')?.explanation || `${p.issueA} ↔ ${p.issueB}`,
+      count: 2,
+      ticketIds: [p.issueA, p.issueB],
+      platforms: p.signals.filter(s => s.name === 'samePlatform' && s.fired).map(() => 'Same platform'),
+      dates: [],
+      confidence: p.confidenceLabel === 'CONFIRMED' ? 'HIGH' : p.confidenceLabel === 'LIKELY' ? 'MEDIUM' : 'LOW',
+      engineeringImpact: p.confidence >= 0.75 ? 'BLOCKER' : p.confidence >= 0.5 ? 'MAJOR' : 'MINOR',
+    }));
+
+  // Map v2 cross-platform clusters to v1 SameDayCluster[]
+  const sameDayClusters: SameDayCluster[] = f.rootCauseClusters.map(c => ({
+    date: '',
+    titleSnippet: c.interpretation,
+    platforms: c.platforms,
+    tickets: c.tickets.map(t => ({ key: t, platform: '', summary: '' })),
+    isCrossPlatform: c.platforms.length >= 2,
+  }));
+
+  // Map v2 evidence to v1 Evidence[]
+  const evidence: Evidence[] = f.evidence.map(e => ({
+    id: e.id,
+    type: (e.type === 'VELOCITY_ANOMALY' ? 'SPIKE' : e.type === 'DUPLICATE_CLUSTER' ? 'DUPLICATE' : e.type === 'CROSS_PLATFORM_PATTERN' ? 'CROSS_PLATFORM' : 'RESOLUTION') as any,
+    title: e.title,
+    description: e.description,
+    confidence: (e.confidence === 'CONFIRMED' || e.confidence === 'LIKELY') ? 'HIGH' : e.confidence === 'POSSIBLE' ? 'MEDIUM' : 'LOW',
+    metrics: e.metrics,
+    relatedTickets: e.relatedTickets,
+    severity: e.engineeringImpact === 'HIGH' ? 'HIGH' : e.engineeringImpact === 'MEDIUM' ? 'MEDIUM' : 'LOW' as any,
+  }));
+
+  const filed = rc?.totalFiled || ra?.bugsReported || facts?.totalIssues || 0;
+  const open = facts?.statusCounts
+    ? Object.entries(facts.statusCounts).filter(([s]) => ['New','Open','To Do','Reopen'].includes(s)).reduce((a, [, v]) => a + v, 0)
+    : 0;
+  const resolved = facts?.resolutionCounts
+    ? Object.entries(facts.resolutionCounts).filter(([s]) => s !== 'Unresolved').reduce((a, [, v]) => a + v, 0)
+    : 0;
+
+  return {
+    metadata: {
+      id: meta.id,
+      reporterName: meta.scope,
+      query: meta.query,
+      generatedAt: meta.generatedAt,
+      totalIssuesAnalyzed: meta.totalIssuesAnalyzed,
+      jql: meta.jql,
+      investigationScore: r.conclusions?.dimensionScores?.reportingCharacteristics?.value || 50,
+      riskLevel: 'MEDIUM',
+    },
+    reporter: {
+      name: meta.scope,
+      totalFiled: filed,
+      open,
+      resolved,
+      resolutionRate: filed > 0 ? Math.round((resolved / filed) * 100) : 0,
+      activeDays: ra?.activeDays || 0,
+      allTimeAvgPerDay: vel?.baseline?.mean || 0,
+      last7DayAvgPerDay: 0,
+      teamAvgPerReporter: 0,
+      vsTeamAvg: 'at',
+      platformCount: (ra?.platformsTested || []).length,
+      platforms: f.platformCoverage || [],
+      statusBreakdown: Object.entries(facts?.statusCounts || {}).sort((a, b) => b[1] - a[1]).map(([status, count]) => ({ status, count })),
+      priorityBreakdown: Object.entries(facts?.priorityCounts || {}).sort((a, b) => b[1] - a[1]).map(([priority, count]) => ({ priority, count })),
+      typeBreakdown: Object.entries(facts?.typeCounts || {}).sort((a, b) => b[1] - a[1]).map(([type, count]) => ({ type, count })),
+    },
+    timeline: (vel?.dailyCounts || []).map(d => ({
+      date: d.date,
+      count: d.count,
+      isSpikeDay: d.classification === 'UNUSUAL',
+      isRecentWeek: d.isRecentWeek ?? false,
+    })),
+    velocity: {
+      topSpikeDays: (vel?.unusualDays || []).slice(0, 10).map(d => ({ date: d.date, count: d.count, isSpike: true })),
+      maxSingleDay: Math.max(...(vel?.dailyCounts || []).map(d => d.count), 0),
+      medianDay: vel?.baseline?.median || 0,
+      spikeRatio: vel?.baseline?.stdDev && vel.baseline.mean ? Math.round((Math.max(...(vel.dailyCounts || []).map(d => d.count), 0) / vel.baseline.mean) * 10) / 10 : 0,
+      spikeWarning: (vel?.unusualDays || []).length > 0 ? `⚠ ${vel!.unusualDays[0].explanation}` : null,
+    },
+    duplicateClusters,
+    sameDayClusters,
+    platformClusters: (f.platformCoverage || []).map(p => ({ platform: p.platform, count: p.count, percentage: p.percentage, isSingleFocus: p.percentage > 60 })),
+    evidence,
+    aiFindings: {
+      executiveSummary: 'Investigation completed using v2.1 evidence engine.',
+      verdict: 'MEDIUM',
+      verdictReason: `${duplicateClusters.length} duplicate pairs found. ${(vel?.unusualDays || []).length} unusual velocity days.`,
+      nextSteps: (r.conclusions?.dimensionScores ? Object.values(r.conclusions.dimensionScores) : []).map(d => d.limitations?.[0]).filter(Boolean).slice(0, 3),
+      generatedFrom: 'fallback',
+    },
+    teamComparison: {
+      teamAvgBugsPerPerson: 0,
+      teamAvgResolutionRate: 0,
+      teamTopReporters: [],
+      reporterRank: 1,
+      totalReporters: 1,
+    },
+  } as InvestigationReport;
+}
 
 // ─── Risk badge ───────────────────────────────────────────────────────────────
 const RISK_CONFIG: Record<RiskLevel, { label: string; color: string; bg: string; border: string; icon: typeof AlertTriangle }> = {
@@ -235,7 +350,10 @@ export default function InvestigationReportPage() {
     const stored = sessionStorage.getItem(`investigation_${id}`);
     if (stored) {
       try {
-        setReport(JSON.parse(stored));
+        const parsed = JSON.parse(stored);
+        // Handle v2 schema — adapt to v1 display shape
+        const adapted = parsed?.schema === '2.1' ? adaptV2ToV1(parsed) : parsed;
+        setReport(adapted);
         setLoading(false);
         return;
       } catch { /* fall through to API */ }
@@ -244,8 +362,10 @@ export default function InvestigationReportPage() {
     fetch(`/api/ai/investigate?id=${id}`)
       .then(r => r.json())
       .then(data => {
-        if (data.report) setReport(data.report);
-        else setError(data.error || 'Investigation not found');
+        if (data.report) {
+          const adapted = data.report?.schema === '2.1' ? adaptV2ToV1(data.report) : data.report;
+          setReport(adapted);
+        } else setError(data.error || 'Investigation not found');
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
