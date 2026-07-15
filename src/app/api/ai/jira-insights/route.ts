@@ -52,8 +52,8 @@ function buildJQL(question: string): string {
   const isPersonQuery = !!extractedName || /\bwho\b|\balias\b|\bperson\b|\breporter\b|\bassignee\b/i.test(question);
 
   if (extractedName) {
-    clauses.push(`(reporter ~ "${extractedName}" OR assignee ~ "${extractedName}")`);
-    // For alias investigations — fetch ALL time, ALL types, ALL statuses
+    clauses.push(`(reporter = "${extractedName}" OR assignee = "${extractedName}")`);
+    // Jira: use = not ~ for user fields (~ is for text fields only)
     // unless the question explicitly requests a time filter
     const hasExplicitTime = /this sprint|last sprint|today|this week|this month|this quarter/i.test(question);
     if (!hasExplicitTime) {
