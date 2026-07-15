@@ -193,6 +193,7 @@ export default function AppHeader() {
             { href: '/dashboard', label: 'Dashboard' },
             { href: '/apps', label: 'Apps' },
             { href: '/analytics/bugs', label: 'Jira KPI' },
+            { href: '/investigations', label: 'Investigations' },
             { href: '/bugs', label: 'Bug Tracker' },
             { href: '/notes', label: 'Notes' },
             { href: '/ai-settings', label: 'AI Settings' },

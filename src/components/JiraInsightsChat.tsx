@@ -12,6 +12,7 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   issueCount?: number;
+  investigationId?: string;
 }
 
 interface JiraUser {
@@ -363,14 +364,54 @@ export default function JiraInsightsChat() {
     setInput('');
     setMentionOpen(false);
     setLoading(true);
+
+    // Detect investigation / postmortem queries → use dedicated route
+    const isInvestigation = /postmortem|investigate\s+"/i.test(text);
+
     try {
-      const res = await fetch('/api/ai/jira-insights', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: text, history }),
-      });
-      const data = await res.json();
-      setMessages(p => [...p, { role: 'assistant', content: data.answer || 'No response.', issueCount: data.issueCount }]);
+      if (isInvestigation) {
+        const res = await fetch('/api/ai/investigate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: text }),
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          setMessages(p => [...p, { role: 'assistant', content: `⚠ ${data.error}`, issueCount: 0 }]);
+        } else {
+          // Store the full report in sessionStorage for the report page
+          if (data.report && data.investigationId) {
+            try { sessionStorage.setItem(`investigation_${data.investigationId}`, JSON.stringify(data.report)); } catch { /* quota */ }
+          }
+          // Compact chat response with link
+          const score = data.investigationScore;
+          const risk = data.riskLevel;
+          const stats = data.stats || {};
+          const id = data.investigationId;
+          const compactMessage = [
+            `✓ Investigation completed`,
+            `${data.totalIssues} issues analyzed · Score: ${score}/100 · Risk: ${risk}`,
+            ``,
+            `${data.aiFindings?.executiveSummary || data.executiveSummary || ''}`,
+            ``,
+            `Filed: ${stats.filed || 0} · Open: ${stats.open || 0} · Resolution: ${stats.resolutionRate || 0}%`,
+            `Duplicates: ${stats.duplicateClusters || 0} clusters · Peak day: ${stats.maxSpikeDay || 0} bugs`,
+            ``,
+            id ? `[VIEW_INVESTIGATION:${id}]` : '',
+          ].filter(Boolean).join('\n');
+
+          setMessages(p => [...p, { role: 'assistant', content: compactMessage, issueCount: data.totalIssues, investigationId: id }]);
+        }
+      } else {
+        const res = await fetch('/api/ai/jira-insights', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: text, history }),
+        });
+        const data = await res.json();
+        setMessages(p => [...p, { role: 'assistant', content: data.answer || 'No response.', issueCount: data.issueCount }]);
+      }
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('zenit:ai-call-completed'));
     } catch {
       setMessages(p => [...p, { role: 'assistant', content: '⚠ Connection error.' }]);
@@ -472,7 +513,49 @@ export default function JiraInsightsChat() {
                     <span className="text-emerald-500 text-[11px] font-mono shrink-0 mt-0.5">{'>'}</span>
                     <p className="text-[12px] text-emerald-300 font-mono leading-relaxed">{msg.content}</p>
                   </div>
+                ) : msg.investigationId ? (
+                  /* ── Investigation result card ── */
+                  <div className="mt-1 rounded-xl overflow-hidden border border-emerald-700/40">
+                    {/* Status bar */}
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-emerald-950/60 border-b border-emerald-900/40">
+                      <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                      <span className="text-[11px] text-emerald-400 font-mono font-bold uppercase tracking-wider">Investigation Complete</span>
+                      {msg.issueCount !== undefined && (
+                        <span className="ml-auto text-[10px] text-emerald-700 font-mono">{msg.issueCount.toLocaleString()} issues</span>
+                      )}
+                    </div>
+                    {/* Content */}
+                    <div className="p-4 bg-black/40 space-y-3">
+                      {/* Summary lines */}
+                      <div className="space-y-1">
+                        {msg.content.split('\n').filter(l => l.trim() && !l.startsWith('[VIEW_INVESTIGATION')).map((line, li) => (
+                          <p key={li} className={cn('text-[11px] font-mono leading-relaxed',
+                            line.startsWith('✓') ? 'text-emerald-400 font-bold text-[12px]' :
+                            line.includes('Score:') ? 'text-amber-400 font-semibold' :
+                            line.includes('Filed:') || line.includes('Duplicates:') ? 'text-emerald-300' :
+                            'text-emerald-200/70'
+                          )}>
+                            {line}
+                          </p>
+                        ))}
+                      </div>
+                      {/* Action buttons */}
+                      <div className="flex gap-2 pt-1">
+                        <a href={`/investigations/${msg.investigationId}`}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition-colors">
+                          <span>View Full Investigation</span>
+                          <span>→</span>
+                        </a>
+                        <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/investigations/${msg.investigationId}`); setCopiedIdx(i); setTimeout(() => setCopiedIdx(null), 2000); }}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-950/60 border border-emerald-700/40 hover:bg-emerald-900/40 text-emerald-400 text-[11px] transition-colors">
+                          {copiedIdx === i ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          {copiedIdx === i ? 'Copied' : 'Copy Link'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 ) : (
+                  /* ── Standard output ── */
                   <div className="mt-1 space-y-1">
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-1.5">
@@ -485,7 +568,6 @@ export default function JiraInsightsChat() {
                     </div>
                     <div className="bg-black/50 border border-emerald-900/50 rounded-xl p-3 overflow-x-auto">
                       {renderOutput(msg.content)}
-                      {/* Verdict highlight badge — shown inside the output box */}
                       {/verdict:/i.test(msg.content) && (
                         <div className={cn('mt-2 px-3 py-1.5 rounded-lg border text-[11px] font-mono font-bold inline-flex items-center gap-1.5',
                           /critical/i.test(msg.content) ? 'border-red-500/40 bg-red-500/10 text-red-400' :
