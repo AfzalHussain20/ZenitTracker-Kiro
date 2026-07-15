@@ -144,7 +144,7 @@ export default function JiraInsightsChat() {
         sublabel: u.email,
         avatar: u.avatarUrl,
         category: 'alias' as const,
-        query: `investigate alias "${u.displayName}" — full forensic breakdown: total bugs, daily rate, platform spread, resolution rate, suspicious patterns`,
+        query: `investigate alias "${u.displayName}" — show all bugs ever filed/assigned, daily filing rate, platform distribution, resolution rate, suspicious patterns`,
       }));
 
     const teamOptions: MentionOption[] = allTeams

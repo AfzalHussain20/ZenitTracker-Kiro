@@ -41,7 +41,28 @@ function buildJQL(question: string): string {
   const q = question.toLowerCase();
   const clauses: string[] = [`project = ${PROJECT_KEY}`];
 
-  // Time ranges
+  // ─── Name/alias extraction — try quoted first, then unquoted ─────────────
+  // Handles: investigate alias "Tamil Arasi" and investigate alias Tamil Arasi
+  const quotedNameMatch = question.match(/(?:alias|investigate|about|analyze|who is|what about)\s+"([^"]+)"/i);
+  const unquotedNameMatch = !quotedNameMatch && question.match(/(?:alias|about|from|investigate|analyze|who is|what about)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,3})/i);
+  const extractedName = quotedNameMatch?.[1] || unquotedNameMatch?.[1] || null;
+
+  // If this is a person-investigation query, skip most other filters
+  // to avoid over-constraining the JQL and getting zero results
+  const isPersonQuery = !!extractedName || /\bwho\b|\balias\b|\bperson\b|\breporter\b|\bassignee\b/i.test(question);
+
+  if (extractedName) {
+    clauses.push(`(reporter ~ "${extractedName}" OR assignee ~ "${extractedName}")`);
+    // For alias investigations — fetch ALL time, ALL types, ALL statuses
+    // unless the question explicitly requests a time filter
+    const hasExplicitTime = /this sprint|last sprint|today|this week|this month|this quarter/i.test(question);
+    if (!hasExplicitTime) {
+      // No time filter — return all-time data for proper forensic analysis
+      return clauses.join(' AND ') + ' ORDER BY created DESC';
+    }
+  }
+
+  // ─── Time ranges (only applied when not a broad alias investigation) ──────
   if (q.includes('this sprint') || q.includes('current sprint')) clauses.push('sprint in openSprints()');
   else if (q.includes('last sprint')) clauses.push('sprint in closedSprints()');
   else if (q.includes('today')) clauses.push('created >= startOfDay()');
@@ -49,23 +70,24 @@ function buildJQL(question: string): string {
   else if (q.includes('this month') || q.includes('past 30') || q.includes('last 30') || q.includes('last month')) clauses.push('created >= -30d');
   else if (q.includes('this quarter') || q.includes('past 90') || q.includes('last 90')) clauses.push('created >= -90d');
 
-  // Type
-  if (q.includes('bug') && !q.includes('story') && !q.includes('feature')) clauses.push('issuetype = Bug');
-  else if (q.includes('story') || q.includes('stories')) clauses.push('issuetype = Story');
+  // ─── Issue type (skip for person queries — we want all types) ─────────────
+  if (!isPersonQuery) {
+    // Be careful: "bugs" in a general question is fine, but don't apply
+    // issuetype=Bug for open-ended questions about people
+    const hasBugWord = /\bbugs?\b/.test(q) && !q.includes('story') && !q.includes('feature');
+    if (hasBugWord) clauses.push('issuetype = Bug');
+    else if (/\bstories?\b/.test(q)) clauses.push('issuetype = Story');
+  }
 
-  // Priority
-  if (q.includes('p1') || q.includes('critical') || q.includes('highest')) clauses.push('priority = Highest');
-  else if (q.includes('p2') || q.includes('high priority')) clauses.push('priority = High');
+  // ─── Priority ─────────────────────────────────────────────────────────────
+  if (/\bp[0-]?1\b|critical|highest priority/.test(q)) clauses.push('priority = Highest');
+  else if (/\bp[0-]?2\b|high priority/.test(q)) clauses.push('priority = High');
 
-  // Status
-  if (q.includes('open') || q.includes('unresolved')) clauses.push('resolution = Unresolved');
-  else if (q.includes('resolved') || q.includes('closed') || q.includes('done')) clauses.push('resolution != Unresolved');
-
-  // Alias/person investigation — extract name after keywords
-  const aliasMatch = q.match(/(?:alias|about|for|by|from|investigate|analyze|who is|what about)\s+([a-z]+(?:\s[a-z]+)?)/);
-  if (aliasMatch) {
-    const name = aliasMatch[1].trim();
-    clauses.push(`(reporter ~ "${name}" OR assignee ~ "${name}")`);
+  // ─── Status ───────────────────────────────────────────────────────────────
+  if (/\bunresolved\b/.test(q) || (q.includes('open') && !q.includes('open bugs'))) {
+    clauses.push('resolution = Unresolved');
+  } else if (/\bresolved\b|\bclosed\b/.test(q)) {
+    clauses.push('resolution != Unresolved');
   }
 
   return clauses.join(' AND ') + ' ORDER BY created DESC';
@@ -173,9 +195,10 @@ function buildDeepAnalysis(issues: any[], question: string): string {
   const sortedReporters = Object.entries(reporterStats).sort((a, b) => b[1].filed - a[1].filed);
   const sortedAssignees = Object.entries(assigneeStats).sort((a, b) => b[1].assigned - a[1].assigned);
 
-  // Detect alias-specific investigation
-  const aliasMatch = q.match(/(?:alias|about|for|by|from|investigate|analyze|who is|what about|fishy|suspicious)\s+([a-z]+(?:\s[a-z]+)?)/);
-  const targetAlias = aliasMatch ? aliasMatch[1].toLowerCase() : null;
+  // Detect alias-specific investigation — handle both quoted and unquoted names
+  const quotedAlias = question.match(/(?:alias|investigate|about|analyze|who is|what about|fishy|suspicious)\s+"([^"]+)"/i);
+  const unquotedAlias = !quotedAlias && question.match(/(?:alias|about|from|investigate|analyze|who is|what about|fishy|suspicious)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,3})/i);
+  const targetAlias = (quotedAlias?.[1] || unquotedAlias?.[1] || '').toLowerCase().trim();
 
   let aliasDetail = '';
   if (targetAlias) {
