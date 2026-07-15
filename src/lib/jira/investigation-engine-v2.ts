@@ -200,6 +200,18 @@ function simpleHash(s: string): string {
   return h.toString(16);
 }
 
+/** Safely extract a string value from a Jira field that might be an object */
+function safeStr(val: unknown): string {
+  if (val == null) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object') {
+    const o = val as Record<string, unknown>;
+    // Jira rich-text body, resolution object, etc.
+    return String(o.name || o.text || o.value || o.content || '');
+  }
+  return String(val);
+}
+
 // ─── Data Quality computation ─────────────────────────────────────────────────
 
 function buildDataQuality(issues: any[]): DataQualityReport {
@@ -333,10 +345,10 @@ function buildDuplicatePairs(
       const signals: DuplicateSignalResult[] = [
         {
           name: 'resolutionIsDuplicate',
-          fired: (fa.resolution?.name || '').toLowerCase() === 'duplicate' ||
-                 (fb.resolution?.name || '').toLowerCase() === 'duplicate',
-          value: ((fa.resolution?.name || '').toLowerCase() === 'duplicate' ||
-                  (fb.resolution?.name || '').toLowerCase() === 'duplicate') ? 1 : 0,
+          fired: safeStr(fa.resolution?.name).toLowerCase() === 'duplicate' ||
+                 safeStr(fb.resolution?.name).toLowerCase() === 'duplicate',
+          value: (safeStr(fa.resolution?.name).toLowerCase() === 'duplicate' ||
+                  safeStr(fb.resolution?.name).toLowerCase() === 'duplicate') ? 1 : 0,
           weight: SIGNAL_WEIGHTS.resolutionIsDuplicate,
           available: true,
           explanation: 'Resolution field marked as Duplicate in Jira',
@@ -345,9 +357,10 @@ function buildDuplicatePairs(
           name: 'linkedAsDuplicate',
           fired: (() => {
             if (!hasIssueLinks) return false;
-            const links = [...(fa.issuelinks || []), ...(fb.issuelinks || [])];
-            return links.some((l: any) => {
-              const type = (l.type?.name || '').toLowerCase();
+            const linksA = Array.isArray(fa.issuelinks) ? fa.issuelinks : [];
+            const linksB = Array.isArray(fb.issuelinks) ? fb.issuelinks : [];
+            return [...linksA, ...linksB].some((l: any) => {
+              const type = safeStr(l?.type?.name).toLowerCase();
               return type.includes('duplicate') || type.includes('duplicates') || type.includes('is duplicated');
             });
           })(),
@@ -359,7 +372,7 @@ function buildDuplicatePairs(
         {
           name: 'titleSimilarity',
           fired: false,  // set below
-          value: combinedSimilarity(fa.summary || '', fb.summary || ''),
+          value: combinedSimilarity(safeStr(fa.summary), safeStr(fb.summary)),
           weight: SIGNAL_WEIGHTS.titleSimilarity,
           available: true,
           explanation: 'Summary text similarity after version/platform token removal',
@@ -367,7 +380,7 @@ function buildDuplicatePairs(
         {
           name: 'descriptionSimilarity',
           fired: false,
-          value: hasDescription ? combinedSimilarity(fa.description || '', fb.description || '') : 0,
+          value: hasDescription ? combinedSimilarity(safeStr(fa.description), safeStr(fb.description)) : 0,
           weight: SIGNAL_WEIGHTS.descriptionSimilarity,
           available: hasDescription,
           explanation: 'Description text similarity',
@@ -377,8 +390,8 @@ function buildDuplicatePairs(
           fired: false,
           value: (() => {
             if (!hasComponents) return 0;
-            const ca = (fa.components || []).map((c: any) => c.name);
-            const cb = (fb.components || []).map((c: any) => c.name);
+            const ca: string[] = (Array.isArray(fa.components) ? fa.components : []).map((c: any) => safeStr(c.name));
+            const cb: string[] = (Array.isArray(fb.components) ? fb.components : []).map((c: any) => safeStr(c.name));
             const shared = ca.filter((c: string) => cb.includes(c));
             return ca.length > 0 && cb.length > 0 ? shared.length / Math.max(ca.length, cb.length) : 0;
           })(),
@@ -390,8 +403,8 @@ function buildDuplicatePairs(
           name: 'samePlatform',
           fired: false,
           value: (() => {
-            const pa = fa.customfield_10103?.[0]?.value;
-            const pb = fb.customfield_10103?.[0]?.value;
+            const pa = safeStr(fa.customfield_10103?.[0]?.value);
+            const pb = safeStr(fb.customfield_10103?.[0]?.value);
             return pa && pb && pa === pb ? 1 : 0;
           })(),
           weight: SIGNAL_WEIGHTS.samePlatform,
@@ -402,12 +415,12 @@ function buildDuplicatePairs(
           name: 'sameBuildVersion',
           fired: false,
           value: (() => {
-            const va = (fa.fixVersions || []).map((v: any) => v.name).join(',');
-            const vb = (fb.fixVersions || []).map((v: any) => v.name).join(',');
+            const va = (Array.isArray(fa.fixVersions) ? fa.fixVersions : []).map((v: any) => safeStr(v.name)).join(',');
+            const vb = (Array.isArray(fb.fixVersions) ? fb.fixVersions : []).map((v: any) => safeStr(v.name)).join(',');
             return va && vb && va === vb && va !== '' ? 1 : 0;
           })(),
           weight: SIGNAL_WEIGHTS.sameBuildVersion,
-          available: (fa.fixVersions?.length > 0 || fb.fixVersions?.length > 0),
+          available: !!(fa.fixVersions?.length || fb.fixVersions?.length),
           explanation: 'Issues affect the same build/fix version',
         },
         {
@@ -422,8 +435,8 @@ function buildDuplicatePairs(
           name: 'sameAssignee',
           fired: false,
           value: (() => {
-            const aa = fa.assignee?.accountId;
-            const ab = fb.assignee?.accountId;
+            const aa = safeStr(fa.assignee?.accountId);
+            const ab = safeStr(fb.assignee?.accountId);
             return aa && ab && aa === ab ? 1 : 0;
           })(),
           weight: SIGNAL_WEIGHTS.sameAssignee,
@@ -703,9 +716,9 @@ export function buildInvestigationReportV2(
       const cn = c.name || 'Unknown';
       componentCounts[cn] = (componentCounts[cn] || 0) + 1;
     }
-    const res = f.resolution?.name || 'Unresolved';
+    const res = safeStr(f.resolution?.name || f.resolution) || 'Unresolved';
     resolutionCounts[res] = (resolutionCounts[res] || 0) + 1;
-    if ((res).toLowerCase() === 'duplicate') confirmedDuplicateCount++;
+    if (res.toLowerCase() === 'duplicate') confirmedDuplicateCount++;
   }
 
   const dates = issues.map(i => i.fields.created?.substring(0, 10)).filter(Boolean).sort();
@@ -739,7 +752,7 @@ export function buildInvestigationReportV2(
 
     for (const issue of personIssues) {
       const f = issue.fields;
-      const res = (f.resolution?.name || '').toLowerCase();
+      const res = safeStr(f.resolution?.name || f.resolution).toLowerCase();
       if (res === 'duplicate') confirmed++;
       if (INVALID.has(res)) invalid++;
       if (BYDESIGN.has(res)) byDesign++;

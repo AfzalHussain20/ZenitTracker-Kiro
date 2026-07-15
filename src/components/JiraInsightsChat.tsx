@@ -63,7 +63,7 @@ const INVESTIGATIONS = [
     q: 'Full postmortem — duplicate bugs, same-day multi-platform filings, velocity spikes, all suspicious patterns, verdict and next steps',
     icon: '🔬',
     label: 'Full Postmortem',
-    tip: 'Type @ to select a person first',
+    tip: 'Type @ and select a person first, then press this',
   },
   {
     q: 'Who filed the most bugs this month? Show count, daily rate, platform spread. Flag anyone above 2x team average.',
@@ -488,7 +488,19 @@ export default function JiraInsightsChat() {
                 <p className="text-[9px] text-emerald-800 uppercase tracking-widest font-bold">Quick Investigations</p>
                 <div className="grid grid-cols-2 gap-1.5">
                   {INVESTIGATIONS.map(inv => (
-                    <button key={inv.label} onClick={() => send(inv.q)}
+                    <button key={inv.label}
+                      onClick={() => {
+                        // Full Postmortem requires a name — open @ picker prefilled
+                        if (inv.label === 'Full Postmortem') {
+                          setInput('full postmortem on "@');
+                          setMentionOpen(true);
+                          setMentionQuery('');
+                          setMentionStart('full postmortem on "'.length - 1);
+                          setTimeout(() => inputRef.current?.focus(), 50);
+                        } else {
+                          send(inv.q);
+                        }
+                      }}
                       className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-emerald-950/50 border border-emerald-900/40 hover:border-emerald-700/60 hover:bg-emerald-950 text-left transition-all group">
                       <span className="text-sm shrink-0 mt-0.5">{inv.icon}</span>
                       <div className="min-w-0">
