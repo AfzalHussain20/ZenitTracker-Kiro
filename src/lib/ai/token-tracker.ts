@@ -90,28 +90,37 @@ export function trackTokenUsage(event: TokenEvent): void {
   }
 
   // Persist to Firestore (non-blocking)
-  persistToFirestore(event).catch((err) =>
-    console.error('[TokenTracker] Firestore write failed:', err.message)
-  );
+  persistToFirestore(event).catch((err) => {
+    console.error('[TokenTracker] Firestore write failed:', err.message, err.code || '');
+  });
 }
 
 async function persistToFirestore(event: TokenEvent): Promise<void> {
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+  if (!projectId || !clientEmail || !privateKey) {
+    // No credentials — skip silently
+    return;
+  }
+
   try {
-    const db = getAdminDb();
-    const batch = db.batch();
+    // Use a dedicated app for token tracking to avoid singleton conflicts
+    const { initializeApp, getApps, cert } = await import('firebase-admin/app');
+    const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
 
-    // 1. Add individual event doc
-    const eventRef = db.collection('ai_token_usage').doc();
-    batch.set(eventRef, event);
+    const appName = 'token-tracker';
+    const existingApps = getApps();
+    const trackerApp = existingApps.find(a => a.name === appName)
+      || initializeApp({ credential: cert({ projectId, clientEmail, privateKey }), projectId }, appName);
 
-    // 2. Upsert daily aggregate
+    const db = getFirestore(trackerApp);
+
     const day = new Date(event.timestamp).toISOString().substring(0, 10);
     const dailyRef = db.collection('ai_token_usage_daily').doc(day);
 
-    // We use FieldValue.increment for atomic aggregation
-    const { FieldValue } = await import('firebase-admin/firestore');
-    batch.set(
-      dailyRef,
+    await dailyRef.set(
       {
         date: day,
         totalCalls: FieldValue.increment(1),
@@ -130,10 +139,8 @@ async function persistToFirestore(event: TokenEvent): Promise<void> {
       },
       { merge: true }
     );
-
-    await batch.commit();
-  } catch {
-    // Silently fail — token tracking is non-critical
+  } catch (err: any) {
+    console.error('[TokenTracker] Firestore write failed:', err.message);
   }
 }
 
@@ -176,6 +183,8 @@ export function estimateTokens(text: string): number {
 
 /**
  * Wraps an AI provider call, measuring duration and tracking usage.
+ * Awaits the Firestore write before returning to ensure it completes
+ * before the serverless function terminates.
  */
 export async function withTokenTracking<T extends { answer: string; usage?: { promptTokens: number; completionTokens: number; totalTokens: number } }>(
   feature: AIFeature,
@@ -190,7 +199,7 @@ export async function withTokenTracking<T extends { answer: string; usage?: { pr
 
   const usage = result.usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
-  trackTokenUsage({
+  const event: TokenEvent = {
     feature,
     provider,
     model,
@@ -202,7 +211,18 @@ export async function withTokenTracking<T extends { answer: string; usage?: { pr
     userId: context?.userId,
     pageId: context?.pageId,
     question: context?.question?.substring(0, 120),
-  });
+  };
+
+  // Update in-memory aggregates
+  trackTokenUsage(event);
+
+  // Await Firestore write directly — don't fire-and-forget in serverless environments
+  // because the function may terminate before the async write completes
+  try {
+    await persistToFirestore(event);
+  } catch (err: any) {
+    console.error('[TokenTracker] Firestore write failed:', err.message);
+  }
 
   return { ...result, usage };
 }

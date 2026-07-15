@@ -1,31 +1,21 @@
 import { NextResponse } from 'next/server';
 import { keyPool } from '@/lib/ai/providers/key-pool';
-import { getInMemoryStats } from '@/lib/ai/token-tracker';
+import { getAdminDb } from '@/lib/firebaseAdmin';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/ai/check-quota
  *
- * Returns live quota stats from two sources:
- * 1. Key pool — actual request counts tracked per Gemini/Groq key (reliable, in-memory)
- * 2. Token tracker — token usage aggregates (populated when withTokenTracking is used)
- *
- * This is the primary source for the TokenQuotaBadge since Firestore
- * writes can fail when Firebase Admin isn't configured, but key pool
- * stats are always available within a server instance.
+ * Returns live quota stats from:
+ * 1. Key pool — Gemini/Groq key availability (in-memory, per instance)
+ * 2. Firestore ai_token_usage_daily — today's persistent call/token counts
+ *    This survives across serverless cold starts unlike in-memory stats.
  */
 export async function GET() {
   try {
     const poolStats = keyPool.getStats();
-    const memStats = getInMemoryStats();
 
-    // Calculate total requests made across all keys today
-    // Note: requestCount resets on server restart, but this is our best live signal
-    const geminiTotalRequests = poolStats.gemini.total;
-    const groqTotalRequests = poolStats.groq.total;
-
-    // Key pool daily limits
     const GEMINI_KEYS = poolStats.gemini.total;
     const GROQ_KEYS = poolStats.groq.total;
     const GEMINI_RPD_PER_KEY = 1500;
@@ -34,35 +24,42 @@ export async function GET() {
     const groqDailyLimit = GROQ_KEYS * GROQ_RPD_PER_KEY;
     const totalDailyLimit = geminiDailyLimit + groqDailyLimit;
 
-    // In-memory call counts (resets on cold start but tracks current session accurately)
-    const sessionCalls = memStats.totals.calls;
-    const sessionTokens = memStats.totals.totalTokens;
-    const sessionPromptTokens = memStats.totals.promptTokens;
-    const sessionCompletionTokens = memStats.totals.completionTokens;
+    // ─── Read today's Firestore daily aggregate ───────────────────────────
+    // This is written by persistToFirestore() in token-tracker.ts after every AI call
+    const today = new Date().toISOString().substring(0, 10);
+    let todayData: any = null;
+    let firestoreError: string | null = null;
 
-    // Per-feature breakdown
-    const featureBreakdown = memStats.aggregates.map(a => ({
-      feature: a.feature,
-      calls: a.callCount,
-      totalTokens: a.totalTokens,
-      avgPromptTokens: a.avgPromptTokens,
-      avgCompletionTokens: a.avgCompletionTokens,
-      lastCalledAt: a.lastCalledAt,
-    }));
+    try {
+      const db = getAdminDb();
+      const doc = await db.collection('ai_token_usage_daily').doc(today).get();
+      if (doc.exists) {
+        todayData = doc.data();
+      }
+    } catch (err: any) {
+      firestoreError = err.message;
+    }
 
-    // Recent events (last 20)
-    const recentEvents = memStats.recentEvents.slice(0, 20).map(e => ({
-      feature: e.feature,
-      provider: e.provider,
-      promptTokens: e.promptTokens,
-      completionTokens: e.completionTokens,
-      totalTokens: e.totalTokens,
-      durationMs: e.durationMs,
-      timestamp: e.timestamp,
-    }));
+    // ─── Build response ───────────────────────────────────────────────────
+    const totalCalls = todayData?.totalCalls ?? 0;
+    const totalTokens = todayData?.totalTokens ?? 0;
+    const promptTokens = todayData?.totalPromptTokens ?? 0;
+    const completionTokens = todayData?.totalCompletionTokens ?? 0;
+    const byFeature = todayData?.byFeature ?? {};
+
+    // Flatten byFeature into a sorted array for the badge UI
+    const features = Object.entries(byFeature)
+      .map(([feature, data]: [string, any]) => ({
+        feature,
+        calls: data.calls ?? 0,
+        totalTokens: data.totalTokens ?? 0,
+        avgPromptTokens: data.calls > 0 ? Math.round((data.promptTokens ?? 0) / data.calls) : 0,
+        avgCompletionTokens: data.calls > 0 ? Math.round((data.completionTokens ?? 0) / data.calls) : 0,
+        lastCalledAt: todayData?.lastUpdated ?? 0,
+      }))
+      .sort((a, b) => b.totalTokens - a.totalTokens);
 
     return NextResponse.json({
-      // Key pool state
       providers: {
         gemini: {
           totalKeys: poolStats.gemini.total,
@@ -79,20 +76,18 @@ export async function GET() {
       },
       totalDailyLimit,
 
-      // Session stats (since last cold start)
+      // Today's persistent stats from Firestore
       session: {
-        calls: sessionCalls,
-        totalTokens: sessionTokens,
-        promptTokens: sessionPromptTokens,
-        completionTokens: sessionCompletionTokens,
+        calls: totalCalls,
+        totalTokens,
+        promptTokens,
+        completionTokens,
       },
 
-      // Per-feature breakdown
-      features: featureBreakdown,
-
-      // Recent individual calls
-      recentEvents,
-
+      features,
+      date: today,
+      source: firestoreError ? 'firestore_error' : (todayData ? 'firestore' : 'no_data_yet'),
+      firestoreError,
       generatedAt: new Date().toISOString(),
     });
   } catch (err: any) {

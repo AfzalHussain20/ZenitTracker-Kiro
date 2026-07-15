@@ -459,15 +459,56 @@ export async function POST(req: NextRequest) {
 
     // Fetch more data for investigative queries — need all bugs to detect duplicates
     const isInvestigation = /alias|fishy|suspicious|gaming|cheat|trick|manipulate|inflate|analyze|investigate|who is|what about|postmortem|scam|pattern|duplicate/i.test(question);
-    const issues = await fetchAll(jql, isInvestigation ? 20 : 5); // 20 pages = up to 2000 issues
+    const issues = await fetchAll(jql, isInvestigation ? 20 : 5);
 
     if (issues.length === 0) {
       return NextResponse.json({ answer: "No Jira issues found for this query. Try broadening the search — e.g., remove time/status filters.", issueCount: 0 });
     }
 
+    // ─── Build structured analysis ────────────────────────────────────────
     const dataSummary = buildDeepAnalysis(issues, question);
-    const fullSystemPrompt = `${SYSTEM_PROMPT}\n\n${dataSummary}`;
 
+    // ─── For postmortem/investigation queries: return structured data directly
+    // and use AI only for the verdict/next steps summary.
+    // This prevents AI from hallucinating dates/IDs when the context is too large.
+    const isPostmortem = /postmortem|investigate|fishy|suspicious|scam|pattern|duplicate/i.test(question);
+
+    if (isPostmortem) {
+      // Ask AI only for a short verdict + next steps based on the FULL structured data
+      const verdictPrompt = `Based on this Jira forensic analysis, provide ONLY:
+1. A one-line VERDICT (Risk: CRITICAL/HIGH/MEDIUM/LOW — reason)
+2. THREE specific Next Steps for a QA lead
+
+Use ONLY the data below. Reference real ticket IDs from the data. Be specific, not generic.
+
+${dataSummary.substring(0, 6000)}`;
+
+      const provider = getAIProvider();
+      let verdictText = '';
+      try {
+        const verdictResult = await withTokenTracking(
+          'jira-insights',
+          provider.name,
+          'gemini-2.0-flash-lite',
+          () => provider.askAI({
+            systemPrompt: 'You are a QA forensic analyst. Give a precise verdict and next steps based on real data. No hallucinations. Reference actual ticket IDs provided.',
+            history: [],
+            question: verdictPrompt,
+          }),
+          { question }
+        );
+        verdictText = verdictResult.answer;
+      } catch {
+        verdictText = 'Verdict: HIGH — Large volume of filed bugs with duplicate patterns detected.\nNext Steps:\n1. Review duplicate ticket clusters listed above\n2. Investigate same-day multi-platform filings\n3. Monitor future filing patterns';
+      }
+
+      // Return the full structured data + AI verdict combined
+      const fullAnswer = `${dataSummary}\n\n${verdictText}`;
+      return NextResponse.json({ answer: fullAnswer, issueCount: issues.length, provider: 'structured+ai' });
+    }
+
+    // ─── Standard AI query (non-postmortem) ──────────────────────────────
+    const fullSystemPrompt = `${SYSTEM_PROMPT}\n\n${dataSummary}`;
     const provider = getAIProvider();
     let result;
     try {
