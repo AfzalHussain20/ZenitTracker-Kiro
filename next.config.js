@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'export',
+  distDir: 'out',
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -7,6 +9,7 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   images: {
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',
@@ -14,7 +17,6 @@ const nextConfig = {
       },
     ],
   },
-  // Try to help with parsing issues
   swcMinify: true,
   compiler: {
     removeConsole: false,
