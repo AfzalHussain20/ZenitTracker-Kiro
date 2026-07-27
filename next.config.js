@@ -20,13 +20,24 @@ const nextConfig = {
     removeConsole: false,
   },
   webpack: (config, { isServer }) => {
-    // Skip problematic modules during build
     config.externals.push(
       'usb',
       'node-hid',
       'serialport',
-      'adb'
+      'adb',
+      'child_process',
+      'fs',
+      'path'
     );
+    
+    // Prevent file from being bundled
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      path: false,
+      child_process: false,
+    };
+    
     return config;
   },
   experimental: {
