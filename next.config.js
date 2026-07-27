@@ -19,6 +19,19 @@ const nextConfig = {
   compiler: {
     removeConsole: false,
   },
+  webpack: (config, { isServer }) => {
+    // Skip problematic modules during build
+    config.externals.push(
+      'usb',
+      'node-hid',
+      'serialport',
+      'adb'
+    );
+    return config;
+  },
+  experimental: {
+    esmExternals: true,
+  },
 };
 
 module.exports = nextConfig;
