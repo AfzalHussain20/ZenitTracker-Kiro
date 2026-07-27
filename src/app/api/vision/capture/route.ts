@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server';
-import { getConnectedDevice, getConnectedDevices, captureDeviceState } from '@/lib/vision-core';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
     try {
+        // Dynamic import — prevents module evaluation at build time.
+        // vision-core imports cheerio which references browser globals (File, etc.)
+        // that are unavailable during Next.js static page data collection.
+        const { getConnectedDevice, getConnectedDevices, captureDeviceState } =
+            await import('@/lib/vision-core');
+
         const url = new URL(request.url);
         const preferredId = url.searchParams.get('deviceId');
 

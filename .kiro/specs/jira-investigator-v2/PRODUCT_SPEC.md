@@ -1,4 +1,4 @@
-# Jira Investigator v2 — Product Specification
+ # Jira Investigator v2 — Product Specification
 
 | Field | Value |
 |---|---|

@@ -20,28 +20,23 @@ const nextConfig = {
     removeConsole: false,
   },
   webpack: (config, { isServer }) => {
+    // Externalize native/OS modules that can't run in Next.js build environment
     config.externals.push(
       'usb',
       'node-hid',
       'serialport',
       'adb',
-      'child_process',
-      'fs',
-      'path'
     );
-    
-    // Prevent file from being bundled
+
+    // Prevent browser-only or OS-only modules from being bundled for the server
     config.resolve.fallback = {
       ...config.resolve.fallback,
       fs: false,
       path: false,
       child_process: false,
     };
-    
+
     return config;
-  },
-  experimental: {
-    esmExternals: true,
   },
 };
 
