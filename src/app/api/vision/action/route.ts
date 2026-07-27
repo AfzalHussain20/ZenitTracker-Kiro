@@ -1,3 +1,5 @@
+'use server';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getConnectedDevice, executeAdbAction, captureDeviceState, wait, getDetailedSystemState } from '@/lib/vision-core';
 
