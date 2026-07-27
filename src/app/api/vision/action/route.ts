@@ -1,10 +1,12 @@
 'use server';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getConnectedDevice, executeAdbAction, captureDeviceState, wait, getDetailedSystemState } from '@/lib/vision-core';
 
 export async function POST(request: NextRequest) {
     try {
+        // Dynamically import only at runtime, not at build time
+        const { getConnectedDevice, executeAdbAction, captureDeviceState, wait, getDetailedSystemState } = await import('@/lib/vision-core');
+
         const body = await request.json();
         const deviceId = await getConnectedDevice();
 
