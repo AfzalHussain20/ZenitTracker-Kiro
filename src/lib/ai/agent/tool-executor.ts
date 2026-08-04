@@ -147,7 +147,7 @@ async function toolJiraSprintStats(params: Record<string, unknown>): Promise<unk
   const sprintFunc = sprintType === 'closed' ? 'closedSprints()' : 'openSprints()';
   const jql = `project = ${PROJECT_KEY} AND sprint in ${sprintFunc} ORDER BY created DESC`;
 
-  const url = `${JIRA_BASE}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&maxResults=100&fields=summary,status,priority,issuetype,assignee,created`;
+  const url = `${JIRA_BASE}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&maxResults=100&fields=summary,status,priority,issuetype,assignee,reporter,created,customfield_10103`;
   const res = await fetch(url, {
     headers: { Authorization: `Basic ${JIRA_AUTH()}`, Accept: 'application/json' },
     cache: 'no-store',
@@ -158,14 +158,29 @@ async function toolJiraSprintStats(params: Record<string, unknown>): Promise<unk
 
   const statusCounts: Record<string, number> = {};
   const typeCounts: Record<string, number> = {};
+  const byReporter: Record<string, number> = {};
+  const byAssignee: Record<string, number> = {};
+  const byPlatform: Record<string, number> = {};
   issues.forEach((i: any) => {
     const s = i.fields?.status?.name || 'Unknown';
     const t = i.fields?.issuetype?.name || 'Unknown';
+    const r = i.fields?.reporter?.displayName || 'Unknown';
+    const a = i.fields?.assignee?.displayName || 'Unassigned';
+    const p = i.fields?.customfield_10103?.[0]?.value || 'Unknown';
     statusCounts[s] = (statusCounts[s] || 0) + 1;
     typeCounts[t] = (typeCounts[t] || 0) + 1;
+    byReporter[r] = (byReporter[r] || 0) + 1;
+    byAssignee[a] = (byAssignee[a] || 0) + 1;
+    byPlatform[p] = (byPlatform[p] || 0) + 1;
   });
 
-  return { total: issues.length, statusCounts, typeCounts, sprintType };
+  // Sort reporters by count
+  const topReporters = Object.entries(byReporter).sort((a, b) => b[1] - a[1]).slice(0, 10)
+    .map(([name, count]) => ({ name, count }));
+  const topAssignees = Object.entries(byAssignee).sort((a, b) => b[1] - a[1]).slice(0, 10)
+    .map(([name, count]) => ({ name, count }));
+
+  return { total: issues.length, statusCounts, typeCounts, byReporter, byAssignee, byPlatform, topReporters, topAssignees, sprintType };
 }
 
 async function toolPrdSearch(params: Record<string, unknown>): Promise<unknown> {

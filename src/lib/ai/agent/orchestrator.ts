@@ -86,6 +86,18 @@ const INTENT_PATTERNS: { agent: AgentId; patterns: RegExp[]; weight: number }[] 
  * Returns the best-matched agent and alternatives.
  */
 function classifyIntent(query: string): OrchestratorDecision {
+  // Short conversational responses — not a real query
+  const isConversational = /^(ok|yes|no|sure|thanks|thank you|got it|cool|nice|hmm|k|yep|nope)$/i.test(query.trim());
+  if (isConversational) {
+    return {
+      selectedAgent: 'prd-agent',
+      reasoning: 'Conversational response — no actionable query',
+      confidence: 0.1,
+      alternativeAgents: [],
+      requiresMultiAgent: false,
+    };
+  }
+
   const scores: Map<AgentId, number> = new Map();
   const matchedKeywords: Map<AgentId, string[]> = new Map();
 

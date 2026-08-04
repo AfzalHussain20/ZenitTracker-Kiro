@@ -44,17 +44,20 @@ AVAILABLE TOOLS:
 ${toolDescriptions || '(No tools available — answer from knowledge only)'}
 
 RESPONSE FORMAT:
-If you need to use a tool, respond with EXACTLY this JSON format:
+If you need to use a tool to get data, respond with EXACTLY this JSON:
 {"action": "tool", "tool": "tool_name", "params": {"key": "value"}}
 
-If you have enough information to answer, respond with:
+If you already have enough data (from a previous tool result or general knowledge), respond with:
 {"action": "answer", "content": "your answer here", "confidence": 0.9, "suggestions": ["follow-up 1"]}
 
-If you need more context, respond with:
-{"action": "clarify", "content": "what you need to know"}
-
-CRITICAL: Always respond with valid JSON. No markdown fences. No explanation outside the JSON.`;
+CRITICAL RULES:
+- Always respond with valid JSON only. No markdown fences. No explanation outside the JSON.
+- When you receive tool results, ALWAYS produce an answer from them. Never say "I would need to call another tool" — just call it or answer with what you have.
+- If a tool gives you data, analyze it and give a clear, direct answer. Do NOT describe what you plan to do — just do it.
+- Prefer answering with available data over asking for clarification.
+- Be concise and direct. Lead with the key finding.`;
 }
+
 
 /**
  * Parse the AI response to extract action, tool call, or answer.
