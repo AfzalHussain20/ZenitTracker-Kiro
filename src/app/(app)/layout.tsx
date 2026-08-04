@@ -6,6 +6,7 @@ import AppHeader from '@/components/layout/AppHeader';
 import { Toaster } from '@/components/ui/toaster';
 import FloatingNotesWidget from '@/components/notes/FloatingNotesWidget';
 import GlobalAIChat from '@/components/GlobalAIChat';
+import AgentChat from '@/components/ai/AgentChat';
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -20,6 +21,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <Toaster />
       <FloatingNotesWidget />
       <GlobalAIChat />
+      <AgentChat />
     </div>
   );
 }
