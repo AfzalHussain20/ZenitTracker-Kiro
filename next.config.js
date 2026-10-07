@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: process.env.NETLIFY ? undefined : 'standalone',
+  output: (process.env.NETLIFY || process.env.CF_PAGES) ? undefined : 'standalone',
   typescript: {
     ignoreBuildErrors: true,
   },
