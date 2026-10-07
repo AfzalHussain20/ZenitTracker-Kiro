@@ -111,7 +111,8 @@ function parseAgentAction(response: string): {
  */
 export async function executeAgentLoop(
   agentId: AgentId,
-  context: AgentContext
+  context: AgentContext,
+  providerArg?: import('@/lib/ai/providers').AIProvider
 ): Promise<AgentResponse> {
   const startTime = Date.now();
   const thoughtProcess: ThoughtStep[] = [];
@@ -119,7 +120,7 @@ export async function executeAgentLoop(
   let totalTokens = { prompt: 0, completion: 0, total: 0 };
 
   const systemPrompt = buildAgentPrompt(agentId, context);
-  const provider = getAIProvider();
+  const provider = providerArg ?? getAIProvider();
 
   // Build conversation history for the AI
   const history: { role: 'user' | 'assistant'; content: string }[] = [];

@@ -184,6 +184,7 @@ export interface OrchestrateRequest {
   forceAgent?: AgentId;
   maxIterations?: number;
   timeoutMs?: number;
+  provider?: import('@/lib/ai/providers').AIProvider; // optional — injects NVIDIA provider when configured
 }
 
 export interface OrchestrateResult {
@@ -205,6 +206,7 @@ export async function orchestrate(request: OrchestrateRequest): Promise<Orchestr
     forceAgent,
     maxIterations = 5,
     timeoutMs = 55000, // Under Render's 60s limit
+    provider,
   } = request;
 
   const session = getOrCreateSession(sessionId, userId);
@@ -266,7 +268,7 @@ export async function orchestrate(request: OrchestrateRequest): Promise<Orchestr
 
   try {
     response = await Promise.race([
-      executeAgentLoop(decision.selectedAgent, context),
+      executeAgentLoop(decision.selectedAgent, context, provider),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Agent execution timeout')), timeoutMs)
       ),

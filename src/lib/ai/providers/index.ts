@@ -81,6 +81,8 @@ const nvidiaWithFallback: AIProvider = {
         } catch (err: any) {
           const msg = err?.message || '';
           if (msg.includes('429') || msg.includes('exhausted')) {
+            keyPool.markNvidiaExhausted();
+            if (keyPool.getAvailableNvidiaCount() === 0) break;
             continue;
           }
           throw err;

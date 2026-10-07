@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Ensure NVIDIA is selected for agent route when configured
-    const _provider = getAIProviderFor('agent');
+    const provider = getAIProviderFor('agent');
 
     const result = await orchestrate({
       query: query.trim(),
@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
       history,
       maxIterations: maxIterations || 5,
       timeoutMs: 55000,
+      provider, // inject NVIDIA provider when configured
     });
 
     return NextResponse.json({
