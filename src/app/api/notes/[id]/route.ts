@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebaseAdmin';
 
 // GET /api/notes/[id] — get single note
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const adminDb = getAdminDb();
-    const doc = await adminDb.collection('zenit_notes').doc(params.id).get();
+    const doc = await adminDb.collection('zenit_notes').doc(id).get();
     if (!doc.exists) {
       return NextResponse.json({ error: 'Note not found' }, { status: 404 });
     }
@@ -22,8 +23,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 // PATCH /api/notes/[id] — update note
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const adminDb = getAdminDb();
     const body = await req.json();
     const { title, content, plainText, tags, category, pinned, archived, linkedBugs } = body;
@@ -38,19 +40,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (archived !== undefined) updateData.archived = archived;
     if (linkedBugs !== undefined) updateData.linkedBugs = linkedBugs;
 
-    await adminDb.collection('zenit_notes').doc(params.id).update(updateData);
+    await adminDb.collection('zenit_notes').doc(id).update(updateData);
 
-    return NextResponse.json({ success: true, id: params.id });
+    return NextResponse.json({ success: true, id });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Failed to update note' }, { status: 500 });
   }
 }
 
 // DELETE /api/notes/[id] — soft delete (archive)
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const adminDb = getAdminDb();
-    await adminDb.collection('zenit_notes').doc(params.id).update({
+    await adminDb.collection('zenit_notes').doc(id).update({
       archived: true,
       updatedAt: new Date(),
     });

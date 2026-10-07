@@ -16,7 +16,6 @@ const nextConfig = {
       },
     ],
   },
-  swcMinify: true,
   compiler: {
     removeConsole: false,
   },

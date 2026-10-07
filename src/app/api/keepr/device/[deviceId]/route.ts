@@ -139,8 +139,8 @@ const SEED: Record<string, any> = {
 };
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
-export async function GET(_req: NextRequest, { params }: { params: { deviceId: string } }) {
-    const { deviceId } = params;
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ deviceId: string }> }) {
+    const { deviceId } = await params;
     try {
         const db   = getAdminDb();
         const snap = await db.collection(COLLECTION).doc(deviceId).get();
@@ -159,8 +159,8 @@ export async function GET(_req: NextRequest, { params }: { params: { deviceId: s
 }
 
 // ─── PATCH ────────────────────────────────────────────────────────────────────
-export async function PATCH(req: NextRequest, { params }: { params: { deviceId: string } }) {
-    const { deviceId } = params;
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ deviceId: string }> }) {
+    const { deviceId } = await params;
     const body = await req.json();
 
     // ── SERVER-SIDE TIME: ignore any timestamps from the client ──────────────

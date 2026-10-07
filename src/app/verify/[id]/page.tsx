@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import { Compass, Trophy, Shield, CheckCircle2, XCircle, Loader2, ExternalLink, Fingerprint, ShieldCheck, User, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
@@ -22,8 +23,9 @@ interface CertificateData {
 
 type VerifyState = 'loading' | 'found' | 'not_found' | 'revoked' | 'error';
 
-export default function VerifyCertificatePage({ params }: { params: { id: string } }) {
-    const { id } = params;
+export default function VerifyCertificatePage() {
+    const params = useParams();
+    const id = params.id as string;
     const [state, setState] = useState<VerifyState>('loading');
     const [cert, setCert] = useState<CertificateData | null>(null);
 

@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server';
 
 export async function GET(
   _req: Request,
-  { params }: { params: { key: string } }
+  { params }: { params: Promise<{ key: string }> }
 ) {
+  const { key: issueKey } = await params;
   try {
-    const issueKey = params.key;
 
     if (!issueKey || !/^[A-Z]{2,10}-\d+$/.test(issueKey)) {
       return NextResponse.json({ error: 'Invalid issue key format. Expected: ABC-123' }, { status: 400 });
