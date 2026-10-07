@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { orchestrate } from '@/lib/ai/agent';
 import { isAIEnabled } from '@/lib/ai/feature-flags';
+import { getAIProviderFor } from '@/lib/ai/providers';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -33,6 +34,9 @@ export async function POST(req: NextRequest) {
         error: 'AI Agent is currently disabled. Enable it in AI Settings.',
       }, { status: 403 });
     }
+
+    // Ensure NVIDIA is selected for agent route when configured
+    const _provider = getAIProviderFor('agent');
 
     const result = await orchestrate({
       query: query.trim(),

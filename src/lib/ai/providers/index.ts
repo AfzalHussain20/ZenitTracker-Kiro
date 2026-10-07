@@ -1,6 +1,7 @@
 import type { AIProvider } from './types';
 import { geminiProvider } from './gemini';
 import { groqProvider } from './groq';
+import { nvidiaProvider } from './nvidia';
 import { keyPool } from './key-pool';
 
 /**
@@ -54,3 +55,55 @@ const geminiWithFallback: AIProvider = {
 };
 
 export type { AIProvider, AskAIParams, AskAIResult, ChatTurn } from './types';
+
+/**
+ * Routes that benefit from NVIDIA NIM's complex reasoning capability.
+ * When NVIDIA_API_KEY is configured, these routes use NVIDIA → Gemini → Groq.
+ * Falls back to getAIProvider() if NVIDIA is not configured.
+ */
+export type AIRoute = 'jira-insights' | 'investigate' | 'agent' | 'ask-global' | 'default';
+
+const NVIDIA_ROUTES: AIRoute[] = ['jira-insights', 'investigate', 'agent'];
+
+/**
+ * NVIDIA provider with Gemini and Groq fallback.
+ * Flow: NVIDIA → Gemini key 1 → ... → Gemini key N → Groq key 1 → ... → error
+ */
+const nvidiaWithFallback: AIProvider = {
+  name: 'nvidia',
+  async askAI(params) {
+    // Try NVIDIA first
+    const nvidiaKey = keyPool.getNvidiaKey();
+    if (nvidiaKey) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          return await nvidiaProvider.askAI(params);
+        } catch (err: any) {
+          const msg = err?.message || '';
+          if (msg.includes('429') || msg.includes('exhausted')) {
+            continue;
+          }
+          throw err;
+        }
+      }
+    }
+
+    // NVIDIA exhausted or unavailable — fall back to Gemini
+    console.log('[AI] NVIDIA unavailable — falling back to Gemini');
+    return geminiWithFallback.askAI(params);
+  },
+};
+
+/**
+ * Returns the AI provider most appropriate for the given route.
+ * When NVIDIA_API_KEY or NVIDIA_API_KEYS is set AND the route benefits from
+ * complex reasoning (jira-insights, investigate, agent), returns NVIDIA with fallback.
+ * Otherwise returns the standard getAIProvider() result (unchanged behavior).
+ */
+export function getAIProviderFor(route: AIRoute): AIProvider {
+  const hasNvidia = !!(process.env.NVIDIA_API_KEY || process.env.NVIDIA_API_KEYS);
+  if (hasNvidia && NVIDIA_ROUTES.includes(route)) {
+    return nvidiaWithFallback;
+  }
+  return getAIProvider();
+}

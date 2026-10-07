@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAIProvider } from '@/lib/ai/providers';
+import { getAIProviderFor } from '@/lib/ai/providers';
 import { withTokenTracking } from '@/lib/ai/token-tracker';
 import { isAIEnabled } from '@/lib/ai/feature-flags';
 
@@ -483,13 +483,16 @@ Use ONLY the data below. Reference real ticket IDs from the data. Be specific, n
 
 ${dataSummary.substring(0, 6000)}`;
 
-      const provider = getAIProvider();
+      const provider = getAIProviderFor('jira-insights');
       let verdictText = '';
       try {
+        const modelName = provider.name === 'nvidia'
+          ? (process.env.NVIDIA_MODEL || 'nvidia/nemotron-3.5-lightning-30b-a3b')
+          : 'gemini-2.0-flash-lite';
         const verdictResult = await withTokenTracking(
           'jira-insights',
           provider.name,
-          'gemini-2.0-flash-lite',
+          modelName,
           () => provider.askAI({
             systemPrompt: 'You are a QA forensic analyst. Give a precise verdict and next steps based on real data. No hallucinations. Reference actual ticket IDs provided.',
             history: [],
@@ -509,13 +512,16 @@ ${dataSummary.substring(0, 6000)}`;
 
     // ─── Standard AI query (non-postmortem) ──────────────────────────────
     const fullSystemPrompt = `${SYSTEM_PROMPT}\n\n${dataSummary}`;
-    const provider = getAIProvider();
+    const provider = getAIProviderFor('jira-insights');
     let result;
     try {
+      const modelName = provider.name === 'nvidia'
+        ? (process.env.NVIDIA_MODEL || 'nvidia/nemotron-3.5-lightning-30b-a3b')
+        : 'gemini-2.0-flash-lite';
       result = await withTokenTracking(
         'jira-insights',
         provider.name,
-        'gemini-2.0-flash-lite',
+        modelName,
         () => provider.askAI({ systemPrompt: fullSystemPrompt, history, question }),
         { question }
       );

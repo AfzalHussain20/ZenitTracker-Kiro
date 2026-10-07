@@ -22,8 +22,10 @@ const RESET_INTERVAL_MS = 60 * 60 * 1000; // Try exhausted keys again after 1 ho
 class KeyPool {
   private geminiKeys: KeyState[] = [];
   private groqKeys: KeyState[] = [];
+  private nvidiaKeys: KeyState[] = [];
   private geminiIndex = 0;
   private groqIndex = 0;
+  private nvidiaIndex = 0;
   private initialized = false;
 
   private init() {
@@ -48,7 +50,16 @@ class KeyPool {
       this.groqKeys = [{ key: process.env.GROQ_API_KEY, exhaustedAt: null, requestCount: 0 }];
     }
 
-    console.log(`[KeyPool] Initialized: ${this.geminiKeys.length} Gemini keys, ${this.groqKeys.length} Groq keys`);
+    // Load NVIDIA keys (pool or single)
+    const nvidiaPool = process.env.NVIDIA_API_KEYS;
+    if (nvidiaPool) {
+      this.nvidiaKeys = nvidiaPool.split(',').map(k => k.trim()).filter(Boolean)
+        .map(key => ({ key, exhaustedAt: null, requestCount: 0 }));
+    } else if (process.env.NVIDIA_API_KEY) {
+      this.nvidiaKeys = [{ key: process.env.NVIDIA_API_KEY, exhaustedAt: null, requestCount: 0 }];
+    }
+
+    console.log(`[KeyPool] Initialized: ${this.geminiKeys.length} Gemini keys, ${this.groqKeys.length} Groq keys, ${this.nvidiaKeys.length} NVIDIA keys`);
   }
 
   /** Get the next available Gemini key. Returns null if all exhausted. */
@@ -135,12 +146,54 @@ class KeyPool {
     return this.groqKeys.filter(k => !k.exhaustedAt || (now - k.exhaustedAt) > RESET_INTERVAL_MS).length;
   }
 
+  /** Get the next available NVIDIA key. Returns null if all exhausted. */
+  getNvidiaKey(): string | null {
+    this.init();
+    if (this.nvidiaKeys.length === 0) return null;
+
+    const now = Date.now();
+    for (let i = 0; i < this.nvidiaKeys.length; i++) {
+      const idx = (this.nvidiaIndex + i) % this.nvidiaKeys.length;
+      const state = this.nvidiaKeys[idx];
+
+      if (state.exhaustedAt && (now - state.exhaustedAt) > RESET_INTERVAL_MS) {
+        state.exhaustedAt = null;
+        state.requestCount = 0;
+      }
+
+      if (!state.exhaustedAt) {
+        this.nvidiaIndex = idx;
+        state.requestCount++;
+        return state.key;
+      }
+    }
+
+    return null;
+  }
+
+  /** Mark the current NVIDIA key as exhausted. Rotates to next. */
+  markNvidiaExhausted() {
+    this.init();
+    if (this.nvidiaKeys.length === 0) return;
+    this.nvidiaKeys[this.nvidiaIndex].exhaustedAt = Date.now();
+    this.nvidiaIndex = (this.nvidiaIndex + 1) % this.nvidiaKeys.length;
+    console.log(`[KeyPool] NVIDIA key #${this.nvidiaIndex} exhausted. Rotating.`);
+  }
+
+  /** Count of available (non-exhausted) NVIDIA keys */
+  getAvailableNvidiaCount(): number {
+    this.init();
+    const now = Date.now();
+    return this.nvidiaKeys.filter(k => !k.exhaustedAt || (now - k.exhaustedAt) > RESET_INTERVAL_MS).length;
+  }
+
   /** Stats for debugging */
   getStats() {
     this.init();
     return {
       gemini: { total: this.geminiKeys.length, available: this.getAvailableGeminiCount(), currentIndex: this.geminiIndex },
       groq: { total: this.groqKeys.length, available: this.getAvailableGroqCount(), currentIndex: this.groqIndex },
+      nvidia: { total: this.nvidiaKeys.length, available: this.getAvailableNvidiaCount(), currentIndex: this.nvidiaIndex },
     };
   }
 }

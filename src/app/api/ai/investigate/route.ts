@@ -11,7 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getAIProvider } from '@/lib/ai/providers';
+import { getAIProviderFor } from '@/lib/ai/providers';
 import { withTokenTracking } from '@/lib/ai/token-tracker';
 import { isAIEnabled } from '@/lib/ai/feature-flags';
 import { buildInvestigationReport } from '@/lib/jira/investigation-builder';
@@ -76,7 +76,7 @@ async function fetchAll(jql: string, maxPages = 20): Promise<any[]> {
 // ─── Focused AI verdict prompt ────────────────────────────────────────────────
 async function generateAIFindings(
   report: ReturnType<typeof buildInvestigationReport>,
-  provider: ReturnType<typeof getAIProvider>
+  provider: ReturnType<typeof getAIProviderFor>
 ): Promise<AIFindings> {
   const evidenceSummary = report.evidence.map(e =>
     `- ${e.type}: ${e.title} (confidence: ${e.confidence}, severity: ${e.severity})`
@@ -110,10 +110,13 @@ Write ONLY:
 Format as JSON only: {"executiveSummary":"...","verdict":"HIGH","verdictReason":"...","nextSteps":["...","...","..."]}`;
 
   try {
+    const modelName = provider.name === 'nvidia'
+      ? (process.env.NVIDIA_MODEL || 'nvidia/nemotron-3.5-lightning-30b-a3b')
+      : 'gemini-2.0-flash-lite';
     const result = await withTokenTracking(
       'jira-insights',
       provider.name,
-      'gemini-2.0-flash-lite',
+      modelName,
       () => provider.askAI({
         systemPrompt: 'You are a QA forensics analyst. Output only valid JSON. Never invent numbers.',
         history: [],
@@ -267,7 +270,7 @@ export async function POST(req: NextRequest) {
       }, { status: 404 });
     }
 
-    const provider = getAIProvider();
+    const provider = getAIProviderFor('investigate');
 
     // Build placeholder report first (needed for AI prompt)
     const placeholderAI: AIFindings = {
