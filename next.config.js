@@ -2,6 +2,7 @@
 const nextConfig = {
   // Do not set output: 'standalone' — OpenNext/Cloudflare Workers requires no output mode.
   output: undefined,
+  swcMinify: true,
   typescript: {
     ignoreBuildErrors: true,
   },

@@ -8,8 +8,8 @@ import { getAdminDb } from '@/lib/firebaseAdmin';
 
 const RUNS_COLLECTION = 'test_runs';
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ runId: string }> }) {
-    const { runId } = await params;
+export async function GET(_req: NextRequest, { params }: { params: { runId: string } }) {
+    const { runId } = params;
     try {
         const db = getAdminDb();
         const snap = await db.collection(RUNS_COLLECTION).doc(runId).get();
@@ -20,8 +20,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ run
     }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ runId: string }> }) {
-    const { runId } = await params;
+export async function PATCH(req: NextRequest, { params }: { params: { runId: string } }) {
+    const { runId } = params;
     const body = await req.json();
 
     try {

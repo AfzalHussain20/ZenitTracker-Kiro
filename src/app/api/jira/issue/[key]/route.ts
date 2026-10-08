@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server';
 
 export async function GET(
   _req: Request,
-  { params }: { params: Promise<{ key: string }> }
+  { params }: { params: { key: string } }
 ) {
-  const { key: issueKey } = await params;
+  const { key: issueKey } = params;
   try {
 
     if (!issueKey || !/^[A-Z]{2,10}-\d+$/.test(issueKey)) {
