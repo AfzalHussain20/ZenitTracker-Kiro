@@ -13,7 +13,8 @@
     "test:coverage": "jest --coverage",
     "vision-stream": "npx tsx src/server/vision-stream.ts",
     "dev:vision": "start cmd /c \"npx tsx src/server/vision-stream.ts\" && next dev -H 0.0.0.0",
-    "build:cf": "npx @opennextjs/cloudflare build"
+    "build:cf": "npx @opennextjs/cloudflare build",
+    "deploy:cf": "npx @opennextjs/cloudflare build && npx wrangler deploy"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
