@@ -29,6 +29,7 @@ const nextConfig = {
       'node-hid',
       'serialport',
       'adb',
+      'node:sqlite',
     );
 
     // Prevent browser-only or OS-only modules from being bundled for the server
