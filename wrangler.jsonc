@@ -1,7 +1,7 @@
 {
   "name": "zenittracker",
   "compatibility_date": "2025-05-05",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "allow_eval_during_startup"],
   "main": ".open-next/worker.js",
   "assets": {
     "directory": ".open-next/assets",
