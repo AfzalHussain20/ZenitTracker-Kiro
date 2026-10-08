@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: (process.env.NETLIFY || process.env.CF_PAGES) ? undefined : 'standalone',
+  // Do not set output: 'standalone' — OpenNext/Cloudflare Workers requires no output mode.
+  // 'standalone' causes Next.js to emit a Pages Router manifest (_buildManifest.js with
+  // only /_app and /_error) which breaks the App Router build on Cloudflare Workers.
+  output: undefined,
   typescript: {
     ignoreBuildErrors: true,
   },
