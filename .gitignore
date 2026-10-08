@@ -33,6 +33,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# open-next build output
+.open-next
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
@@ -46,3 +49,11 @@ firestore-debug.log
 
 # tools
 /tools
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

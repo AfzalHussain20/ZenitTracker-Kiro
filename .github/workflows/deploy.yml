@@ -1,38 +1,74 @@
-name: CI — Build Check
+name: Deploy to Cloudflare Workers
 
 on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+    name: Build and Deploy
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
-      - name: Build
-        run: npm run build
+      - name: Build with OpenNext
+        run: npx @opennextjs/cloudflare build
         env:
-          # Provide dummy values so build doesn't fail on missing env checks
-          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY || 'dummy' }}
-          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'dummy' }}
-          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || 'dummy.firebaseapp.com' }}
-          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'dummy.appspot.com' }}
-          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '000000000000' }}
-          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID || '1:000:web:000' }}
+          NEXTJS_ENV: production
 
-      - name: Build succeeded
-        run: echo "✅ Build passed on Node 20"
+      - name: Deploy Worker
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Upload Worker secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SECRET_NEXTJS_ENV: production
+          SECRET_NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+          SECRET_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+          SECRET_NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+          SECRET_NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+          SECRET_NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+          SECRET_NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          SECRET_FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          SECRET_FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          SECRET_JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          SECRET_JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          SECRET_JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          SECRET_JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+          SECRET_JIRA_ORG_ID: ${{ secrets.JIRA_ORG_ID }}
+          SECRET_JIRA_CLOUD_ID: ${{ secrets.JIRA_CLOUD_ID }}
+          SECRET_CONFLUENCE_BASE_URL: ${{ secrets.CONFLUENCE_BASE_URL }}
+          SECRET_CONFLUENCE_EMAIL: ${{ secrets.CONFLUENCE_EMAIL }}
+          SECRET_CONFLUENCE_API_TOKEN: ${{ secrets.CONFLUENCE_API_TOKEN }}
+          SECRET_GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+          SECRET_GOOGLE_AI_API_KEYS: ${{ secrets.GOOGLE_AI_API_KEYS }}
+          SECRET_GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+          SECRET_NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          SECRET_NVIDIA_BASE_URL: ${{ secrets.NVIDIA_BASE_URL }}
+          SECRET_NVIDIA_MODEL: ${{ secrets.NVIDIA_MODEL }}
+          SECRET_HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const secrets = {};
+            Object.entries(process.env)
+              .filter(([k]) => k.startsWith('SECRET_'))
+              .forEach(([k, v]) => { secrets[k.replace('SECRET_', '')] = v; });
+            fs.writeFileSync('/tmp/secrets.json', JSON.stringify(secrets));
+            console.log('Secrets prepared:', Object.keys(secrets).join(', '));
+          "
+          npx wrangler secret bulk /tmp/secrets.json --name zenittracker
