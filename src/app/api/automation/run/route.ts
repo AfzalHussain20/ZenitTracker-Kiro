@@ -69,14 +69,38 @@ export async function GET(req: NextRequest) {
             sendEvent(`════════════════════════`);
 
             const automationDir = path.resolve(process.cwd(), 'Zenit-Web-Auto');
-            const javaHome = 'C:\\Program Files\\Microsoft\\jdk-17.0.14.7-hotspot'; // High-perf Java 17
-            const mavenHome = 'C:\\maven'; // Path from user's env earlier
-
-            let env = { ...process.env, JAVA_HOME: javaHome } as any;
-            const platformPathSeparator = process.platform === 'win32' ? ';' : ':';
-            env.PATH = `${path.join(mavenHome, 'bin')}${platformPathSeparator}${path.join(javaHome, 'bin')}${platformPathSeparator}${process.env.PATH}`;
-
-            const mvnCommand = process.platform === 'win32' ? 'mvn.cmd' : 'mvn';
+            
+            // Only set Java/Maven paths if running in local environment, not in Workers
+            let env = { ...process.env };
+            let mvnCommand = 'mvn';
+            
+            // Check if we're in a local development environment with Java available
+            if (typeof process !== 'undefined' && process.platform === 'win32') {
+                try {
+                    // Try to find Java in common locations, but don't hardcode paths
+                    const possibleJavaHomes = [
+                        process.env.JAVA_HOME,
+                        'C:\\Program Files\\Microsoft\\jdk-17.0.14.7-hotspot',
+                        'C:\\Program Files\\Java\\jdk-17'
+                    ].filter(Boolean);
+                    
+                    for (const javaHome of possibleJavaHomes) {
+                        if (javaHome && fs.existsSync(path.join(javaHome, 'bin', 'java.exe'))) {
+                            env.JAVA_HOME = javaHome;
+                            const mavenHome = process.env.MAVEN_HOME || 'C:\\maven';
+                            const platformPathSeparator = ';';
+                            if (fs.existsSync(path.join(mavenHome, 'bin'))) {
+                                env.PATH = `${path.join(mavenHome, 'bin')}${platformPathSeparator}${path.join(javaHome, 'bin')}${platformPathSeparator}${process.env.PATH}`;
+                            }
+                            mvnCommand = 'mvn.cmd';
+                            break;
+                        }
+                    }
+                } catch (error) {
+                    // If we can't access Java/Maven, fall back to basic command
+                    console.warn('Java/Maven not available in this environment');
+                }
+            }
 
             const args = [
                 'test',

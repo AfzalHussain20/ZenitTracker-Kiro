@@ -2,7 +2,6 @@
 const nextConfig = {
   // Do not set output: 'standalone' — OpenNext/Cloudflare Workers requires no output mode.
   output: undefined,
-  swcMinify: true,
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -40,6 +39,19 @@ const nextConfig = {
       path: false,
       child_process: false,
     };
+
+    // Ignore specific file paths that might be referenced but shouldn't be bundled
+    config.externals.push(({ context, request }, callback) => {
+      // Ignore Java/Maven paths that might be referenced in automation code
+      if (request && (
+        request.includes('jdk-') || 
+        request.includes('maven') || 
+        request.includes('Program Files')
+      )) {
+        return callback(null, `commonjs ${request}`);
+      }
+      callback();
+    });
 
     return config;
   },
