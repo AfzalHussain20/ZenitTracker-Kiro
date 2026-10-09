@@ -1,53 +1,12 @@
-export const runtime = 'nodejs';
 import { NextResponse } from 'next/server';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
-
-// Multiple ADB paths for robustness
-const adbPaths = [
-    'adb',
-    'D:\\ADB\\platform-tools-latest-windows\\platform-tools\\adb.exe',
-    'C:\\platform-tools\\adb.exe',
-    '/usr/bin/adb',
-    '/opt/homebrew/bin/adb'
-];
-
-async function runAdb(args: string) {
-    let lastError = null;
-    for (const path of adbPaths) {
-        try {
-            // timeout to prevent hanging
-            const { stdout } = await execAsync(`"${path}" ${args}`, { timeout: 1500 });
-            return stdout || '';
-        } catch (e: any) {
-            lastError = e;
-        }
-    }
-    // minimal logging to avoid clutter
-    // console.error(`ADB Fail: ${lastError?.message}`);
-    return '';
-}
 
 export async function GET(req: Request) {
-    const { searchParams } = new URL(req.url);
-    const action = searchParams.get('action');
-    const deviceId = searchParams.get('deviceId');
-    const packageId = searchParams.get('packageId');
-
-    if (!deviceId && action !== 'list-devices') return NextResponse.json({ error: 'Device ID missing' }, { status: 400 });
-
-    try {
-        // --- 0. LIST DEVICES ---
-        if (action === 'list-devices') {
-            const raw = await runAdb(`devices`);
-            const devices = raw.split('\n')
-                .map(l => l.trim())
-                .filter(l => l && !l.startsWith('List') && !l.startsWith('*'))
-                .map(l => {
-                    const [id, status] = l.split(/\s+/);
-                    return { id, status };
+    // ADB functionality is not available in Cloudflare Workers deployment
+    return NextResponse.json({
+        error: 'ADB functionality is not available in the cloud deployment',
+        message: 'This feature requires local environment with ADB access'
+    }, { status: 501 });
+}
                 })
                 .filter(d => d.id);
             return NextResponse.json({ devices });

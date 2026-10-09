@@ -1,4 +1,20 @@
-export const runtime = 'nodejs';
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function GET(req: NextRequest) {
+    // Test functionality may not be fully available in Cloudflare Workers
+    return NextResponse.json({
+        error: 'Test functionality is not available in the cloud deployment',
+        message: 'This feature may require local file system access'
+    }, { status: 501 });
+}
+
+export async function POST(req: NextRequest) {
+    // Test functionality may not be fully available in Cloudflare Workers
+    return NextResponse.json({
+        error: 'Test functionality is not available in the cloud deployment', 
+        message: 'This feature may require local file system access'
+    }, { status: 501 });
+}
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
