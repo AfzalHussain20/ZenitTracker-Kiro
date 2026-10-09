@@ -23,35 +23,28 @@ const nextConfig = {
     removeConsole: false,
   },
   webpack: (config, { isServer }) => {
-    // Externalize native/OS modules that can't run in Next.js build environment
-    config.externals.push(
-      'usb',
-      'node-hid',
-      'serialport',
-      'adb',
-      'node:sqlite',
-    );
+    // Externalize modules that can't run in Cloudflare Workers environment
+    if (isServer) {
+      config.externals.push(
+        'child_process',
+        'fs',
+        'path',
+        'spawn',
+        'usb',
+        'node-hid', 
+        'serialport',
+        'adb',
+        'node:sqlite'
+      );
+    }
 
-    // Prevent browser-only or OS-only modules from being bundled for the server
+    // Set fallbacks for browser bundle
     config.resolve.fallback = {
       ...config.resolve.fallback,
       fs: false,
       path: false,
       child_process: false,
     };
-
-    // Ignore specific file paths that might be referenced but shouldn't be bundled
-    config.externals.push(({ context, request }, callback) => {
-      // Ignore Java/Maven paths that might be referenced in automation code
-      if (request && (
-        request.includes('jdk-') || 
-        request.includes('maven') || 
-        request.includes('Program Files')
-      )) {
-        return callback(null, `commonjs ${request}`);
-      }
-      callback();
-    });
 
     return config;
   },

@@ -1,0 +1,9 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    "NVIDIA exhaustion loop — extra failing request on single-key deployment: nvidiaWithFallback retries up to 2 times on 429, but nvidiaProvider.askAI() already calls markNvidiaExhausted() before throwing. On a single-key deployment the pool wraps back to the same exhausted slot and fires a second identical failing request. Remove the inner retry loop or guard with getAvailableNvidiaCount() === 0.",
+    "Agent route NVIDIA selection is a no-op: agent/route.ts calls getAIProviderFor('agent') but stores the result in _provider and never passes it to orchestrate(). NVIDIA will only serve the agent route if orchestrate() internally calls getAIProviderFor('agent'). Either thread the provider through or update orchestrate() and remove the dead assignment.",
+    "Model name default duplicated across three files: jira-insights/route.ts and investigate/route.ts both hardcode 'nvidia/nemotron-3.5-lightning-30b-a3b' for withTokenTracking, duplicating the same default in nvidia.ts. Extract to a shared DEFAULT_NVIDIA_MODEL constant exported from nvidia.ts."
+  ],
+  "reviewDoc": "d:\\Zenit Antigravity\\In-House\\.agents\\tasks\\nvidia-review.md"
+}
