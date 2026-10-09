@@ -34,7 +34,21 @@ const nextConfig = {
         'node-hid', 
         'serialport',
         'adb',
-        'node:sqlite'
+        'node:sqlite',
+        'sqlite',
+        'sqlite3',
+        'better-sqlite3',
+        // Pattern matching for any sqlite-related modules
+        ({ context, request }, callback) => {
+          if (request && (
+            request.includes('sqlite') || 
+            request.includes('node:') ||
+            request.startsWith('node:')
+          )) {
+            return callback(null, `commonjs ${request}`);
+          }
+          callback();
+        }
       );
     }
 
@@ -44,6 +58,8 @@ const nextConfig = {
       fs: false,
       path: false,
       child_process: false,
+      sqlite: false,
+      'node:sqlite': false,
     };
 
     return config;

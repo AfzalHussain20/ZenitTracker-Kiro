@@ -15,7 +15,7 @@ const config: OpenNextConfig = {
     },
     routePreloadingBehavior: "none",
   },
-  edgeExternals: ["node:crypto", "node:sqlite"],
+  edgeExternals: ["node:crypto", "node:sqlite", "sqlite", "sqlite3", "better-sqlite3"],
   cloudflare: {
     useWorkerdCondition: false,
   },
