@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { keyPool } from '@/lib/ai/providers/key-pool';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +31,7 @@ export async function GET() {
     let firestoreError: string | null = null;
 
     try {
-      const db = getAdminDb();
+      const db = getCompatDb();
       const doc = await db.collection('ai_token_usage_daily').doc(today).get();
       if (doc.exists) {
         todayData = doc.data();

@@ -4,14 +4,14 @@
  * PATCH — Update a case result within a run, or complete the run
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 const RUNS_COLLECTION = 'test_runs';
 
 export async function GET(_req: NextRequest, { params }: { params: { runId: string } }) {
     const { runId } = params;
     try {
-        const db = getAdminDb();
+        const db = getCompatDb();
         const snap = await db.collection(RUNS_COLLECTION).doc(runId).get();
         if (!snap.exists) return NextResponse.json({ error: 'Run not found' }, { status: 404 });
         return NextResponse.json({ run: { id: snap.id, ...snap.data() } });
@@ -25,7 +25,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { runId: str
     const body = await req.json();
 
     try {
-        const db = getAdminDb();
+        const db = getCompatDb();
         const ref = db.collection(RUNS_COLLECTION).doc(runId);
         const snap = await ref.get();
         if (!snap.exists) return NextResponse.json({ error: 'Run not found' }, { status: 404 });

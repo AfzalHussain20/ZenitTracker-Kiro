@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 // GET /api/notes/[id] — get single note
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const { id } = params;
-    const adminDb = getAdminDb();
+    const adminDb = getCompatDb();
     const doc = await adminDb.collection('zenit_notes').doc(id).get();
     if (!doc.exists) {
       return NextResponse.json({ error: 'Note not found' }, { status: 404 });
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const { id } = params;
-    const adminDb = getAdminDb();
+    const adminDb = getCompatDb();
     const body = await req.json();
     const { title, content, plainText, tags, category, pinned, archived, linkedBugs } = body;
 
@@ -52,7 +52,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const { id } = params;
-    const adminDb = getAdminDb();
+    const adminDb = getCompatDb();
     await adminDb.collection('zenit_notes').doc(id).update({
       archived: true,
       updatedAt: new Date(),

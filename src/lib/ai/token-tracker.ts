@@ -10,7 +10,7 @@
  *   ai_token_usage_daily/{YYYY-MM-DD} — daily aggregates (upserted)
  */
 
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 export type AIFeature =
   | 'ask-prd'
@@ -106,16 +106,11 @@ async function persistToFirestore(event: TokenEvent): Promise<void> {
   }
 
   try {
-    // Use a dedicated app for token tracking to avoid singleton conflicts
-    const { initializeApp, getApps, cert } = await import('firebase-admin/app');
-    const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
-
-    const appName = 'token-tracker';
-    const existingApps = getApps();
-    const trackerApp = existingApps.find(a => a.name === appName)
-      || initializeApp({ credential: cert({ projectId, clientEmail, privateKey }), projectId }, appName);
-
-    const db = getFirestore(trackerApp);
+    // Use the compatibility layer instead of Firebase Admin SDK
+    const db = await getCompatDb();
+    
+    // Import Web SDK FieldValue
+    const { serverTimestamp, increment } = await import('firebase/firestore');
 
     const day = new Date(event.timestamp).toISOString().substring(0, 10);
     const dailyRef = db.collection('ai_token_usage_daily').doc(day);
@@ -123,17 +118,17 @@ async function persistToFirestore(event: TokenEvent): Promise<void> {
     await dailyRef.set(
       {
         date: day,
-        totalCalls: FieldValue.increment(1),
-        totalPromptTokens: FieldValue.increment(event.promptTokens),
-        totalCompletionTokens: FieldValue.increment(event.completionTokens),
-        totalTokens: FieldValue.increment(event.totalTokens),
+        totalCalls: increment(1),
+        totalPromptTokens: increment(event.promptTokens),
+        totalCompletionTokens: increment(event.completionTokens),
+        totalTokens: increment(event.totalTokens),
         lastUpdated: event.timestamp,
         byFeature: {
           [event.feature]: {
-            calls: FieldValue.increment(1),
-            promptTokens: FieldValue.increment(event.promptTokens),
-            completionTokens: FieldValue.increment(event.completionTokens),
-            totalTokens: FieldValue.increment(event.totalTokens),
+            calls: increment(1),
+            promptTokens: increment(event.promptTokens),
+            completionTokens: increment(event.completionTokens),
+            totalTokens: increment(event.totalTokens),
           },
         },
       },

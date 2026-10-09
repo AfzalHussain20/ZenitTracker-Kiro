@@ -9,7 +9,7 @@
  *   summary: { total, present, missing, reassigned }
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 const AUDITS_COLLECTION  = 'keepr_audits';
 const DEVICES_COLLECTION = 'keepr_devices';
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get('limit') ?? '20', 10);
 
     try {
-        const db = getAdminDb();
+        const db = getCompatDb();
         const snap = await db.collection(AUDITS_COLLECTION)
             .orderBy('auditedAt', 'desc')
             .limit(limit)
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     };
 
     try {
-        const db = getAdminDb();
+        const db = getCompatDb();
 
         // Save audit record
         const auditRef = await db.collection(AUDITS_COLLECTION).add({

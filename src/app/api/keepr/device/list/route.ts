@@ -5,7 +5,7 @@
  * No auth required — public endpoint.
  */
 import { NextResponse } from 'next/server';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 const COLLECTION = 'keepr_devices';
 
@@ -61,7 +61,7 @@ const MASTER_DEVICES = [
 
 export async function GET() {
     try {
-        const db   = getAdminDb();
+        const db   = getCompatDb();
         const snap = await db.collection(COLLECTION).get();
 
         if (snap.empty) {
@@ -86,7 +86,7 @@ export async function GET() {
 // POST — Admin sync: push all MASTER_DEVICES to Firestore (creates new ones, doesn't overwrite existing)
 export async function POST() {
     try {
-        const db = getAdminDb();
+        const db = getCompatDb();
         const snap = await db.collection(COLLECTION).get();
         const existingIds = new Set(snap.docs.map(d => d.id));
 

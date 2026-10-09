@@ -22,7 +22,7 @@
  *   Set KEEPR_WEBHOOK_TYPE=telegram
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 const COLLECTION      = 'keepr_devices';
 const OVERDUE_HOURS   = parseFloat(process.env.KEEPR_OVERDUE_HOURS   ?? '8');
@@ -130,7 +130,7 @@ async function sendWebhook(overdueDevices: any[], criticalDevices: any[]): Promi
 // ─── GET — list overdue devices ───────────────────────────────────────────────
 export async function GET() {
     try {
-        const db   = getAdminDb();
+        const db   = getCompatDb();
         const snap = await db.collection(COLLECTION).where('status', '==', 'checked-out').get();
 
         const now  = Date.now();
@@ -160,7 +160,7 @@ export async function GET() {
 // ─── POST — send alert webhook ────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
     try {
-        const db   = getAdminDb();
+        const db   = getCompatDb();
         const snap = await db.collection(COLLECTION).where('status', '==', 'checked-out').get();
 
         const now      = Date.now();

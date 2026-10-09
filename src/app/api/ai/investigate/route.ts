@@ -11,6 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getCompatDb } from '@/lib/firebase-compat';
 import { getAIProviderFor } from '@/lib/ai/providers';
 import { withTokenTracking } from '@/lib/ai/token-tracker';
 import { isAIEnabled } from '@/lib/ai/feature-flags';
@@ -159,12 +160,7 @@ async function persistInvestigation(report: ReturnType<typeof buildInvestigation
   if (!projectId || !clientEmail || !privateKey) return;
 
   try {
-    const { initializeApp, getApps, cert } = await import('firebase-admin/app');
-    const { getFirestore } = await import('firebase-admin/firestore');
-    const appName = 'investigation-store';
-    const existing = getApps().find(a => a.name === appName);
-    const app = existing || initializeApp({ credential: cert({ projectId, clientEmail, privateKey }), projectId }, appName);
-    const db = getFirestore(app);
+    const db = await getCompatDb();
 
     // Store full report
     await db.collection('investigations').doc(report.metadata.id).set({
@@ -201,12 +197,7 @@ async function persistInvestigationV2(report: ReturnType<typeof buildInvestigati
   if (!projectId || !clientEmail || !privateKey) return;
 
   try {
-    const { initializeApp, getApps, cert } = await import('firebase-admin/app');
-    const { getFirestore } = await import('firebase-admin/firestore');
-    const appName = 'investigation-store';
-    const existing = getApps().find(a => a.name === appName);
-    const app = existing || initializeApp({ credential: cert({ projectId, clientEmail, privateKey }), projectId }, appName);
-    const db = getFirestore(app);
+    const db = await getCompatDb();
 
     // Store full v2 report under its own collection to preserve v1 data
     await db.collection('investigations_v2').doc(report.metadata.id).set(report);
@@ -346,12 +337,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Firestore not configured' }, { status: 500 });
     }
 
-    const { initializeApp, getApps, cert } = await import('firebase-admin/app');
-    const { getFirestore } = await import('firebase-admin/firestore');
-    const appName = 'investigation-store';
-    const existing = getApps().find(a => a.name === appName);
-    const app = existing || initializeApp({ credential: cert({ projectId, clientEmail, privateKey }), projectId }, appName);
-    const db = getFirestore(app);
+    const db = await getCompatDb();
 
     const doc = await db.collection('investigations').doc(id).get();
     if (!doc.exists) return NextResponse.json({ error: 'Investigation not found' }, { status: 404 });

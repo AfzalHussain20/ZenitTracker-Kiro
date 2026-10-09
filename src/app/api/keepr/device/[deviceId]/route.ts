@@ -20,7 +20,7 @@
  *   timestamp (Firestore serverTimestamp)
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 const COLLECTION         = 'keepr_devices';
 const HISTORY_COLLECTION = 'keepr_history';
@@ -34,7 +34,8 @@ async function writeHistory(
     serverNow: string,   // ISO string set by server
 ) {
     try {
-        const { FieldValue } = await import('firebase-admin/firestore');
+        // Use Firestore Web SDK compatible timestamp
+        const { serverTimestamp } = await import('firebase/firestore');
         const d = deviceSnap.data() ?? {};
 
         if (update.status === 'checked-out') {
@@ -60,7 +61,7 @@ async function writeHistory(
                 checkedInAt:   null,
                 durationMs:    null,
                 durationHours: null,
-                timestamp:     FieldValue.serverTimestamp(),
+                timestamp:     serverTimestamp(),
             });
 
         } else if (update.status === 'available' && d.status === 'checked-out') {
@@ -117,7 +118,7 @@ async function writeHistory(
                 team:         d.checkedOutBy?.team      ?? '',
                 checkedOutAt: checkedOutAt,
                 ...checkinFields,
-                timestamp:    FieldValue.serverTimestamp(),
+                timestamp:    serverTimestamp(),
             });
         }
     } catch (err) {
@@ -142,7 +143,7 @@ const SEED: Record<string, any> = {
 export async function GET(_req: NextRequest, { params }: { params: { deviceId: string } }) {
     const { deviceId } = params;
     try {
-        const db   = getAdminDb();
+        const db = getCompatDb();
         const snap = await db.collection(COLLECTION).doc(deviceId).get();
         if (snap.exists) return NextResponse.json({ device: { id: snap.id, ...snap.data() } });
         const seed = SEED[deviceId];
@@ -178,7 +179,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { deviceId: 
     }
 
     try {
-        const db     = getAdminDb();
+        const db = getCompatDb();
         const docRef = db.collection(COLLECTION).doc(deviceId);
         let   snap   = await docRef.get();
 
@@ -191,10 +192,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { deviceId: 
         await writeHistory(db, deviceId, snap, body, serverNow);
 
         // Apply update to device doc
-        const { FieldValue } = await import('firebase-admin/firestore');
+        const { deleteField } = await import('firebase/firestore');
         const fsUpdate: Record<string, any> = {};
         for (const [k, v] of Object.entries(body)) {
-            fsUpdate[k] = v === null ? FieldValue.delete() : v;
+            fsUpdate[k] = v === null ? deleteField() : v;
         }
         await docRef.update(fsUpdate);
 
@@ -208,7 +209,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { deviceId: 
 // ─── POST (seed all devices) ──────────────────────────────────────────────────
 export async function POST(_req: NextRequest) {
     try {
-        const db   = getAdminDb();
+        const db = getCompatDb();
         const snap = await db.collection(COLLECTION).get();
         if (snap.empty) {
             const batch = db.batch();

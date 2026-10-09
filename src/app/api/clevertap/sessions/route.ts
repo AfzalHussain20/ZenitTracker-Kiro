@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'userId and platform are required' }, { status: 400 });
     }
 
-    const db = getAdminDb();
+    const db = getCompatDb();
     const now = Date.now();
 
     if (body.id) {
@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
     const platform = searchParams.get('platform');
     const limit = parseInt(searchParams.get('limit') || '20', 10);
 
-    const db = getAdminDb();
+    const db = getCompatDb();
     let query = db.collection(COLLECTION).orderBy('updatedAt', 'desc').limit(limit);
 
     if (userId) {

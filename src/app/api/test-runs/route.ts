@@ -4,7 +4,7 @@
  * POST — Create a new run from a plan (copies all cases into the run)
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 const RUNS_COLLECTION = 'test_runs';
 const CASES_COLLECTION = 'test_cases';
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '50', 10), 200);
 
     try {
-        const db = getAdminDb();
+        const db = getCompatDb();
         let q: FirebaseFirestore.Query = db.collection(RUNS_COLLECTION).orderBy('startedAt', 'desc').limit(limit);
         if (planId) q = q.where('planId', '==', planId);
 
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-        const db = getAdminDb();
+        const db = getCompatDb();
         const serverNow = new Date().toISOString();
 
         // Fetch all cases for this plan

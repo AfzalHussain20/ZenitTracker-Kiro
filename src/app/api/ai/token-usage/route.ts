@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getInMemoryStats } from '@/lib/ai/token-tracker';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     const memStats = getInMemoryStats();
 
     // 2. Daily history from Firestore
-    const db = getAdminDb();
+    const db = getCompatDb();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
     const cutoffStr = cutoff.toISOString().substring(0, 10);

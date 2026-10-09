@@ -18,7 +18,7 @@
  *            totalHours, topUser, topDevice, returnBreakdown } }
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 const HISTORY_COLLECTION = 'keepr_history';
 
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     const limitN    = Math.min(parseInt(searchParams.get('limit') ?? '200', 10), 500);
 
     try {
-        const db = getAdminDb();
+        const db = getCompatDb();
 
         // Build the most selective query possible.
         // Firestore requires all equality filters before range filters.

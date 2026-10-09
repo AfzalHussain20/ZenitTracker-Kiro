@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractPlainText, truncateForContext } from '@/lib/ai/extractText';
 import { getAIProvider } from '@/lib/ai/providers';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 import { withTokenTracking } from '@/lib/ai/token-tracker';
 import { isAIEnabled } from '@/lib/ai/feature-flags';
 
@@ -114,7 +114,7 @@ async function fetchPageContent(pageId: string): Promise<{ title: string; plainT
  */
 async function getPrdIndex(): Promise<PrdIndexEntry[]> {
   try {
-    const db = getAdminDb();
+    const db = getCompatDb();
     const indexRef = db.collection(PRD_INDEX_COLLECTION);
     const snapshot = await indexRef.get();
 
@@ -159,7 +159,7 @@ async function indexPage(pageId: string, title: string, plainText: string): Prom
   };
 
   try {
-    const db = getAdminDb();
+    const db = getCompatDb();
     await db.collection(PRD_INDEX_COLLECTION).doc(pageId).set(entry);
   } catch {
     // Silently fail — index is a cache optimization, not critical

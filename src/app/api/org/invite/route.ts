@@ -4,7 +4,7 @@
  * GET  — List pending invites for an org
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 const INVITES_COLLECTION = 'org_invites';
 
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
 
     try {
-        const db = getAdminDb();
+        const db = getCompatDb();
 
         // Check if invite already exists and is pending
         const existing = await db.collection(INVITES_COLLECTION)
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     const email = searchParams.get('email');
 
     try {
-        const db = getAdminDb();
+        const db = getCompatDb();
         let q: FirebaseFirestore.Query = db.collection(INVITES_COLLECTION);
 
         if (orgId) q = q.where('orgId', '==', orgId);

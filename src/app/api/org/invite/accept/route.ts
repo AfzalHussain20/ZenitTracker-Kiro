@@ -3,7 +3,7 @@
  * POST — Accept an org invite (adds user as member)
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 const INVITES_COLLECTION = 'org_invites';
 const ORG_COLLECTION = 'organizations';
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-        const db = getAdminDb();
+        const db = getCompatDb();
         const inviteRef = db.collection(INVITES_COLLECTION).doc(inviteId);
         const inviteSnap = await inviteRef.get();
 

@@ -4,7 +4,7 @@
  * GET  — Get the current user's organization
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 import { PLAN_LIMITS, type PlanTier } from '@/types/organization';
 
 const ORG_COLLECTION = 'organizations';
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const tier = (plan as PlanTier) || 'free';
 
     try {
-        const db = getAdminDb();
+        const db = getCompatDb();
 
         // Check slug uniqueness
         const existing = await db.collection(ORG_COLLECTION).where('slug', '==', slug).limit(1).get();
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
     if (!uid) return NextResponse.json({ error: 'Missing uid' }, { status: 400 });
 
     try {
-        const db = getAdminDb();
+        const db = getCompatDb();
 
         // Find user's org from their profile
         const userDoc = await db.collection('users').doc(uid).get();

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 // GET /api/notes — list notes (with optional search/filter)
 export async function GET(req: NextRequest) {
   try {
-    const adminDb = getAdminDb();
+    const adminDb = getCompatDb();
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get('userId');
     const search = searchParams.get('search')?.toLowerCase();
@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
 // POST /api/notes — create a new note
 export async function POST(req: NextRequest) {
   try {
-    const adminDb = getAdminDb();
+    const adminDb = getCompatDb();
     const body = await req.json();
     const { title, content, plainText, tags, userId, userName, category, linkedBugs, linkedSession, pinned } = body;
 

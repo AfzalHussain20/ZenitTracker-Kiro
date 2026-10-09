@@ -9,7 +9,7 @@
  *    flow work end-to-end. Internal @sunnetwork.in users never hit this.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 import { PLAN_LIMITS, type PlanTier } from '@/types/organization';
 
 export async function POST(req: NextRequest) {
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     };
 
     try {
-        const db = getAdminDb();
+        const db = getCompatDb();
 
         // Update user profile
         await db.collection('users').doc(uid).set(

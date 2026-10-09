@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractPlainText } from '@/lib/ai/extractText';
 import { getAIProvider } from '@/lib/ai/providers';
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,7 +46,7 @@ Rules:
  */
 async function getExistingMetadata(pageId: string): Promise<PrdMetadata | null> {
   try {
-    const db = getAdminDb();
+    const db = getCompatDb();
     const doc = await db.collection(PRD_METADATA_COLLECTION).doc(pageId).get();
     if (doc.exists) {
       return doc.data() as PrdMetadata;
@@ -62,7 +62,7 @@ async function getExistingMetadata(pageId: string): Promise<PrdMetadata | null> 
  */
 async function saveMetadata(metadata: PrdMetadata): Promise<void> {
   try {
-    const db = getAdminDb();
+    const db = getCompatDb();
     await db.collection(PRD_METADATA_COLLECTION).doc(metadata.pageId).set(metadata);
   } catch (err) {
     console.error('[categorize-prd] Failed to save metadata:', err);
@@ -186,7 +186,7 @@ export async function POST(req: NextRequest) {
  */
 export async function GET() {
   try {
-    const db = getAdminDb();
+    const db = getCompatDb();
     const snapshot = await db.collection(PRD_METADATA_COLLECTION).get();
 
     const allMetadata: PrdMetadata[] = [];

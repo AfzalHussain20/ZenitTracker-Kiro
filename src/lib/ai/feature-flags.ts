@@ -19,7 +19,7 @@
  * Providers: gemini | groq | huggingface
  */
 
-import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getCompatDb } from '@/lib/firebase-compat';
 
 export type AIFeatureKey =
   | 'ask-prd'
@@ -98,7 +98,7 @@ export async function getFeatureFlags(): Promise<AIFeatureFlags> {
   if (cachedFlags && now - cacheTs < CACHE_TTL) return cachedFlags;
 
   try {
-    const db = getAdminDb();
+    const db = getCompatDb();
     const doc = await db.collection(FLAGS_COLLECTION).doc(FLAGS_DOC).get();
     if (doc.exists) {
       const data = doc.data() as AIFeatureFlags;
@@ -126,7 +126,7 @@ export async function getFeatureFlags(): Promise<AIFeatureFlags> {
  * Saves updated flags to Firestore and invalidates the in-memory cache.
  */
 export async function saveFeatureFlags(flags: Partial<AIFeatureFlags>, updatedBy?: string): Promise<void> {
-  const db = getAdminDb();
+  const db = getCompatDb();
   const current = await getFeatureFlags();
   const updated: AIFeatureFlags = {
     features: { ...current.features, ...flags.features },
