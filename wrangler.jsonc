@@ -1,5 +1,5 @@
 {
-  "name": "zenittracker",
+  "name": "app",
   "account_id": "132226d54738d3571eff3cea5713bd0f",
   "compatibility_date": "2025-04-01",
   "compatibility_flags": ["nodejs_compat"],

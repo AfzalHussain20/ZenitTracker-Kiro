@@ -74,4 +74,4 @@ jobs:
             fs.writeFileSync('/tmp/secrets.json', JSON.stringify(secrets));
             console.log('Secrets prepared:', Object.keys(secrets).join(', '));
           "
-          npx wrangler secret bulk /tmp/secrets.json --name zenittracker
+          npx wrangler secret bulk /tmp/secrets.json --name app
