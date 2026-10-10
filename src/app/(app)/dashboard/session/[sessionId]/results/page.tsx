@@ -18,8 +18,7 @@ import { format, formatDistanceStrict } from 'date-fns';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
-
-const JIRA_BASE = 'https://sunnetwork-techteam-hanqzy91.atlassian.net';
+import { JIRA_BASE_URL as JIRA_BASE } from '@/lib/jira/config';
 
 const getValidDate = (d: any): Date | null => {
   if (!d) return null;

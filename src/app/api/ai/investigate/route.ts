@@ -17,6 +17,7 @@ import { withTokenTracking } from '@/lib/ai/token-tracker';
 import { isAIEnabled } from '@/lib/ai/feature-flags';
 import { buildInvestigationReport } from '@/lib/jira/investigation-builder';
 import { buildInvestigationReportV2, type InvestigationType } from '@/lib/jira/investigation-engine-v2';
+import { quoteJql } from '@/lib/jira/jql';
 import type { AIFindings, RiskLevel } from '@/types/investigation';
 
 export const dynamic = 'force-dynamic';
@@ -48,7 +49,8 @@ function extractName(question: string): string | null {
 
 // ─── JQL builder — identical to jira-insights/route.ts ───────────────────────
 function buildJQL(question: string, name: string): string {
-  return `project = ${PROJECT_KEY} AND (reporter = "${name}" OR assignee = "${name}") ORDER BY created DESC`;
+  const q = quoteJql(name);
+  return `project = ${PROJECT_KEY} AND (reporter = ${q} OR assignee = ${q}) ORDER BY created DESC`;
 }
 
 // ─── Cursor-paginated Jira fetch — identical to jira-insights/route.ts ────────

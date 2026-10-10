@@ -21,12 +21,21 @@ export async function POST(req: Request) {
         const actualText = actualResult || actual || '';
         const reporter = reportedByName || testerName || 'Zenit Tracker';
 
-        // Map severity → Jira priority name
+        // Map severity/priority (test-case level, Jira priority name, or keyword) → a valid Jira priority name
         const priorityMap: Record<string, string> = {
-            Critical: 'Highest', High: 'High', Medium: 'Medium', Low: 'Low',
-            P1: 'Highest', P2: 'High', P3: 'Medium', P4: 'Low',
+            // test-case / QA keywords
+            critical: 'Highest', blocker: 'Highest', major: 'High', normal: 'Medium', minor: 'Low', trivial: 'Lowest',
+            // P-levels (P0/P1 highest … P5 lowest)
+            p0: 'Highest', p1: 'Highest', p2: 'High', p3: 'Medium', p4: 'Low', p5: 'Lowest',
+            // Jira priority names sent verbatim by the severity dropdown
+            highest: 'Highest', high: 'High', medium: 'Medium', low: 'Low', lowest: 'Lowest',
         };
-        const jiraPriority = priorityMap[severity] || priorityMap[priority] || 'Medium';
+        const resolvePriority = (value: unknown): string | undefined => {
+            if (typeof value !== 'string') return undefined;
+            const key = value.trim().toLowerCase();
+            return priorityMap[key];
+        };
+        const jiraPriority = resolvePriority(severity) || resolvePriority(priority) || 'Medium';
 
         // Build description in Atlassian Document Format — Professional QA Template
         const makeHeading = (text: string) => ({ type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text }] });

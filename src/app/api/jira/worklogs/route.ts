@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { toPositiveInt } from '@/lib/jira/jql';
 
 const JIRA_BASE = process.env.JIRA_BASE_URL!;
 const JIRA_AUTH = () => Buffer.from(`${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64');
@@ -13,8 +14,8 @@ const PROJECT_KEY = process.env.JIRA_PROJECT_KEY || 'SUN';
 const cache = new Map<string, { data: any; ts: number }>();
 const CACHE_TTL = 15 * 60 * 1000;
 
-async function fetchWorklogsForIssue(issueKey: string) {
-    const url = `${JIRA_BASE}/rest/api/3/issue/${issueKey}/worklog`;
+async function fetchWorklogsForIssue(issueKey: string, startedAfter: string) {
+    const url = `${JIRA_BASE}/rest/api/3/issue/${issueKey}/worklog?started=${encodeURIComponent(startedAfter)}&maxResults=1000`;
     const res = await fetch(url, {
         headers: { Authorization: `Basic ${JIRA_AUTH()}`, Accept: 'application/json' },
     });
@@ -35,7 +36,7 @@ async function fetchWorklogsForIssue(issueKey: string) {
 // GET: fetch worklogs for issues updated in the last N days
 export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
-    const days = parseInt(searchParams.get('days') || '30');
+    const days = Math.min(toPositiveInt(searchParams.get('days')) ?? 30, 3650);
     const cacheKey = `worklogs_${days}`;
 
     const cached = cache.get(cacheKey);
@@ -44,44 +45,50 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-        // Paginate through ALL issues with worklogs in the period
+        // Paginate with the cursor API — /search/jql ignores startAt and returns
+        // the same first page forever, which previously produced duplicate issues.
         const jql = encodeURIComponent(`project = ${PROJECT_KEY} AND worklogDate >= -${days}d ORDER BY updated DESC`);
-        let startAt = 0;
-        const pageSize = 100;
+        let nextPageToken: string | undefined;
         const allIssues: any[] = [];
 
-        while (true) {
-            const url = `${JIRA_BASE}/rest/api/3/search/jql?jql=${jql}&maxResults=${pageSize}&startAt=${startAt}&fields=summary,issuetype,status`;
+        do {
+            let url = `${JIRA_BASE}/rest/api/3/search/jql?jql=${jql}&maxResults=100&fields=summary,issuetype,status`;
+            if (nextPageToken) url += `&nextPageToken=${encodeURIComponent(nextPageToken)}`;
             const res = await fetch(url, {
                 headers: { Authorization: `Basic ${JIRA_AUTH()}`, Accept: 'application/json' },
+                cache: 'no-store',
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
                 return NextResponse.json({ error: err.errorMessages?.[0] || 'Failed' }, { status: res.status });
             }
             const data = await res.json();
-            const batch = data.issues || [];
-            allIssues.push(...batch);
-            if (allIssues.length >= data.total || batch.length < pageSize) break;
-            startAt += pageSize;
+            allIssues.push(...(data.issues || []));
+            nextPageToken = data.isLast ? undefined : data.nextPageToken;
             // Safety cap at 500 issues to avoid timeout
-            if (allIssues.length >= 500) break;
-        }
+        } while (nextPageToken && allIssues.length < 500);
 
         const issues = allIssues;
+
+        // The JQL only guarantees each issue was *touched* recently — an issue can
+        // carry years of worklogs, so window the per-issue fetch too.
+        const windowStart = Date.now() - days * 86400000;
+        const startedAfter = new Date(windowStart).toISOString().replace(/\.\d{3}Z$/, '+0000');
 
         // Fetch detailed worklogs for each issue in parallel batches
         const BATCH = 20;
         const allWorklogArrays: any[][] = [];
         for (let i = 0; i < issues.length; i += BATCH) {
             const batch = issues.slice(i, i + BATCH);
-            const results = await Promise.all(batch.map((issue: any) => fetchWorklogsForIssue(issue.key)));
+            const results = await Promise.all(batch.map((issue: any) => fetchWorklogsForIssue(issue.key, startedAfter)));
             allWorklogArrays.push(...results);
         }
-        const worklogPromises = allWorklogArrays;
 
-        const worklogArrays = worklogPromises;
-        const allWorklogs = worklogArrays.flat();
+        const allWorklogs = allWorklogArrays.flat().filter(w => {
+            if (!w.started) return false;
+            const t = new Date(w.started).getTime();
+            return !Number.isNaN(t) && t >= windowStart;
+        });
 
         // Aggregate by user
         const byUser = new Map<string, {

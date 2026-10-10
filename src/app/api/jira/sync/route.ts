@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { toPositiveInt } from '@/lib/jira/jql';
 
 const JIRA_BASE = process.env.JIRA_BASE_URL!;
 const JIRA_AUTH = () => Buffer.from(`${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64');
@@ -109,9 +110,10 @@ async function fetchAllPages(jql: string): Promise<any[]> {
     let nextPageToken: string | null = null;
     const encodedJql = encodeURIComponent(jql);
     const fieldsParam = FIELDS.join(',');
+    let attempt = 0;
 
     while (true) {
-        let url = `${JIRA_BASE}/rest/api/3/search/jql?jql=${encodedJql}&maxResults=100&fields=${fieldsParam}`;
+        let url = `${JIRA_BASE}/rest/api/3/search/jql?jql=${encodedJql}&maxResults=500&fields=${fieldsParam}`;
         if (nextPageToken) url += `&nextPageToken=${encodeURIComponent(nextPageToken)}`;
 
         const res = await fetch(url, {
@@ -121,9 +123,16 @@ async function fetchAllPages(jql: string): Promise<any[]> {
         });
 
         if (!res.ok) {
-            console.error(`[Sync] HTTP ${res.status} for JQL: ${jql.slice(0, 60)}`);
-            break;
+            // Retry transient failures; otherwise fail loudly so a truncated
+            // result is never cached as if it were complete.
+            if ((res.status === 429 || res.status >= 500) && attempt < 2) {
+                attempt++;
+                await new Promise(r => setTimeout(r, 500 * attempt));
+                continue;
+            }
+            throw new Error(`[Sync] Jira API HTTP ${res.status} for JQL: ${jql.slice(0, 60)}`);
         }
+        attempt = 0;
 
         const data = await res.json();
         const batch = data.issues || [];
@@ -179,36 +188,30 @@ async function buildFullSync(sprintId?: string) {
 
     console.log(`[Sync] Starting parallel Jira sync... sprint=${resolvedSprintId || 'openSprints()'}`);
 
-    // Fetch sprint-scoped issues + all-time issues in parallel
-    // All-time data needed for Team KPI counts (reporter-based, not sprint-scoped)
-    const [bugs, stories, epics, tasks, subtasks, allTimeBugs, allTimeStories, allTimeTasks] = await Promise.all([
+    // Fetch all issue types in parallel (sprint-scoped only)
+    // Note: the all-time slices were dropped — Cloudflare's free plan caps
+    // subrequests at 50 per invocation and the all-time dataset alone needs
+    // more pages than that. Consumers fall back to sprint data for KPIs.
+    const [bugs, stories, epics, tasks, subtasks] = await Promise.all([
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Bug" ORDER BY created DESC`),
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Story" ORDER BY created DESC`),
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Epic" ORDER BY created DESC`),
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Task" ORDER BY created DESC`),
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Sub-task" ORDER BY created DESC`),
-        // All-time data — no sprint filter — for accurate reporter/assignee counts in member profiles
-        fetchAllPages(`project = ${PROJECT_KEY} AND issuetype = "Bug" ORDER BY created DESC`),
-        fetchAllPages(`project = ${PROJECT_KEY} AND issuetype = "Story" ORDER BY created DESC`),
-        fetchAllPages(`project = ${PROJECT_KEY} AND issuetype in ("Task","Epic") ORDER BY created DESC`),
     ]);
 
     const all = [...bugs, ...stories, ...epics, ...tasks, ...subtasks];
     // allForSP excludes sub-tasks — sub-tasks duplicate parent story SP
     const allForSP = [...bugs, ...stories, ...epics, ...tasks];
-    // allTimeAll — complete all-time dataset for member profile overall view
-    const allTimeAll = [...allTimeBugs, ...allTimeStories, ...allTimeTasks];
     const elapsed = Date.now() - start;
 
     // Live build tickets = any issue with a released fix version
     const liveTickets = all.filter(i => i.isLive);
 
-    console.log(`[Sync] Done in ${elapsed}ms: ${all.length} total (bugs=${bugs.length}, allTimeBugs=${allTimeBugs.length}, allTimeAll=${allTimeAll.length}, stories=${stories.length}, epics=${epics.length}, tasks=${tasks.length}, subtasks=${subtasks.length}, live=${liveTickets.length})`);
+    console.log(`[Sync] Done in ${elapsed}ms: ${all.length} total (bugs=${bugs.length}, stories=${stories.length}, epics=${epics.length}, tasks=${tasks.length}, subtasks=${subtasks.length}, live=${liveTickets.length})`);
 
     return {
         all, bugs, stories, epics, tasks, subtasks, allForSP,
-        allTimeBugs, // all-time bugs for Team KPI reporter-based counts
-        allTimeAll,  // all-time all issues for member profile overall view
         liveTickets,
         syncedAt: new Date().toISOString(),
         syncDurationMs: elapsed,
@@ -233,7 +236,10 @@ async function buildFullSync(sprintId?: string) {
 
 // GET: return cached data immediately, refresh in background if stale
 export async function GET(req: NextRequest) {
-    const sprintId = req.nextUrl.searchParams.get('sprintId') || undefined;
+    const sprintIdParam = req.nextUrl.searchParams.get('sprintId');
+    const parsedSprintId = toPositiveInt(sprintIdParam);
+    // Never splice an unvalidated value into JQL — unknown/invalid IDs fall back to auto-detect.
+    const sprintId = parsedSprintId ? String(parsedSprintId) : undefined;
     // Cache key includes sprint ID — different sprints have separate caches
     const key = `full_sync_${sprintId || 'auto'}`;
     const entry = cache.get(key);
@@ -280,7 +286,10 @@ export async function GET(req: NextRequest) {
 
 // POST: force immediate refresh
 export async function POST(req: NextRequest) {
-    const sprintId = req.nextUrl.searchParams.get('sprintId') || undefined;
+    const sprintIdParam = req.nextUrl.searchParams.get('sprintId');
+    const parsedSprintId = toPositiveInt(sprintIdParam);
+    // Never splice an unvalidated value into JQL — unknown/invalid IDs fall back to auto-detect.
+    const sprintId = parsedSprintId ? String(parsedSprintId) : undefined;
     const key = `full_sync_${sprintId || 'auto'}`;
     try {
         cache.set(key, { data: cache.get(key)?.data || null, ts: 0, fetching: true });

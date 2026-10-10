@@ -1,8 +1,11 @@
 /**
  * Atlassian Teams API — confirmed working endpoints:
- * - GET  /gateway/api/public/teams/v1/org/{orgId}/teams  → { entities: [{ teamId, displayName }] }
- * - POST /gateway/api/public/teams/v1/org/{orgId}/teams/{teamId}/members → { results: [{ accountId }] }
+ * - GET  /gateway/api/public/teams/v1/org/{orgId}/teams?siteId={cloudId}  → { entities: [{ teamId, displayName }] }
+ * - POST /gateway/api/public/teams/v1/org/{orgId}/teams/{teamId}/members?siteId={cloudId} → { results: [{ accountId }] }
  * - GET  /rest/api/3/user?accountId=xxx  → { accountId, displayName, avatarUrls }
+ *
+ * Note: Teams DAC API now requires siteId (Jira cloudId) — org-only calls return 400 SITE_ID_REQUIRED_FOR_TEAM_API.
+ *       JIRA_CLOUD_ID is the siteId (also available via <site>/_edge/tenant_info → cloudId).
  *
  * Flow: list teams → POST members (get accountIds) → bulk resolve users → classify teams → done
  */
@@ -15,38 +18,11 @@ const JIRA_BASE = process.env.JIRA_BASE_URL!;
 const JIRA_EMAIL = process.env.JIRA_EMAIL!;
 const JIRA_TOKEN = process.env.JIRA_API_TOKEN!;
 const ORG_ID = process.env.JIRA_ORG_ID!;
+// Atlassian Teams DAC API migration: siteId (Jira cloudId) is now mandatory
+const SITE_ID = process.env.JIRA_CLOUD_ID || process.env.JIRA_SITE_ID || '';
 
 const BASIC = () => Buffer.from(`${JIRA_EMAIL}:${JIRA_TOKEN}`).toString('base64');
 const H = () => ({ Authorization: `Basic ${BASIC()}`, Accept: 'application/json', 'Content-Type': 'application/json' });
-
-// ── Resolve accountId → user details ─────────────────────────────────────────
-async function resolveUser(accountId: string): Promise<TeamMember> {
-    // Check service cache first
-    if (teamCacheService.hasUser(accountId)) {
-        return teamCacheService.getUser(accountId)!;
-    }
-
-    try {
-        const r = await fetch(`${JIRA_BASE}/rest/api/3/user?accountId=${encodeURIComponent(accountId)}`, {
-            headers: H(), cache: 'no-store',
-        });
-        if (r.ok) {
-            const u = await r.json();
-            const member: TeamMember = {
-                accountId: u.accountId,
-                displayName: u.displayName || accountId,
-                avatarUrl: u.avatarUrls?.['48x48'],
-            };
-            teamCacheService.setUser(accountId, member);
-            return member;
-        }
-    } catch { /* fall through */ }
-
-    // Return placeholder if lookup fails
-    const fallback: TeamMember = { accountId, displayName: accountId };
-    teamCacheService.setUser(accountId, fallback);
-    return fallback;
-}
 
 // ── Fetch all accountIds for a team via POST ──────────────────────────────────
 async function fetchTeamAccountIds(teamId: string): Promise<string[]> {
@@ -58,7 +34,7 @@ async function fetchTeamAccountIds(teamId: string): Promise<string[]> {
         if (cursor) body.cursor = cursor;
 
         const r = await fetch(
-            `https://api.atlassian.com/gateway/api/public/teams/v1/org/${ORG_ID}/teams/${teamId}/members`,
+            `https://api.atlassian.com/gateway/api/public/teams/v1/org/${ORG_ID}/teams/${teamId}/members?siteId=${encodeURIComponent(SITE_ID)}`,
             { method: 'POST', headers: H(), body: JSON.stringify(body), cache: 'no-store' }
         );
 
@@ -96,6 +72,7 @@ async function fetchTeamList(): Promise<Array<{ teamId: string; displayName: str
         while (true) {
             const url = new URL(`https://api.atlassian.com/gateway/api/public/teams/v1/org/${ORG_ID}/teams`);
             url.searchParams.set('maxResults', '50');
+            url.searchParams.set('siteId', SITE_ID);
             if (cursor) url.searchParams.set('cursor', cursor);
 
             console.log(`[Teams] Fetching: ${url.toString()}`);
@@ -132,34 +109,65 @@ async function fetchTeamList(): Promise<Array<{ teamId: string; displayName: str
     }
 }
 
+// ── Resolve many accountIds in one bulk call (GET /user/bulk) ────────────────
+// Capped at 50 accountIds per request to stay safely within Cloudflare's
+// subrequest budget (free plan: 50). Falls back to placeholders for unknown ids.
+async function fetchUsersBulk(accountIds: string[]): Promise<Map<string, TeamMember>> {
+    const map = new Map<string, TeamMember>();
+
+    for (let i = 0; i < accountIds.length; i += 50) {
+        const chunk = accountIds.slice(i, i + 50);
+        const qs = chunk.map(id => `accountId=${encodeURIComponent(id)}`).join('&');
+        try {
+            const r = await fetch(`${JIRA_BASE}/rest/api/3/user/bulk?${qs}&maxResults=50`, {
+                headers: H(), cache: 'no-store',
+            });
+            if (r.ok) {
+                const data = await r.json();
+                for (const u of data.values || []) {
+                    const member: TeamMember = {
+                        accountId: u.accountId,
+                        displayName: u.displayName || u.accountId,
+                        avatarUrl: u.avatarUrls?.['48x48'],
+                    };
+                    map.set(u.accountId, member);
+                    teamCacheService.setUser(u.accountId, member);
+                }
+            }
+        } catch { /* fall through to placeholders */ }
+    }
+
+    return map;
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function buildTeams(): Promise<JiraTeam[]> {
     const teamList = await fetchTeamList();
-    const result: JiraTeam[] = [];
 
-    // Process teams in batches of 5 to avoid rate limits
-    const BATCH = 5;
-    for (let i = 0; i < teamList.length; i += BATCH) {
-        const batch = teamList.slice(i, i + BATCH);
+    // Phase 1: collect member accountIds for every team (1 subrequest per team)
+    const withMembers = await Promise.all(teamList.map(async ({ teamId, displayName }) => ({
+        teamId, displayName,
+        accountIds: await fetchTeamAccountIds(teamId),
+    })));
 
-        const resolved = await Promise.all(batch.map(async ({ teamId, displayName }) => {
-            // Step 1: get accountIds
-            const accountIds = await fetchTeamAccountIds(teamId);
+    // Phase 2: resolve ALL unique users via a few bulk calls instead of N GETs
+    const uniqueIds = [...new Set(withMembers.flatMap(t => t.accountIds))];
+    const users = await fetchUsersBulk(uniqueIds);
 
-            // Step 2: resolve all accountIds to user details in parallel
-            const members = await Promise.all(accountIds.map(resolveUser));
+    // Phase 3: build + classify teams
+    const result: JiraTeam[] = withMembers.map(({ teamId, displayName, accountIds }) => {
+        const members: TeamMember[] = accountIds
+            .map(id => users.get(id) || teamCacheService.getUser(id) || { accountId: id, displayName: id })
+            // Dedupe by accountId in case members endpoint overlaps
+            .filter((m, idx, arr) => arr.findIndex(x => x.accountId === m.accountId) === idx);
 
-            // Step 3: classify team type based on name
-            const team: JiraTeam = { id: teamId, name: displayName, members };
-            const classification = teamClassificationService.classifyTeam(team);
-            team.teamType = classification.teamType;
+        const team: JiraTeam = { id: teamId, name: displayName, members };
+        const classification = teamClassificationService.classifyTeam(team);
+        team.teamType = classification.teamType;
 
-            console.log(`[Teams] ${displayName}: ${members.length} members, type: ${classification.teamType} (${(classification.confidence * 100).toFixed(0)}%)`);
-            return team;
-        }));
-
-        result.push(...resolved);
-    }
+        console.log(`[Teams] ${displayName}: ${members.length} members, type: ${classification.teamType} (${(classification.confidence * 100).toFixed(0)}%)`);
+        return team;
+    });
 
     return result.sort((a, b) => a.name.localeCompare(b.name));
 }

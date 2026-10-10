@@ -155,22 +155,22 @@ export default function TestSessionPage() {
   // Fetch ALL Jira data from single endpoint when form opens
   useEffect(() => {
     if (showJiraForm && jiraUsers.length === 0) {
+      // Teams API is only a fallback when the project exposes no components —
+      // fetching both concurrently races, and whichever resolves last overwrites
+      // the dropdown list.
+      const loadTeamComponents = () => {
+        fetch('/api/jira/teams').then(r => r.json()).then(d => {
+          if (d.teams?.length) setJiraComponents(d.teams.map((t: any) => ({ id: t.id, name: t.name })));
+        }).catch(() => {});
+      };
       // Fetch fields (users, envs, priorities, components)
       fetch('/api/jira/fields').then(r => r.json()).then(d => {
         if (d.users) setJiraUsers(d.users);
-        if (d.components?.length) setJiraComponents(d.components);
         if (d.environments?.length) setJiraEnvironments(d.environments);
         if (d.priorities?.length) setJiraPriorities(d.priorities);
-      }).catch(() => {});
-
-      // Also fetch Atlassian Teams (separate API that uses org-level teams)
-      if (jiraComponents.length === 0) {
-        fetch('/api/jira/teams').then(r => r.json()).then(d => {
-          if (d.teams?.length) {
-            setJiraComponents(d.teams.map((t: any) => ({ id: t.id, name: t.name })));
-          }
-        }).catch(() => {});
-      }
+        if (d.components?.length) setJiraComponents(d.components);
+        else loadTeamComponents();
+      }).catch(loadTeamComponents);
     }
   }, [showJiraForm, jiraUsers.length]);
 

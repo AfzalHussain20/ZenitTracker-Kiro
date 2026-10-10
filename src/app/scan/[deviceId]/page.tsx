@@ -183,31 +183,36 @@ export default function PublicScanPage() {
                 if (data.teams?.length) {
                     setTeams(data.teams);
                 } else {
-                    // Fallback: build teams from Jira sync people array
+                    // Fallback: build teams from Jira sync assignees. No hardcoded
+                    // sprintId — the sync API auto-detects the active sprint, and the
+                    // response exposes ".all" (issues), not a ".people" array.
                     try {
-                        const syncRes = await fetch('/api/jira/sync?sprintId=266');
+                        const syncRes = await fetch('/api/jira/sync');
                         const syncData = await syncRes.json();
-                        const people: any[] = syncData?.people ?? syncData?.data?.people ?? [];
-                        if (people.length > 0) {
-                            // Group by team field
-                            const teamMap = new Map<string, TeamMember[]>();
-                            for (const p of people) {
-                                const teamName: string = p.team || 'Other';
-                                if (!teamMap.has(teamName)) teamMap.set(teamName, []);
-                                teamMap.get(teamName)!.push({
-                                    accountId: p.accountId || p.id || p.displayName,
-                                    displayName: p.displayName || p.name || p.accountId,
-                                    avatarUrl: p.avatarUrl || p.avatarUrls?.['48x48'],
-                                });
-                            }
-                            const fallbackTeams: JiraTeam[] = Array.from(teamMap.entries()).map(([name, members], i) => ({
-                                id: `team_${i}`,
-                                name,
-                                members,
-                            }));
-                            if (fallbackTeams.length > 0) {
-                                setTeams(fallbackTeams);
-                            }
+                        const issues: any[] = syncData?.all ?? [];
+                        // Group assignees by their team field
+                        const seen = new Set<string>();
+                        const teamMap = new Map<string, TeamMember[]>();
+                        for (const issue of issues) {
+                            const assignee = issue?.assignee;
+                            const accountId: string = assignee?.accountId || '';
+                            if (!accountId || seen.has(accountId)) continue;
+                            seen.add(accountId);
+                            const teamName: string = typeof issue?.team === 'string' && issue.team ? issue.team : 'Other';
+                            if (!teamMap.has(teamName)) teamMap.set(teamName, []);
+                            teamMap.get(teamName)!.push({
+                                accountId,
+                                displayName: assignee?.displayName || accountId,
+                                avatarUrl: assignee?.avatarUrl || null,
+                            });
+                        }
+                        const fallbackTeams: JiraTeam[] = Array.from(teamMap.entries()).map(([name, members], i) => ({
+                            id: `team_${i}`,
+                            name,
+                            members,
+                        }));
+                        if (fallbackTeams.length > 0) {
+                            setTeams(fallbackTeams);
                         }
                     } catch { /* ignore fallback errors */ }
                 }

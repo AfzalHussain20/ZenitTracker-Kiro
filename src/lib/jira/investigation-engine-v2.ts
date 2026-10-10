@@ -200,14 +200,33 @@ function simpleHash(s: string): string {
   return h.toString(16);
 }
 
+/** Flatten an Atlassian Document Format node (issue description / comment body) to plain text. */
+function adfToText(node: any): string {
+  if (node == null) return '';
+  if (typeof node === 'string') return node;
+  if (Array.isArray(node)) return node.map(adfToText).filter(Boolean).join(' ');
+  const parts: string[] = [];
+  if (typeof node.text === 'string') parts.push(node.text);
+  if (Array.isArray(node.content)) parts.push(...node.content.map(adfToText).filter(Boolean));
+  return parts.join(' ').trim();
+}
+
 /** Safely extract a string value from a Jira field that might be an object */
 function safeStr(val: unknown): string {
   if (val == null) return '';
   if (typeof val === 'string') return val;
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  if (Array.isArray(val)) return val.map(safeStr).filter(Boolean).join(', ');
   if (typeof val === 'object') {
     const o = val as Record<string, unknown>;
-    // Jira rich-text body, resolution object, etc.
-    return String(o.name || o.text || o.value || o.content || '');
+    // Jira rich-text (ADF) documents — extract the plain text so two different
+    // descriptions never collapse to the string "[object Object]".
+    if (o.type === 'doc' || Array.isArray(o.content)) return adfToText(o);
+    const direct = o.name ?? o.text ?? o.value ?? o.displayName ?? o.title;
+    if (direct != null && typeof direct !== 'object') return String(direct);
+    if (o.content != null) return safeStr(o.content);
+    if (o.body != null) return safeStr(o.body);
+    return '';
   }
   return String(val);
 }
@@ -228,7 +247,7 @@ function buildDataQuality(issues: any[]): DataQualityReport {
     { name: 'Components',     ...check(i => i.fields.components?.length,            'HIGH',     ['Duplicate detection — component signal', 'Root cause clustering']) },
     { name: 'Resolution',     ...check(i => i.fields.resolution?.name,              'CRITICAL', ['Duplicate detection — resolution signal', 'Reporter acceptance rate']) },
     { name: 'Fix Versions',   ...check(i => i.fields.fixVersions?.length,           'HIGH',     ['Root cause clustering — version grouping']) },
-    { name: 'Description',    ...check(i => i.fields.description,                   'MEDIUM',   ['Duplicate detection — description similarity']) },
+    { name: 'Description',     ...check(i => safeStr(i.fields.description),        'MEDIUM',   ['Duplicate detection — description similarity']) },
     { name: 'Platform',       ...check(i => i.fields.customfield_10103?.length,      'HIGH',     ['Platform coverage', 'Cross-platform pattern analysis']) },
     { name: 'Priority',       ...check(i => i.fields.priority?.name,                'MEDIUM',   ['Severity distribution', 'Reporting characteristics']) },
     { name: 'Changelog',      ...check(() => null,                                   'MEDIUM',   ['Reopen rate calculation']) },  // changelog requires separate API call
@@ -336,6 +355,8 @@ function buildDuplicatePairs(
     for (let j = i + 1; j < sample.length; j++) {
       const a = sample[i], b = sample[j];
       const fa = a.fields, fb = b.fields;
+      const descA = safeStr(fa.description);
+      const descB = safeStr(fb.description);
 
       // Date proximity check first (fast filter)
       const dA = new Date(fa.created).getTime();
@@ -380,7 +401,7 @@ function buildDuplicatePairs(
         {
           name: 'descriptionSimilarity',
           fired: false,
-          value: hasDescription ? combinedSimilarity(safeStr(fa.description), safeStr(fb.description)) : 0,
+          value: hasDescription && descA && descB ? combinedSimilarity(descA, descB) : 0,
           weight: SIGNAL_WEIGHTS.descriptionSimilarity,
           available: hasDescription,
           explanation: 'Description text similarity',

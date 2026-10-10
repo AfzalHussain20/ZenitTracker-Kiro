@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { quoteJql } from '@/lib/jira/jql';
 
 const JIRA_BASE = process.env.JIRA_BASE_URL!;
 const JIRA_AUTH = () => Buffer.from(`${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64');
@@ -86,29 +87,31 @@ export async function POST(req: NextRequest) {
             createdBefore,
         } = body;
 
-        let jql: string;
+        // Free-form JQL is not accepted — values below are escaped and scoped so a
+        // caller can never read issues outside this project.
         if (customJql) {
-            jql = customJql;
-        } else {
-            const clauses: string[] = [`project = ${PROJECT_KEY}`];
-            if (issueType) clauses.push(`issuetype = "${issueType}"`);
-            if (status) clauses.push(`status = "${status}"`);
-            if (priority) clauses.push(`priority = "${priority}"`);
-            if (assigneeAccountId) clauses.push(`assignee = "${assigneeAccountId}"`);
-            if (reporterAccountId) clauses.push(`reporter = "${reporterAccountId}"`);
-            if (search) clauses.push(`summary ~ "${search}"`);
-            if (createdAfter) {
-                const d = new Date(createdAfter);
-                const jiraDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                clauses.push(`created >= "${jiraDate}"`);
-            }
-            if (createdBefore) {
-                const d = new Date(createdBefore);
-                const jiraDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                clauses.push(`created <= "${jiraDate}"`);
-            }
-            jql = clauses.join(' AND ') + ' ORDER BY created DESC';
+            return NextResponse.json({ error: 'Raw jql is not supported — use the structured filters' }, { status: 400 });
         }
+
+        const clauses: string[] = [`project = ${PROJECT_KEY}`];
+        if (issueType) clauses.push(`issuetype = ${quoteJql(issueType)}`);
+        if (status) clauses.push(`status = ${quoteJql(status)}`);
+        if (priority) clauses.push(`priority = ${quoteJql(priority)}`);
+        if (assigneeAccountId) clauses.push(`assignee = ${quoteJql(assigneeAccountId)}`);
+        if (reporterAccountId) clauses.push(`reporter = ${quoteJql(reporterAccountId)}`);
+        if (search) clauses.push(`summary ~ ${quoteJql(search)}`);
+
+        const jiraDate = (value: unknown): string | null => {
+            const d = new Date(value as string);
+            if (Number.isNaN(d.getTime())) return null;
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        };
+        const createdAfterDate = createdAfter ? jiraDate(createdAfter) : null;
+        if (createdAfterDate) clauses.push(`created >= ${quoteJql(createdAfterDate)}`);
+        const createdBeforeDate = createdBefore ? jiraDate(createdBefore) : null;
+        if (createdBeforeDate) clauses.push(`created <= ${quoteJql(createdBeforeDate)}`);
+
+        const jql = clauses.join(' AND ') + ' ORDER BY created DESC';
 
         const data = await fetchJiraPage(jql, nextPageToken);
         const issues = data.issues || [];

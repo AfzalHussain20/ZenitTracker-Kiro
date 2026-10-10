@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAIProviderFor } from '@/lib/ai/providers';
 import { withTokenTracking } from '@/lib/ai/token-tracker';
 import { isAIEnabled } from '@/lib/ai/feature-flags';
+import { quoteJql } from '@/lib/jira/jql';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -85,7 +86,7 @@ function buildJQL(question: string): string {
   const isPersonQuery = !!extractedName || /\bwho\b|\balias\b|\bperson\b|\breporter\b|\bassignee\b/i.test(question);
 
   if (extractedName) {
-    clauses.push(`(reporter = "${extractedName}" OR assignee = "${extractedName}")`);
+    clauses.push(`(reporter = ${quoteJql(extractedName)} OR assignee = ${quoteJql(extractedName)})`);
     // Jira: use = not ~ for user fields (~ is for text fields only)
     // unless the question explicitly requests a time filter
     const hasExplicitTime = /this sprint|last sprint|today|this week|this month|this quarter/i.test(question);

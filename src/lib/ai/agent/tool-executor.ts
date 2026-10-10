@@ -5,6 +5,7 @@
 
 import type { ToolResult } from './types';
 import { getToolByName } from './tools';
+import { scopeJqlToProject } from '@/lib/jira/jql';
 
 const JIRA_BASE = process.env.JIRA_BASE_URL;
 const JIRA_AUTH = () => Buffer.from(`${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64');
@@ -94,7 +95,11 @@ async function executeToolImpl(toolName: string, params: Record<string, unknown>
 async function toolJiraSearch(params: Record<string, unknown>): Promise<unknown> {
   if (!JIRA_BASE) throw new Error('Jira not configured');
 
-  const jql = (params.jql as string) || `project = ${PROJECT_KEY} ORDER BY created DESC`;
+  // LLM-supplied JQL must stay scoped to this project — never let it read elsewhere.
+  const jql = scopeJqlToProject(
+    (params.jql as string) || `project = ${PROJECT_KEY} ORDER BY created DESC`,
+    PROJECT_KEY
+  );
   const maxResults = Math.min((params.maxResults as number) || 50, 100);
 
   const url = `${JIRA_BASE}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&maxResults=${maxResults}&fields=summary,status,priority,assignee,reporter,created,issuetype,labels`;
