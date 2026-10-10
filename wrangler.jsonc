@@ -1,9 +1,11 @@
 {
+  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "app",
   "account_id": "132226d54738d3571eff3cea5713bd0f",
   "compatibility_date": "2025-04-01",
   "compatibility_flags": ["nodejs_compat"],
   "main": ".open-next/worker.js",
+  "keep_names": false,
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
