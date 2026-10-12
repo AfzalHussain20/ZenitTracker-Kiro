@@ -18,9 +18,9 @@ const FEATURE_ICONS: Record<AIFeatureKey, string> = {
 };
 
 const PROVIDER_COLORS: Record<AIProviderKey, string> = {
+  nvidia: 'from-green-500 to-emerald-600',
   gemini: 'from-blue-500 to-indigo-600',
   groq: 'from-rose-500 to-red-600',
-  huggingface: 'from-yellow-500 to-amber-600',
 };
 
 interface ToggleSwitchProps {
@@ -172,7 +172,7 @@ export default function AIFlagsPanel({ compact = false }: AIFlagsPanelProps) {
             <ul className="text-[11px] text-muted-foreground space-y-1">
               <li>• <strong>PRD Auto-Categorization</strong> triggers on every PRD you open — disable to save ~150 tokens per page view</li>
               <li>• <strong>Streaming Generation</strong> uses the same quota as standard generation — disable to prevent accidental double usage</li>
-              <li>• <strong>Groq</strong> is free with generous limits — keep it ON as fallback even if Gemini is disabled</li>
+              <li>• <strong>NVIDIA NIM</strong> is the primary provider; Gemini and Groq are automatic fallbacks — keep them ON for resilience</li>
               <li>• Changes take effect immediately for all new AI requests</li>
             </ul>
           </div>

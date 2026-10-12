@@ -319,9 +319,9 @@ export default function TestSessionResultPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground">{tc.testCaseTitle}</p>
                     {/* Show all linked bugs as a clean list */}
-                    {(tc.linkedBugs?.length > 0 || tc.bugId) && (
+                    {((tc.linkedBugs?.length ?? 0) > 0 || tc.bugId) && (
                       <div className="flex flex-wrap gap-1.5 mt-1.5">
-                        {(tc.linkedBugs?.length > 0 ? tc.linkedBugs : [tc.bugId].filter(Boolean)).map((bugKey: string) => (
+                        {((tc.linkedBugs && tc.linkedBugs.length > 0 ? tc.linkedBugs : [tc.bugId]).filter((k): k is string => Boolean(k))).map((bugKey) => (
                           <a key={bugKey} href={`${JIRA_BASE}/browse/${bugKey}`} target="_blank" rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-xs text-primary hover:underline bg-primary/5 border border-primary/10 px-2 py-0.5 rounded-md">
                             <ExternalLink className="w-3 h-3" />

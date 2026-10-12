@@ -3,9 +3,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Command } from "cmdk";
 import {
-    Search, GraduationCap, Shield, Activity,
-    Layout, User, Compass, Trophy, Bot, Library,
-    FlaskConical, ClipboardCheck, Info, ArrowRight
+    Search, Shield,
+    Layout, User, Compass, Bot, Library,
+    ClipboardCheck, Info, ArrowRight
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -134,7 +134,7 @@ export function ZenitOmni() {
                                                     <Compass className="w-6 h-6 text-muted-foreground" />
                                                 </div>
                                                 <p className="text-sm font-medium text-muted-foreground mt-1">No results found.</p>
-                                                <p className="text-xs text-muted-foreground/60">Try &apos;nexus&apos;, &apos;cert&apos;, &apos;automate&apos;, or &apos;verify&apos;.</p>
+                                                <p className="text-xs text-muted-foreground/60">Try &apos;automate&apos;, &apos;repository&apos;, or &apos;verify&apos;.</p>
                                             </Command.Empty>
 
                                             {/* ── Navigation ─────────────────────────────────── */}
@@ -143,11 +143,6 @@ export function ZenitOmni() {
                                                     <Layout className="w-4 h-4" />
                                                     <span>Mission Control</span>
                                                     <Shortcut>D</Shortcut>
-                                                </Item>
-                                                <Item value="nexus academy training learning courses lessons" onSelect={() => runCommand(() => router.push('/nexus'))}>
-                                                    <GraduationCap className="w-4 h-4" />
-                                                    <span>Zenit Academy Nexus</span>
-                                                    <Shortcut>N</Shortcut>
                                                 </Item>
                                                 <Item value="automation hub sunnxt selenium bot scripts" onSelect={() => runCommand(() => router.push('/automation'))}>
                                                     <Bot className="w-4 h-4" />
@@ -163,15 +158,6 @@ export function ZenitOmni() {
 
                                             {/* ── Tools ──────────────────────────────────────── */}
                                             <Group label="Advanced Tools">
-                                                <Item value="performance lab vitals web testing metrics reports" onSelect={() => runCommand(() => router.push('/performance'))}>
-                                                    <Activity className="w-4 h-4" />
-                                                    <span>Performance Lab</span>
-                                                    <Shortcut>P</Shortcut>
-                                                </Item>
-                                                <Item value="locator studio inspector element finder xpath" onSelect={() => runCommand(() => router.push('/dashboard/locator-lab'))}>
-                                                    <FlaskConical className="w-4 h-4" />
-                                                    <span>Locator Studio</span>
-                                                </Item>
                                                 <Item value="test suite active run current execute tracker" onSelect={() => runCommand(() => router.push('/dashboard/repository'))}>
                                                     <ClipboardCheck className="w-4 h-4" />
                                                     <span>Active Test Suite</span>
@@ -180,11 +166,6 @@ export function ZenitOmni() {
 
                                             {/* ── Credentials ────────────────────────────────── */}
                                             <Group label="Credentials">
-                                                <Item value="certificate certificates award graduation completion" onSelect={() => runCommand(() => router.push('/nexus?view=certificate'))}>
-                                                    <Trophy className="w-4 h-4" />
-                                                    <span>My Certificates</span>
-                                                    <Shortcut>C</Shortcut>
-                                                </Item>
                                                 <Item value="verify credential id scan check certification" onSelect={() => setVerifyMode(true)}>
                                                     <Shield className="w-4 h-4" />
                                                     <span>Verify a Credential ID</span>

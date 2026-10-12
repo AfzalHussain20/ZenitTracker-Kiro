@@ -6,7 +6,7 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useLeaderboard } from '../useLeaderboard';
 import { LeaderboardService } from '@/lib/leaderboard-service';
-import { LeaderboardEntry } from '@/types/bug-analytics';
+import { LeaderboardEntry, LeaderboardQuery } from '@/types/bug-analytics';
 
 // Mock dependencies
 jest.mock('@/lib/leaderboard-service');
@@ -15,6 +15,8 @@ jest.mock('@/lib/cache-layer');
 
 describe('useLeaderboard', () => {
   let mockService: jest.Mocked<LeaderboardService>;
+
+  const currentMonthQuery: LeaderboardQuery = { timePeriod: 'current_month' };
 
   const mockLeaderboard: LeaderboardEntry[] = [
     {
@@ -44,65 +46,66 @@ describe('useLeaderboard', () => {
     (LeaderboardService as jest.Mock).mockImplementation(() => mockService);
   });
 
-  it('should fetch leaderboard on mount', async () => {
-    const { result } = renderHook(() => useLeaderboard());
+  it('should fetch leaderboard on mount using the initial query', async () => {
+    const { result } = renderHook(() => useLeaderboard(currentMonthQuery));
 
     await waitFor(() => {
       expect(result.current.leaderboard).toEqual(mockLeaderboard);
     });
 
-    expect(mockService.calculateLeaderboard).toHaveBeenCalledWith('current_month');
+    expect(mockService.calculateLeaderboard).toHaveBeenCalledWith(currentMonthQuery);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
   });
 
   it('should get user rank', async () => {
-    const { result } = renderHook(() => useLeaderboard());
+    const { result } = renderHook(() => useLeaderboard(currentMonthQuery));
 
     await waitFor(() => {
       expect(result.current.leaderboard).toEqual(mockLeaderboard);
     });
 
-    const rank = result.current.getUserRank('user1');
-    expect(rank).toBe(1);
+    expect(result.current.getUserRank('user1')).toBe(1);
   });
 
   it('should return null for non-existent user', async () => {
-    const { result } = renderHook(() => useLeaderboard());
+    const { result } = renderHook(() => useLeaderboard(currentMonthQuery));
 
     await waitFor(() => {
       expect(result.current.leaderboard).toEqual(mockLeaderboard);
     });
 
-    const rank = result.current.getUserRank('nonexistent');
-    expect(rank).toBeNull();
+    expect(result.current.getUserRank('nonexistent')).toBeNull();
   });
 
-  it('should refetch leaderboard', async () => {
-    const { result } = renderHook(() => useLeaderboard());
+  it('should refetch leaderboard with a new query', async () => {
+    const { result } = renderHook(() => useLeaderboard(currentMonthQuery));
 
     await waitFor(() => {
       expect(result.current.leaderboard).toEqual(mockLeaderboard);
     });
 
     await act(async () => {
-      await result.current.refetch();
+      await result.current.refetch({ timePeriod: 'previous_month' });
     });
 
     expect(mockService.calculateLeaderboard).toHaveBeenCalledTimes(2);
+    expect(mockService.calculateLeaderboard).toHaveBeenLastCalledWith({
+      timePeriod: 'previous_month',
+    });
   });
 
-  it('should change time period', async () => {
-    const { result } = renderHook(() => useLeaderboard());
+  it('should capture errors from the service', async () => {
+    const failure = new Error('leaderboard failed');
+    mockService.calculateLeaderboard.mockRejectedValueOnce(failure);
+
+    const { result } = renderHook(() => useLeaderboard(currentMonthQuery));
 
     await waitFor(() => {
-      expect(result.current.leaderboard).toEqual(mockLeaderboard);
+      expect(result.current.error).toBe(failure);
     });
 
-    act(() => {
-      result.current.setTimePeriod('previous_month');
-    });
-
-    await waitFor(() => {
-      expect(mockService.calculateLeaderboard).toHaveBeenCalledWith('previous_month');
-    });
+    expect(result.current.leaderboard).toEqual([]);
+    expect(result.current.loading).toBe(false);
   });
 });

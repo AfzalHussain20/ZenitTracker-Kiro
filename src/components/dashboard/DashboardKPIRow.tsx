@@ -25,7 +25,7 @@ const AnimatedCounter = ({ value, suffix = '' }: { value: number, suffix?: strin
 };
 
 // Simplified and cleaner Card design that works in Light and Dark modes
-const KPICard = ({ title, value, suffix, icon: Icon, tooltip, colorClass }: { title: string; value: number; suffix?: string; icon: React.ElementType, tooltip: string, colorClass: string }) => (
+const KPICard = ({ title, value, suffix, icon: Icon, tooltip, colorClass }: { title: string; value: number; suffix?: string; icon: React.ComponentType<{ className?: string }>, tooltip: string, colorClass: string }) => (
     <TooltipProvider>
         <Tooltip>
             <TooltipTrigger asChild>

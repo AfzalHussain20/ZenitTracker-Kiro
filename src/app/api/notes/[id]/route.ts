@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { getCompatDb } from '@/lib/firebase-compat';
 
-// GET /api/notes/[id] — get single note
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+// GET /api/notes/[id] â€” get single note
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const adminDb = getCompatDb();
     const doc = await adminDb.collection('zenit_notes').doc(id).get();
     if (!doc.exists) {
@@ -22,10 +22,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-// PATCH /api/notes/[id] — update note
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+// PATCH /api/notes/[id] â€” update note
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const adminDb = getCompatDb();
     const body = await req.json();
     const { title, content, plainText, tags, category, pinned, archived, linkedBugs } = body;
@@ -48,10 +48,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-// DELETE /api/notes/[id] — soft delete (archive)
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+// DELETE /api/notes/[id] â€” soft delete (archive)
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const adminDb = getCompatDb();
     await adminDb.collection('zenit_notes').doc(id).update({
       archived: true,

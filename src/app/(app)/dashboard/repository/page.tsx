@@ -125,9 +125,9 @@ export default function RepositoryPage() {
       const sessionsCol = collection(db, 'sessions');
       const sessionRef = doc(sessionsCol);
       const now = Timestamp.now();
-      const testCases: TestCase[] = suite.testCases.map((tc, i) => ({
+      const testCases: TestCase[] = suite.testCases.map((tc, i): TestCase => ({
         ...tc, id: `${sessionRef.id}-tc-${i}`, lastModified: now, status: 'Untested',
-        actualResult: '', notes: '', bugId: null, bugTitle: null, naReason: null,
+        actualResult: '', notes: '',
       }));
       const session: TestSession = {
         id: sessionRef.id, userId: user.uid,

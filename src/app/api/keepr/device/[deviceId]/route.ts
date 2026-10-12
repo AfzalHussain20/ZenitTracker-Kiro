@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Public Keepr Device API - no auth required
  * Uses Firebase Admin SDK to bypass security rules
  *
- * Time tracking — accurate approach:
+ * Time tracking â€” accurate approach:
  * - checkedOutAt is set server-side at the moment of PATCH, not trusted from client
  * - checkedInAt is set server-side at moment of return PATCH
  * - durationMs / durationHours calculated from server-recorded times only
@@ -11,25 +11,25 @@
  * History schema (keepr_history collection):
  *   sessionId, deviceId, deviceName, deviceType,
  *   action (checkout|checkin),
- *   userName, accountId, team,           ← who checked it out
- *   returnedToName, returnedToAccountId, returnedToTeam,  ← who received it back
- *   returnLocation,                      ← rack/team name if returned to location
+ *   userName, accountId, team,           â† who checked it out
+ *   returnedToName, returnedToAccountId, returnedToTeam,  â† who received it back
+ *   returnLocation,                      â† rack/team name if returned to location
  *   checkedOutAt (ISO, server-set),
  *   checkedInAt  (ISO, server-set),
- *   durationMs, durationHours,           ← exact duration
+ *   durationMs, durationHours,           â† exact duration
  *   timestamp (Firestore serverTimestamp)
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCompatDb } from '@/lib/firebase-compat';
+import { getCompatDb, type CompatDb, type CompatDocSnapshot } from '@/lib/firebase-compat';
 
 const COLLECTION         = 'keepr_devices';
 const HISTORY_COLLECTION = 'keepr_history';
 
-// ─── Write history record ─────────────────────────────────────────────────────
+// â”€â”€â”€ Write history record â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function writeHistory(
-    db: FirebaseFirestore.Firestore,
+    db: CompatDb,
     deviceId: string,
-    deviceSnap: FirebaseFirestore.DocumentSnapshot,
+    deviceSnap: CompatDocSnapshot,
     update: Record<string, any>,
     serverNow: string,   // ISO string set by server
 ) {
@@ -39,7 +39,7 @@ async function writeHistory(
         const d = deviceSnap.data() ?? {};
 
         if (update.status === 'checked-out') {
-            // ── CHECKOUT: open a new session ──────────────────────────────
+            // â”€â”€ CHECKOUT: open a new session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             const sessionId = `session_${deviceId}_${Date.now()}`;
             await db.collection(HISTORY_COLLECTION).add({
                 sessionId,
@@ -51,12 +51,12 @@ async function writeHistory(
                 userName:     update.checkedOutBy?.name      ?? 'Unknown',
                 accountId:    update.checkedOutBy?.accountId ?? '',
                 team:         update.checkedOutBy?.team      ?? '',
-                // Return fields — empty until checkin
+                // Return fields â€” empty until checkin
                 returnedToName:      null,
                 returnedToAccountId: null,
                 returnedToTeam:      null,
                 returnLocation:      null,
-                // Times — server-set, not client-set
+                // Times â€” server-set, not client-set
                 checkedOutAt:  serverNow,
                 checkedInAt:   null,
                 durationMs:    null,
@@ -65,7 +65,7 @@ async function writeHistory(
             });
 
         } else if (update.status === 'available' && d.status === 'checked-out') {
-            // ── CHECKIN: close the open session ───────────────────────────
+            // â”€â”€ CHECKIN: close the open session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             // Use the server-recorded checkedOutAt from the device doc
             const checkedOutAt: string | null = d.checkedOutAt ?? null;
             const durationMs = checkedOutAt
@@ -104,10 +104,10 @@ async function writeHistory(
                     return; // done
                 }
             } catch {
-                // Index may not exist yet — fall through to write standalone
+                // Index may not exist yet â€” fall through to write standalone
             }
 
-            // No open session found — write a complete standalone record
+            // No open session found â€” write a complete standalone record
             await db.collection(HISTORY_COLLECTION).add({
                 sessionId:    `session_${deviceId}_checkin_${Date.now()}`,
                 deviceId,
@@ -127,7 +127,7 @@ async function writeHistory(
     }
 }
 
-// ─── Seed data ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Seed data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const SEED: Record<string, any> = {
     'device_1': { id:'device_1', name:'Oppo A78',              type:'phone',  status:'available',   location:'QA Team Device Rack', os:'Android 13', ram:'8GB',  network:'4G',   condition:'good',      totalCheckouts:12 },
     'device_2': { id:'device_2', name:'Moto g31',              type:'phone',  status:'available',   location:'QA Team Device Rack', os:'Android 11', ram:'4GB',  network:'4G',   condition:'fair',      totalCheckouts:8  },
@@ -139,9 +139,9 @@ const SEED: Record<string, any> = {
     'device_8': { id:'device_8', name:'Samsung Galaxy Tab S8', type:'tablet', status:'available',   location:'Android Team',        os:'Android 14', ram:'8GB',  network:'5G',   condition:'excellent', totalCheckouts:14 },
 };
 
-// ─── GET ──────────────────────────────────────────────────────────────────────
-export async function GET(_req: NextRequest, { params }: { params: { deviceId: string } }) {
-    const { deviceId } = params;
+// â”€â”€â”€ GET â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ deviceId: string }> }) {
+    const { deviceId } = await params;
     try {
         const db = getCompatDb();
         const snap = await db.collection(COLLECTION).doc(deviceId).get();
@@ -159,20 +159,20 @@ export async function GET(_req: NextRequest, { params }: { params: { deviceId: s
     }
 }
 
-// ─── PATCH ────────────────────────────────────────────────────────────────────
-export async function PATCH(req: NextRequest, { params }: { params: { deviceId: string } }) {
-    const { deviceId } = params;
+// â”€â”€â”€ PATCH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ deviceId: string }> }) {
+    const { deviceId } = await params;
     const body = await req.json();
 
-    // ── SERVER-SIDE TIME: ignore any timestamps from the client ──────────────
+    // â”€â”€ SERVER-SIDE TIME: ignore any timestamps from the client â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const serverNow = new Date().toISOString();
 
     // Forcibly replace client-sent timestamps with server time
     if (body.status === 'checked-out') {
-        body.checkedOutAt = serverNow;   // override — always server time
+        body.checkedOutAt = serverNow;   // override â€” always server time
     }
     if (body.status === 'available') {
-        body.lastCheckedIn = serverNow;  // override — always server time
+        body.lastCheckedIn = serverNow;  // override â€” always server time
         // CRITICAL: when returning to available, MUST null out checkedOutBy + checkedOutAt
         body.checkedOutBy = null;
         body.checkedOutAt = null;
@@ -206,7 +206,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { deviceId: 
     }
 }
 
-// ─── POST (seed all devices) ──────────────────────────────────────────────────
+// â”€â”€â”€ POST (seed all devices) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function POST(_req: NextRequest) {
     try {
         const db = getCompatDb();

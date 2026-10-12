@@ -54,7 +54,7 @@ describe('FirebaseConnector - Property-Based Tests', () => {
           // Mock the queryPaginated method to simulate pagination
           let currentPage = 0;
           const queryPaginatedMock = jest.spyOn(connector, 'queryPaginated').mockImplementation(
-            async (collection: string, options: QueryOptions) => {
+            async (collection: string, options?: QueryOptions) => {
               const start = currentPage * pageSize;
               const end = Math.min(start + pageSize, sortedDocs.length);
               const pageData = sortedDocs.slice(start, end);
@@ -102,7 +102,7 @@ describe('FirebaseConnector - Property-Based Tests', () => {
           expect(uniqueIds.size).toBe(paginatedIds.length);
           
           // Property: All documents from full query should be in paginated results
-          const allDocIds = new Set(allDocs.map(doc => doc.id));
+          const allDocIds = new Set(allDocs.map((doc: any) => doc.id));
           const paginatedDocIds = new Set(paginatedIds);
           expect(paginatedDocIds).toEqual(allDocIds);
           

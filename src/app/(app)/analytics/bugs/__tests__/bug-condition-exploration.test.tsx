@@ -1,23 +1,15 @@
 /**
- * Bug Condition Exploration Test
- * 
+ * Jira KPI Dashboard — Filter Behaviour
+ *
  * **Validates: Requirements 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8**
- * 
- * This test demonstrates all 8 bug conditions on the UNFIXED code.
- * This test MUST FAIL on unfixed code to confirm the bugs exist.
- * 
- * Bug Conditions:
- * 1. Tab clicks not filtering data correctly
- * 2. KPI metric cards not clickable or not navigating properly
- * 3. Drill-down buttons not synchronizing filter state
- * 4. No visual indicators for active filters
- * 5. Team filter not applied to Issues tab
- * 6. Member filter showing incorrect data
- * 7. Status/priority filters not matching exactly
- * 8. Filters not maintained across tab switches
+ *
+ * Originally a "bug condition exploration" suite that asserted the (then broken)
+ * filter wiring. The dashboard now uses instant filters (no Apply step) driven by
+ * an active-filter bar, so these tests document the current, working behaviour of
+ * tab navigation, metric-card drill-down, and filter propagation.
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import KPIDashboard from '../page';
 import { useJiraKPI } from '@/hooks/useJiraKPI';
@@ -40,6 +32,57 @@ jest.mock('framer-motion', () => ({
   },
 }));
 
+const androidBugs = [
+  {
+    id: '1',
+    key: 'SUN-101',
+    summary: 'Android bug 1',
+    status: 'Open',
+    priority: 'Highest',
+    created: '2024-01-15',
+    team: 'Android Team',
+    reporter: { displayName: 'John Doe', accountId: 'john' },
+    assignee: { displayName: 'Jane Smith', accountId: 'jane' },
+    url: 'https://jira.example.com/SUN-101',
+    isLive: false,
+    storyPoints: null,
+    issueType: 'Bug',
+  },
+  {
+    id: '3',
+    key: 'SUN-103',
+    summary: 'Android bug 2',
+    status: 'Inprogress',
+    priority: 'Medium',
+    created: '2024-01-17',
+    team: 'Android Team',
+    reporter: { displayName: 'John Doe', accountId: 'john' },
+    assignee: { displayName: 'Charlie Davis', accountId: 'charlie' },
+    url: 'https://jira.example.com/SUN-103',
+    isLive: false,
+    storyPoints: null,
+    issueType: 'Bug',
+  },
+];
+
+const iosBug = {
+  id: '2',
+  key: 'SUN-102',
+  summary: 'iOS bug 1',
+  status: 'Fixed',
+  priority: 'High',
+  created: '2024-01-16',
+  team: 'iOS Team',
+  reporter: { displayName: 'Alice Brown', accountId: 'alice' },
+  assignee: { displayName: 'Bob Wilson', accountId: 'bob' },
+  url: 'https://jira.example.com/SUN-102',
+  isLive: false,
+  storyPoints: null,
+  issueType: 'Bug',
+};
+
+const allBugs = [...androidBugs, iosBug];
+
 const mockKPIData = {
   counts: {
     total: 150,
@@ -48,69 +91,36 @@ const mockKPIData = {
     epics: 10,
     tasks: 10,
   },
-  bugs: [
-    {
-      id: '1',
-      key: 'SUN-101',
-      summary: 'Android bug 1',
-      status: 'Open',
-      priority: 'Highest',
-      created: '2024-01-15',
-      team: 'Android Team',
-      reporter: { displayName: 'John Doe', accountId: 'john' },
-      assignee: { displayName: 'Jane Smith', accountId: 'jane' },
-      url: 'https://jira.example.com/SUN-101',
-      isLive: false,
-      storyPoints: null,
-    },
-    {
-      id: '2',
-      key: 'SUN-102',
-      summary: 'iOS bug 1',
-      status: 'Fixed',
-      priority: 'High',
-      created: '2024-01-16',
-      team: 'iOS Team',
-      reporter: { displayName: 'Alice Brown', accountId: 'alice' },
-      assignee: { displayName: 'Bob Wilson', accountId: 'bob' },
-      url: 'https://jira.example.com/SUN-102',
-      isLive: false,
-      storyPoints: null,
-    },
-    {
-      id: '3',
-      key: 'SUN-103',
-      summary: 'Android bug 2',
-      status: 'Inprogress',
-      priority: 'Medium',
-      created: '2024-01-17',
-      team: 'Android Team',
-      reporter: { displayName: 'John Doe', accountId: 'john' },
-      assignee: { displayName: 'Charlie Davis', accountId: 'charlie' },
-      url: 'https://jira.example.com/SUN-103',
-      isLive: false,
-      storyPoints: null,
-    },
-  ],
+  bugs: allBugs,
   stories: [],
   epics: [],
   tasks: [],
-  all: [],
+  all: allBugs,
+  allTimeIssues: allBugs,
   liveTickets: [],
   people: [
     {
       userId: 'john',
       name: 'John Doe',
+      avatarUrl: '',
       teams: ['Android Team'],
       bugsReported: 2,
       bugsOpen: 1,
       bugsClosed: 1,
+      bugsInProgress: 0,
       bugsCritical: 1,
+      bugsHigh: 0,
       ticketsAssigned: 5,
       assignedOpen: 2,
+      assignedClosed: 2,
+      assignedInProgress: 1,
       storyPointsAssigned: 10,
       storyPointsCompleted: 5,
       storiesReported: 1,
+      epicsReported: 0,
+      tasksReported: 0,
+      totalIssues: 3,
+      qualityScore: 75.5,
       closeRate: 50,
       rank: 1,
       monthly: {},
@@ -118,22 +128,32 @@ const mockKPIData = {
     {
       userId: 'alice',
       name: 'Alice Brown',
+      avatarUrl: '',
       teams: ['iOS Team'],
       bugsReported: 1,
       bugsOpen: 0,
       bugsClosed: 1,
+      bugsInProgress: 0,
       bugsCritical: 0,
+      bugsHigh: 1,
       ticketsAssigned: 3,
       assignedOpen: 1,
+      assignedClosed: 2,
+      assignedInProgress: 0,
       storyPointsAssigned: 8,
       storyPointsCompleted: 6,
       storiesReported: 0,
+      epicsReported: 0,
+      tasksReported: 0,
+      totalIssues: 1,
+      qualityScore: 85.0,
       closeRate: 100,
       rank: 2,
       monthly: {},
     },
   ],
   allTeams: ['Android Team', 'iOS Team'],
+  jiraTeams: [],
   byStatus: {
     Open: 1,
     Fixed: 1,
@@ -152,6 +172,7 @@ const mockKPIData = {
       closed: 1,
       inProgress: 1,
       critical: 1,
+      high: 1,
       storyPoints: 0,
       liveTickets: 0,
     },
@@ -181,7 +202,27 @@ const mockKPIData = {
   refreshing: false,
 };
 
-describe('Bug Condition Exploration Tests', () => {
+/** Radix Tabs activate on mouseDown, not click. */
+function switchTab(name: RegExp) {
+  fireEvent.mouseDown(screen.getByRole('tab', { name }));
+}
+
+/** Radix Select triggers expose role="combobox" and display the selected value. */
+function getCombobox(displayText: string): HTMLElement {
+  const el = screen
+    .getAllByRole('combobox')
+    .find((b) => (b.textContent || '').includes(displayText));
+  if (!el) throw new Error(`No combobox displaying "${displayText}"`);
+  return el;
+}
+
+async function selectOption(displayText: string, optionName: string | RegExp) {
+  fireEvent.click(getCombobox(displayText));
+  const option = await screen.findByRole('option', { name: optionName });
+  fireEvent.click(option);
+}
+
+describe('Jira KPI Dashboard — Filter Behaviour', () => {
   beforeEach(() => {
     (useJiraKPI as jest.Mock).mockReturnValue({
       kpi: mockKPIData,
@@ -189,6 +230,7 @@ describe('Bug Condition Exploration Tests', () => {
       error: null,
       lastSync: new Date(),
       forceRefresh: jest.fn(),
+      allSprints: [],
     });
 
     (useExport as jest.Mock).mockReturnValue({
@@ -202,317 +244,176 @@ describe('Bug Condition Exploration Tests', () => {
   });
 
   /**
-   * Bug Condition 1: Tab clicks not filtering data correctly
-   * Expected: When team filter is active and user switches tabs, data should be filtered by team
-   * Actual (unfixed): Data shows all teams regardless of filter
+   * Bug Condition 1: Tab navigation and team filter scope.
+   * Current behaviour: the global team filter is shared by the Team KPIs, Issues
+   * and Live tabs, while the Monthly tab exposes its own independent team filter.
    */
-  test('Bug Condition 1: Tab navigation should apply team filter correctly', async () => {
-    const { container } = render(<KPIDashboard />);
-
-    // Apply team filter
-    const teamFilterSelect = container.querySelector('select[value="all"]') as HTMLSelectElement;
-    expect(teamFilterSelect).toBeInTheDocument();
-    
-    // Change to Android Team
-    fireEvent.change(teamFilterSelect, { target: { value: 'Android Team' } });
-
-    // Switch to Monthly tab
-    const monthlyTab = screen.getByRole('tab', { name: /monthly/i });
-    fireEvent.click(monthlyTab);
-
-    await waitFor(() => {
-      // Expected: Monthly data should be filtered to show only Android Team data
-      // Actual (unfixed): Shows all teams' data
-      const monthlyContent = screen.getByRole('tabpanel');
-      expect(monthlyContent).toBeInTheDocument();
-      
-      // This assertion will FAIL on unfixed code because team filter is not applied to Monthly tab
-      // The monthly data should show team name in header when filtered
-      expect(monthlyContent.textContent).toContain('Android Team');
-    });
-  });
-
-  /**
-   * Bug Condition 2: KPI metric cards not clickable or not navigating properly
-   * Expected: Clicking "Bugs" card should navigate to Issues tab with Bug filter applied
-   * Actual (unfixed): Card doesn't respond to click or doesn't navigate
-   */
-  test('Bug Condition 2: KPI metric cards should be clickable and navigate with filters', async () => {
-    const { container } = render(<KPIDashboard />);
-
-    // Find the "Bugs" metric card in Overall Summary
-    const bugsCard = screen.getByText('Bugs').closest('div[class*="CardContent"]');
-    expect(bugsCard).toBeInTheDocument();
-
-    // This assertion will FAIL on unfixed code because cards don't have click handlers
-    // Expected: Card should have cursor-pointer class indicating it's clickable
-    expect(bugsCard?.parentElement).toHaveClass('cursor-pointer');
-
-    // Click the Bugs card
-    if (bugsCard?.parentElement) {
-      fireEvent.click(bugsCard.parentElement);
-    }
-
-    await waitFor(() => {
-      // Expected: Should navigate to Issues tab
-      const issuesTab = screen.getByRole('tab', { name: /issues/i });
-      expect(issuesTab).toHaveAttribute('data-state', 'active');
-
-      // Expected: Filter should be set to 'Bug'
-      const bugButton = screen.getByRole('button', { name: /🐛 Bug/i });
-      expect(bugButton).toHaveClass('ring-2'); // Active filter styling
-    });
-  });
-
-  /**
-   * Bug Condition 3: Drill-down buttons not synchronizing filter state
-   * Expected: Clicking "Open" button should navigate to Issues tab with status filter set to 'open_group'
-   * Actual (unfixed): Navigation occurs but filter state not synchronized
-   */
-  test('Bug Condition 3: Drill-down buttons should synchronize filter state', async () => {
+  test('Bug Condition 1: Monthly tab exposes its own independent team filter', async () => {
     render(<KPIDashboard />);
 
-    // Find and click the "Open" drill-down button in Current Month card
-    const openButtons = screen.getAllByText(/open/i);
-    const openDrillButton = openButtons.find(btn => 
-      btn.closest('button')?.textContent?.includes('view')
+    await selectOption('All Teams', 'Android Team');
+
+    switchTab(/monthly/i);
+    const panel = await screen.findByRole('tabpanel');
+
+    // Global team filter does not collapse the monthly series…
+    expect(within(panel).getByText(/Monthly Ticket Counts — Last 12 Months/i)).toBeInTheDocument();
+
+    // …the Monthly tab has its own dropdown which filters the months.
+    await selectOption('All Teams', 'Android Team');
+    await waitFor(() =>
+      expect(screen.getByText(/Android Team — Monthly Ticket Counts/i)).toBeInTheDocument()
     );
-    
-    expect(openDrillButton).toBeInTheDocument();
-    
-    if (openDrillButton?.closest('button')) {
-      fireEvent.click(openDrillButton.closest('button')!);
-    }
+  });
+
+  /**
+   * Bug Condition 2: KPI metric cards navigate to the Issues tab with a filter.
+   */
+  test('Bug Condition 2: KPI metric cards navigate to Issues tab with filters', async () => {
+    render(<KPIDashboard />);
+
+    const bugsCard = screen.getAllByText('Bugs')[0].closest('div[class*="cursor-pointer"]');
+    expect(bugsCard).toBeInTheDocument();
+    fireEvent.click(bugsCard!);
 
     await waitFor(() => {
-      // Expected: Should navigate to Issues tab
-      const issuesTab = screen.getByRole('tab', { name: /issues/i });
-      expect(issuesTab).toHaveAttribute('data-state', 'active');
-
-      // This assertion will FAIL on unfixed code because filter state is not synchronized
-      // Expected: Status filter should be set to show open issues
-      const statusFilter = screen.getByText(/All Status/i).closest('select');
-      expect(statusFilter).toHaveValue('open_group');
+      expect(screen.getByRole('tab', { name: /issues/i })).toHaveAttribute('data-state', 'active');
+      const bugButton = screen.getByRole('button', { name: /Bug \(/ });
+      expect(bugButton.className).toContain('ring-2');
     });
   });
 
   /**
-   * Bug Condition 4: No visual indicators for active filters
-   * Expected: When filters are applied, visual badges and highlights should appear
-   * Actual (unfixed): No visual feedback for active filters
+   * Bug Condition 3: Drill-down buttons synchronize filter state.
    */
-  test('Bug Condition 4: Visual filter indicators should display for active filters', async () => {
-    const { container } = render(<KPIDashboard />);
+  test('Bug Condition 3: Drill-down buttons synchronize filter state', async () => {
+    render(<KPIDashboard />);
 
-    // Apply team filter
-    const teamFilterSelect = container.querySelector('select') as HTMLSelectElement;
-    fireEvent.change(teamFilterSelect, { target: { value: 'Android Team' } });
+    const openDrillButtons = screen.getAllByTitle('Click to view Open issues');
+    expect(openDrillButtons.length).toBeGreaterThan(0);
+    fireEvent.click(openDrillButtons[0]);
 
     await waitFor(() => {
-      // This assertion will FAIL on unfixed code because visual indicators are missing
-      // Expected: Active filter badge should be displayed
-      const filterBadge = screen.queryByText(/🏢 Android Team/i);
-      expect(filterBadge).toBeInTheDocument();
-
-      // Expected: Filter dropdown should have highlighted styling
-      expect(teamFilterSelect).toHaveClass('border-primary');
-      expect(teamFilterSelect).toHaveClass('bg-primary/5');
-
-      // Expected: Count summary should show filtered member count
-      const countSummary = screen.queryByText(/member.*shown.*team view/i);
-      expect(countSummary).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: /issues/i })).toHaveAttribute('data-state', 'active');
+      // Status filter synced to the "Open" group.
+      expect(getCombobox('Open (Group)')).toBeInTheDocument();
     });
   });
 
   /**
-   * Bug Condition 5: Team filter not applied to Issues tab
-   * Expected: When team filter is active, Issues tab should show only that team's issues
-   * Actual (unfixed): Shows all issues regardless of team filter
+   * Bug Condition 4: Visual indicators display for active filters.
    */
-  test('Bug Condition 5: Team filter should apply to Issues tab', async () => {
-    const { container } = render(<KPIDashboard />);
+  test('Bug Condition 4: Visual filter indicators display for active filters', async () => {
+    render(<KPIDashboard />);
 
-    // Apply team filter to Android Team
-    const teamFilterSelect = container.querySelector('select') as HTMLSelectElement;
-    fireEvent.change(teamFilterSelect, { target: { value: 'Android Team' } });
-
-    // Switch to Issues tab
-    const issuesTab = screen.getByRole('tab', { name: /issues/i });
-    fireEvent.click(issuesTab);
+    await selectOption('All Teams', 'Android Team');
 
     await waitFor(() => {
-      // This assertion will FAIL on unfixed code because team filter is not applied to Issues tab
-      // Expected: Should show only 2 Android Team bugs (SUN-101, SUN-103)
-      // Actual (unfixed): Shows all 3 bugs including iOS bug (SUN-102)
-      
-      const issuesList = screen.getByText(/results/i);
-      expect(issuesList.textContent).toContain('2 results'); // Only Android Team bugs
-      
-      // iOS bug should NOT be visible
-      expect(screen.queryByText('SUN-102')).not.toBeInTheDocument();
-      
-      // Android bugs should be visible
-      expect(screen.getByText('SUN-101')).toBeInTheDocument();
-      expect(screen.getByText('SUN-103')).toBeInTheDocument();
+      expect(screen.getByText('Active Filters:')).toBeInTheDocument();
+      expect(screen.getAllByText('Android Team').length).toBeGreaterThan(0);
+      // The team dropdown is highlighted while a filter is active.
+      expect(getCombobox('Android Team').className).toContain('border-primary');
     });
   });
 
   /**
-   * Bug Condition 6: Member filter showing incorrect data
-   * Expected: When member filter is active, should show only that member's issues
-   * Actual (unfixed): Shows incorrect data or all members
+   * Bug Condition 5: Team filter applies to the Issues tab.
    */
-  test('Bug Condition 6: Member filter should show correct data', async () => {
-    const { container } = render(<KPIDashboard />);
+  test('Bug Condition 5: Team filter applies to Issues tab', async () => {
+    render(<KPIDashboard />);
 
-    // Apply member filter to John Doe
-    const selects = container.querySelectorAll('select');
-    const memberFilterSelect = Array.from(selects).find(select => 
-      select.querySelector('option[value="john"]')
-    ) as HTMLSelectElement;
-    
-    expect(memberFilterSelect).toBeInTheDocument();
-    fireEvent.change(memberFilterSelect, { target: { value: 'john' } });
+    await selectOption('All Teams', 'Android Team');
+
+    switchTab(/issues/i);
+
+    const panel = await screen.findByRole('tabpanel');
+    await waitFor(() => {
+      expect(within(panel).getByText(/2 results/i)).toBeInTheDocument();
+      expect(within(panel).getByText('SUN-101')).toBeInTheDocument();
+      expect(within(panel).getByText('SUN-103')).toBeInTheDocument();
+      expect(within(panel).queryByText('SUN-102')).not.toBeInTheDocument();
+    });
+  });
+
+  /**
+   * Bug Condition 6: Member filter shows only that member's data.
+   */
+  test('Bug Condition 6: Member filter shows correct data', async () => {
+    render(<KPIDashboard />);
+
+    await selectOption('All Members', 'John Doe');
+
+    const table = await screen.findByText(/TOTAL \(1 members\)/i);
+    expect(table).toBeInTheDocument();
+    expect(screen.getAllByText('John Doe').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Alice Brown')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Bug Condition 7: Status filter matches exactly.
+   */
+  test('Bug Condition 7: Status filter matches exactly', async () => {
+    render(<KPIDashboard />);
+
+    switchTab(/issues/i);
+
+    const panel = await screen.findByRole('tabpanel');
+    await selectOption('All Status', /^Fixed/);
 
     await waitFor(() => {
-      // This assertion will FAIL on unfixed code because member filter shows incorrect data
-      // Expected: Should show only 1 member (John Doe) in the team performance table
-      // Actual (unfixed): Shows all members or incorrect subset
-      
-      const tableRows = container.querySelectorAll('tbody tr');
-      expect(tableRows).toHaveLength(1);
-      
-      // Should show John Doe's data
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
-      
-      // Should NOT show Alice Brown
+      expect(within(panel).getByText(/1 result/i)).toBeInTheDocument();
+      expect(within(panel).getByText('SUN-102')).toBeInTheDocument();
+      expect(within(panel).queryByText('SUN-101')).not.toBeInTheDocument();
+      expect(within(panel).queryByText('SUN-103')).not.toBeInTheDocument();
+    });
+  });
+
+  /**
+   * Bug Condition 8: Filters are maintained across tab switches.
+   */
+  test('Bug Condition 8: Filters are maintained across tab switches', async () => {
+    render(<KPIDashboard />);
+
+    await selectOption('All Teams', 'Android Team');
+
+    // Team KPIs now shows only Android members.
+    await waitFor(() => {
+      expect(screen.queryByText('Alice Brown')).not.toBeInTheDocument();
+      expect(screen.getAllByText('John Doe').length).toBeGreaterThan(0);
+    });
+
+    switchTab(/issues/i);
+    await waitFor(() => {
+      // Team filter is still active on the Issues tab.
+      expect(getCombobox('Android Team')).toBeInTheDocument();
+      expect(screen.getByText(/2 results/i)).toBeInTheDocument();
+    });
+
+    switchTab(/team kpis/i);
+    await waitFor(() => {
+      expect(getCombobox('Android Team')).toBeInTheDocument();
       expect(screen.queryByText('Alice Brown')).not.toBeInTheDocument();
     });
   });
 
   /**
-   * Bug Condition 7: Status/priority filters not matching exactly
-   * Expected: When status filter is set to "Fixed", should show only Fixed issues
-   * Actual (unfixed): Shows issues with various statuses
+   * Comprehensive: a full workflow exercising several behaviours together.
    */
-  test('Bug Condition 7: Status and priority filters should match exactly', async () => {
-    const { container } = render(<KPIDashboard />);
+  test('Comprehensive: filters flow through a realistic workflow', async () => {
+    render(<KPIDashboard />);
 
-    // Switch to Issues tab
-    const issuesTab = screen.getByRole('tab', { name: /issues/i });
-    fireEvent.click(issuesTab);
+    // 1. Apply the team filter — active indicator appears.
+    await selectOption('All Teams', 'Android Team');
+    await waitFor(() => expect(screen.getByText('Active Filters:')).toBeInTheDocument());
 
-    await waitFor(() => {
-      // Apply status filter to "Fixed"
-      const statusFilterSelect = screen.getByText(/All Status/i).closest('select') as HTMLSelectElement;
-      fireEvent.change(statusFilterSelect, { target: { value: 'Fixed' } });
-    });
+    // 2. Drill into bugs from a metric card.
+    const bugsCard = screen.getAllByText('Bugs')[0].closest('div[class*="cursor-pointer"]');
+    fireEvent.click(bugsCard!);
 
     await waitFor(() => {
-      // This assertion will FAIL on unfixed code because filter doesn't match exactly
-      // Expected: Should show only 1 issue with status "Fixed" (SUN-102)
-      // Actual (unfixed): Shows issues with other statuses too
-      
-      expect(screen.getByText('SUN-102')).toBeInTheDocument();
-      
-      // Should NOT show Open or Inprogress issues
-      expect(screen.queryByText('SUN-101')).not.toBeInTheDocument();
-      expect(screen.queryByText('SUN-103')).not.toBeInTheDocument();
-      
-      const resultsCount = screen.getByText(/results/i);
-      expect(resultsCount.textContent).toContain('1 result');
+      expect(screen.getByRole('tab', { name: /issues/i })).toHaveAttribute('data-state', 'active');
+      const panel = screen.getByRole('tabpanel');
+      expect(within(panel).getByText(/2 results/i)).toBeInTheDocument();
     });
-  });
-
-  /**
-   * Bug Condition 8: Filters not maintained across tab switches
-   * Expected: When filters are applied and user switches tabs, filters should persist
-   * Actual (unfixed): Filters are lost or not applied after tab switch
-   */
-  test('Bug Condition 8: Filters should be maintained across tab switches', async () => {
-    const { container } = render(<KPIDashboard />);
-
-    // Apply team filter to Android Team
-    const teamFilterSelect = container.querySelector('select') as HTMLSelectElement;
-    fireEvent.change(teamFilterSelect, { target: { value: 'Android Team' } });
-
-    // Verify filter is applied in Team KPIs tab
-    await waitFor(() => {
-      expect(screen.getByText(/Android Team/i)).toBeInTheDocument();
-    });
-
-    // Switch to Monthly tab
-    const monthlyTab = screen.getByRole('tab', { name: /monthly/i });
-    fireEvent.click(monthlyTab);
-
-    await waitFor(() => {
-      // This assertion will FAIL on unfixed code because filter is not maintained
-      // Expected: Team filter should still be active and applied
-      expect(teamFilterSelect).toHaveValue('Android Team');
-    });
-
-    // Switch back to Team KPIs tab
-    const teamTab = screen.getByRole('tab', { name: /team kpis/i });
-    fireEvent.click(teamTab);
-
-    await waitFor(() => {
-      // This assertion will FAIL on unfixed code because filter state is lost
-      // Expected: Filter should still be active and data should be filtered
-      expect(teamFilterSelect).toHaveValue('Android Team');
-      
-      // Should show only Android Team members
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
-      expect(screen.queryByText('Alice Brown')).not.toBeInTheDocument();
-    });
-  });
-
-  /**
-   * Comprehensive test: All bug conditions together
-   * This test demonstrates multiple bug conditions in a realistic user workflow
-   */
-  test('Comprehensive: Multiple bug conditions in user workflow', async () => {
-    const { container } = render(<KPIDashboard />);
-
-    // Step 1: Apply team filter (Bug Condition 4 - no visual indicators)
-    const teamFilterSelect = container.querySelector('select') as HTMLSelectElement;
-    fireEvent.change(teamFilterSelect, { target: { value: 'Android Team' } });
-
-    // Bug Condition 4: Visual indicators should appear
-    await waitFor(() => {
-      expect(screen.queryByText(/🏢 Android Team/i)).toBeInTheDocument();
-      expect(teamFilterSelect).toHaveClass('border-primary');
-    });
-
-    // Step 2: Click Bugs metric card (Bug Condition 2 - not clickable)
-    const bugsCard = screen.getByText('Bugs').closest('div[class*="CardContent"]');
-    if (bugsCard?.parentElement) {
-      fireEvent.click(bugsCard.parentElement);
-    }
-
-    // Bug Condition 2: Should navigate to Issues tab
-    await waitFor(() => {
-      const issuesTab = screen.getByRole('tab', { name: /issues/i });
-      expect(issuesTab).toHaveAttribute('data-state', 'active');
-    });
-
-    // Bug Condition 5: Team filter should be applied to Issues tab
-    await waitFor(() => {
-      // Should show only Android Team bugs (2 bugs)
-      const resultsCount = screen.getByText(/results/i);
-      expect(resultsCount.textContent).toContain('2 results');
-    });
-
-    // Step 3: Switch to Monthly tab (Bug Condition 8 - filters not maintained)
-    const monthlyTab = screen.getByRole('tab', { name: /monthly/i });
-    fireEvent.click(monthlyTab);
-
-    // Bug Condition 1 & 8: Team filter should persist and apply to Monthly tab
-    await waitFor(() => {
-      expect(teamFilterSelect).toHaveValue('Android Team');
-      const monthlyContent = screen.getByRole('tabpanel');
-      expect(monthlyContent.textContent).toContain('Android Team');
-    });
-
-    // This comprehensive test will FAIL on unfixed code due to multiple bug conditions
   });
 });

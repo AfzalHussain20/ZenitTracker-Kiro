@@ -5,6 +5,65 @@ import { TextEncoder, TextDecoder } from 'util'
 global.TextEncoder = TextEncoder
 global.TextDecoder = TextDecoder
 
+// Polyfill Blob.text/arrayBuffer for jsdom (jsdom's Blob predates these methods)
+if (typeof Blob !== 'undefined') {
+  if (typeof Blob.prototype.text !== 'function') {
+    Blob.prototype.text = function () {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = () => reject(reader.error)
+        reader.readAsText(this)
+      })
+    }
+  }
+  if (typeof Blob.prototype.arrayBuffer !== 'function') {
+    Blob.prototype.arrayBuffer = function () {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = () => reject(reader.error)
+        reader.readAsArrayBuffer(this)
+      })
+    }
+  }
+}
+
+// jsdom does not implement ResizeObserver, which Recharts' ResponsiveContainer requires.
+if (typeof global.ResizeObserver === 'undefined') {
+  global.ResizeObserver = class ResizeObserver {
+    constructor(callback) {
+      this.callback = callback
+    }
+    observe(target) {
+      this.callback([{ target, contentRect: { width: 800, height: 400 } }], this)
+    }
+    unobserve() {}
+    disconnect() {}
+  }
+}
+
+// jsdom does not implement scrollIntoView, which the KPI dashboard calls when
+// switching tabs / drilling down. Without this, tab switches throw asynchronously.
+if (typeof Element !== 'undefined') {
+  if (typeof Element.prototype.scrollIntoView !== 'function') {
+    Element.prototype.scrollIntoView = jest.fn()
+  }
+  // Radix UI primitives (Select, DropdownMenu, ...) rely on the Pointer Capture API,
+  // which jsdom does not implement.
+  if (typeof Element.prototype.hasPointerCapture !== 'function') {
+    Element.prototype.hasPointerCapture = function () {
+      return false
+    }
+  }
+  if (typeof Element.prototype.setPointerCapture !== 'function') {
+    Element.prototype.setPointerCapture = function () {}
+  }
+  if (typeof Element.prototype.releasePointerCapture !== 'function') {
+    Element.prototype.releasePointerCapture = function () {}
+  }
+}
+
 // Mock Firebase if needed
 jest.mock('firebase/app', () => ({
   initializeApp: jest.fn(),

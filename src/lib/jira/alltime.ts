@@ -26,8 +26,8 @@ export function fetchAllTime(force = false): Promise<AllTimeSnapshot | null> {
 export async function attachAllTime<T extends Record<string, any>>(raw: T): Promise<T> {
     const snap = await fetchAllTime();
     if (snap) {
-        raw.allTimeBugs = snap.allTimeBugs;
-        raw.allTimeAll = snap.allTimeAll;
+        (raw as Record<string, any>).allTimeBugs = snap.allTimeBugs;
+        (raw as Record<string, any>).allTimeAll = snap.allTimeAll;
     }
     return raw;
 }

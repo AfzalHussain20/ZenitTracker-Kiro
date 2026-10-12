@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { DataVisualizer } from '../DataVisualizer';
 import { MetricCard } from '../MetricCard';
 import html2canvas from 'html2canvas';
@@ -13,6 +13,19 @@ import jsPDF from 'jspdf';
 // Mock dependencies
 jest.mock('html2canvas');
 jest.mock('jspdf');
+
+// Recharts' ResponsiveContainer measures its DOM node, which is unavailable in
+// jsdom. Render chart children with a fixed size instead so the underlying SVG
+// (and its `.recharts-*` classnames) is produced.
+jest.mock('recharts', () => {
+  const Actual = jest.requireActual('recharts');
+  const ReactLib = require('react');
+  return {
+    ...Actual,
+    ResponsiveContainer: ({ children }: { children: React.ReactElement }) =>
+      ReactLib.cloneElement(children, { width: 800, height: 400 }),
+  };
+});
 
 describe('DataVisualizer', () => {
   const mockData = [
@@ -24,6 +37,10 @@ describe('DataVisualizer', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('should render chart with title', () => {
@@ -111,14 +128,6 @@ describe('DataVisualizer', () => {
     };
     (html2canvas as jest.Mock).mockResolvedValue(mockCanvas);
 
-    // Mock createElement and click
-    const mockLink = {
-      click: jest.fn(),
-      download: '',
-      href: '',
-    };
-    jest.spyOn(document, 'createElement').mockReturnValue(mockLink as any);
-
     render(
       <DataVisualizer
         title="Bug Distribution"
@@ -128,12 +137,20 @@ describe('DataVisualizer', () => {
       />
     );
 
-    const pngButton = screen.getByText('PNG');
-    fireEvent.click(pngButton);
+    // Intercept only the anchor element created by the export handler,
+    // after the tree has rendered so React's own createElement is unaffected.
+    const mockLink = { click: jest.fn(), download: '', href: '' };
+    const createElement = document.createElement.bind(document);
+    jest
+      .spyOn(document, 'createElement')
+      .mockImplementation((tag: string) =>
+        tag === 'a' ? (mockLink as unknown as HTMLElement) : createElement(tag)
+      );
 
-    await new Promise(resolve => setTimeout(resolve, 100));
+    fireEvent.click(screen.getByText('PNG'));
 
-    expect(html2canvas).toHaveBeenCalled();
+    await waitFor(() => expect(html2canvas).toHaveBeenCalled());
+    expect(mockLink.click).toHaveBeenCalled();
   });
 });
 

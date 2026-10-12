@@ -6,15 +6,19 @@ import { keyPool } from './key-pool';
 
 /**
  * Returns the active AI provider with key rotation + fallback.
- * Supports multiple keys via:
- *   GOOGLE_AI_API_KEYS=key1,key2,key3 (comma-separated pool)
- *   GROQ_API_KEYS=gsk_key1,gsk_key2 (comma-separated pool)
- * Also supports single-key vars: GOOGLE_AI_API_KEY, GROQ_API_KEY
+ * Priority: NVIDIA (primary) → Gemini → Groq.
+ *
+ * Supports multiple keys via comma-separated pools:
+ *   NVIDIA_API_KEYS=nvapi_key1,nvapi_key2
+ *   GOOGLE_AI_API_KEYS=key1,key2,key3
+ *   GROQ_API_KEYS=gsk_key1,gsk_key2
+ * Also supports single-key vars: NVIDIA_API_KEY, GOOGLE_AI_API_KEY, GROQ_API_KEY.
  */
 export function getAIProvider(): AIProvider {
+  if (process.env.NVIDIA_API_KEY || process.env.NVIDIA_API_KEYS) return nvidiaWithFallback;
   if (process.env.GOOGLE_AI_API_KEYS || process.env.GOOGLE_AI_API_KEY) return geminiWithFallback;
   if (process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY) return groqProvider;
-  throw new Error('No AI provider configured. Set GOOGLE_AI_API_KEYS or GROQ_API_KEYS in your environment.');
+  throw new Error('No AI provider configured. Set NVIDIA_API_KEY (primary), GOOGLE_AI_API_KEYS, or GROQ_API_KEYS in your environment.');
 }
 
 /**
@@ -57,17 +61,14 @@ const geminiWithFallback: AIProvider = {
 export type { AIProvider, AskAIParams, AskAIResult, ChatTurn } from './types';
 
 /**
- * Routes that benefit from NVIDIA NIM's complex reasoning capability.
- * When NVIDIA_API_KEY is configured, these routes use NVIDIA → Gemini → Groq.
- * Falls back to getAIProvider() if NVIDIA is not configured.
+ * Routes that use NVIDIA NIM as the primary reasoning provider (with
+ * Gemini → Groq fallback when NVIDIA is unavailable or exhausted).
  */
 export type AIRoute = 'jira-insights' | 'investigate' | 'agent' | 'ask-global' | 'default';
 
-const NVIDIA_ROUTES: AIRoute[] = ['jira-insights', 'investigate', 'agent'];
-
 /**
  * NVIDIA provider with Gemini and Groq fallback.
- * Flow: NVIDIA → Gemini key 1 → ... → Gemini key N → Groq key 1 → ... → error
+ * Flow: NVIDIA key 1 → ... → NVIDIA key N → Gemini key 1 → ... → Gemini key N → Groq → error
  */
 const nvidiaWithFallback: AIProvider = {
   name: 'nvidia',
@@ -90,22 +91,18 @@ const nvidiaWithFallback: AIProvider = {
       }
     }
 
-    // NVIDIA exhausted or unavailable — fall back to Gemini
+    // NVIDIA exhausted or unavailable — fall back to Gemini (which itself falls back to Groq)
     console.log('[AI] NVIDIA unavailable — falling back to Gemini');
     return geminiWithFallback.askAI(params);
   },
 };
 
 /**
- * Returns the AI provider most appropriate for the given route.
- * When NVIDIA_API_KEY or NVIDIA_API_KEYS is set AND the route benefits from
- * complex reasoning (jira-insights, investigate, agent), returns NVIDIA with fallback.
- * Otherwise returns the standard getAIProvider() result (unchanged behavior).
+ * Returns the AI provider for the given route. NVIDIA is the primary provider
+ * for ALL routes when configured; otherwise Gemini → Groq. The route argument
+ * is retained for API compatibility but no longer changes provider selection.
  */
-export function getAIProviderFor(route: AIRoute): AIProvider {
-  const hasNvidia = !!(process.env.NVIDIA_API_KEY || process.env.NVIDIA_API_KEYS);
-  if (hasNvidia && NVIDIA_ROUTES.includes(route)) {
-    return nvidiaWithFallback;
-  }
+export function getAIProviderFor(route: AIRoute = 'default'): AIProvider {
+  void route;
   return getAIProvider();
 }

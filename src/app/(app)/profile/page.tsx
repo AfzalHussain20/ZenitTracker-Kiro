@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { JiraAccountMapping } from '@/components/worklog/JiraAccountMapping';
 
 const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 20 },
@@ -184,6 +185,11 @@ export default function ProfilePage() {
             </div>
           </div>
         </div>
+      </motion.div>
+
+      {/* Jira account mapping */}
+      <motion.div {...fadeUp(0.12)}>
+        <JiraAccountMapping />
       </motion.div>
 
       {/* Account stats */}

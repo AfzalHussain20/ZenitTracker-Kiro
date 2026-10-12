@@ -21,8 +21,8 @@ import { useToast } from '@/hooks/use-toast';
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ComposerStep = 'platform' | 'config' | 'workspace';
 
-interface Platform { id: string; label: string; icon: React.ElementType; gradient: string }
-interface ContentTypeDef { id: string; label: string; icon: React.ElementType; color: string }
+interface Platform { id: string; label: string; icon: React.ComponentType<{ className?: string }>; gradient: string }
+interface ContentTypeDef { id: string; label: string; icon: React.ComponentType<{ className?: string }>; color: string }
 
 interface EventComposerProps {
   platforms: Platform[];

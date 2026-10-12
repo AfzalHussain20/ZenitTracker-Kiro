@@ -70,6 +70,17 @@ function adaptV2ToV1(r: InvestigationReportV2): InvestigationReport {
     ? Object.entries(facts.resolutionCounts).filter(([s]) => s !== 'Unresolved').reduce((a, [, v]) => a + v, 0)
     : 0;
 
+  // Real risk/score from the engine; fall back to computed heuristics for older records.
+  const riskLevel: RiskLevel = (meta.riskLevel as RiskLevel)
+    || (r.conclusions?.dimensionScores?.reportingCharacteristics
+      ? ((r.conclusions.dimensionScores.reportingCharacteristics.value < 40 ? 'HIGH'
+        : r.conclusions.dimensionScores.reportingCharacteristics.value < 60 ? 'MEDIUM' : 'LOW') as RiskLevel)
+      : 'LOW');
+  const investigationScore = typeof meta.investigationScore === 'number'
+    ? meta.investigationScore
+    : (r.conclusions?.dimensionScores?.reportingCharacteristics?.value ?? 0);
+  const unusualDays = (vel?.unusualDays || []).length;
+
   return {
     metadata: {
       id: meta.id,
@@ -78,8 +89,8 @@ function adaptV2ToV1(r: InvestigationReportV2): InvestigationReport {
       generatedAt: meta.generatedAt,
       totalIssuesAnalyzed: meta.totalIssuesAnalyzed,
       jql: meta.jql,
-      investigationScore: r.conclusions?.dimensionScores?.reportingCharacteristics?.value || 50,
-      riskLevel: 'MEDIUM',
+      investigationScore,
+      riskLevel,
     },
     reporter: {
       name: meta.scope,
@@ -98,12 +109,16 @@ function adaptV2ToV1(r: InvestigationReportV2): InvestigationReport {
       priorityBreakdown: Object.entries(facts?.priorityCounts || {}).sort((a, b) => b[1] - a[1]).map(([priority, count]) => ({ priority, count })),
       typeBreakdown: Object.entries(facts?.typeCounts || {}).sort((a, b) => b[1] - a[1]).map(([type, count]) => ({ type, count })),
     },
-    timeline: (vel?.dailyCounts || []).map(d => ({
-      date: d.date,
-      count: d.count,
-      isSpikeDay: d.classification === 'UNUSUAL',
-      isRecentWeek: d.isRecentWeek ?? false,
-    })),
+    timeline: (vel?.dailyCounts || []).map((d, _i, arr) => {
+      const lastDate = arr[arr.length - 1]?.date;
+      const diffDays = lastDate ? (new Date(lastDate).getTime() - new Date(d.date).getTime()) / 86400000 : NaN;
+      return {
+        date: d.date,
+        count: d.count,
+        isSpikeDay: d.classification === 'UNUSUAL',
+        isRecentWeek: Number.isFinite(diffDays) && diffDays >= 0 && diffDays <= 7,
+      };
+    }),
     velocity: {
       topSpikeDays: (vel?.unusualDays || []).slice(0, 10).map(d => ({ date: d.date, count: d.count, isSpike: true })),
       maxSingleDay: Math.max(...(vel?.dailyCounts || []).map(d => d.count), 0),
@@ -116,11 +131,15 @@ function adaptV2ToV1(r: InvestigationReportV2): InvestigationReport {
     platformClusters: (f.platformCoverage || []).map(p => ({ platform: p.platform, count: p.count, percentage: p.percentage, isSingleFocus: p.percentage > 60 })),
     evidence,
     aiFindings: {
-      executiveSummary: 'Investigation completed using v2.1 evidence engine.',
-      verdict: 'MEDIUM',
-      verdictReason: `${duplicateClusters.length} duplicate pairs found. ${(vel?.unusualDays || []).length} unusual velocity days.`,
-      nextSteps: (r.conclusions?.dimensionScores ? Object.values(r.conclusions.dimensionScores) : []).map(d => d.limitations?.[0]).filter(Boolean).slice(0, 3),
-      generatedFrom: 'fallback',
+      executiveSummary: meta.aiExecutiveSummary
+        || `${meta.scope}: ${filed} issues analyzed, risk ${riskLevel}. ${meta.verdictReason || ''}`.trim(),
+      verdict: (meta.verdict as RiskLevel) || riskLevel,
+      verdictReason: meta.verdictReason
+        || `${duplicateClusters.length} duplicate pairs · ${unusualDays} unusual velocity days.`,
+      nextSteps: (meta.nextSteps && meta.nextSteps.length)
+        ? meta.nextSteps
+        : (r.conclusions?.dimensionScores ? Object.values(r.conclusions.dimensionScores) : []).map(d => d.limitations?.[0]).filter((x): x is string => Boolean(x)).slice(0, 3),
+      generatedFrom: meta.aiGeneratedFrom || 'fallback',
     },
     teamComparison: {
       teamAvgBugsPerPerson: 0,
@@ -129,7 +148,7 @@ function adaptV2ToV1(r: InvestigationReportV2): InvestigationReport {
       reporterRank: 1,
       totalReporters: 1,
     },
-  } as InvestigationReport;
+  } as unknown as InvestigationReport;
 }
 
 // ─── Risk badge ───────────────────────────────────────────────────────────────

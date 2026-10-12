@@ -1,18 +1,21 @@
 import { test, expect } from '@playwright/test';
 
-test('has title', async ({ page }) => {
-  await page.goto('https://playwright.dev/');
+/**
+ * Production smoke tests.
+ *
+ * These verify the deployed app boots and serves core routes.
+ * Point E2E_BASE_URL at an environment (defaults to the live app)
+ * or run against a local server via the playwright `webServer` config.
+ */
 
-  // Expect a title "to contain" a substring.
-  await expect(page).toHaveTitle(/Playwright/);
+test('app boots and serves a page', async ({ page }) => {
+  const response = await page.goto('/');
+  expect(response?.ok()).toBeTruthy();
+  await expect(page).toHaveTitle(/Zenit Tracker/);
 });
 
-test('get started link', async ({ page }) => {
-  await page.goto('https://playwright.dev/');
-
-  // Click the get started link.
-  await page.getByRole('link', { name: 'Get started' }).click();
-
-  // Expects page to have a heading with the name of Installation.
-  await expect(page.getByRole('heading', { name: 'Installation' })).toBeVisible();
+test('login page renders the auth form', async ({ page }) => {
+  await page.goto('/login');
+  await expect(page.getByRole('heading', { name: /Welcome back/i })).toBeVisible();
+  await expect(page.getByLabel('Email')).toBeVisible();
 });

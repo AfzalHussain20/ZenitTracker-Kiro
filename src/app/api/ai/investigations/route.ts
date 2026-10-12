@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ investigations: [], error: 'Firestore not configured' });
     }
 
-    const db = await getCompatDb();
+    const db = getCompatDb()._native;
 
     const limitParam = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '20', 10), 50);
     const investigationRef = collection(db, 'investigation_index');

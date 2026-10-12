@@ -228,7 +228,7 @@ describe('SprintFilter - Property-Based Tests', () => {
 
           // Mock query to return bugs for the requested sprint
           jest.spyOn(connector, 'query').mockImplementation(async (collection, options) => {
-            const sprintIdFilter = options.where?.find(w => w.field === 'sprintId');
+            const sprintIdFilter = options?.where?.find(w => w.field === 'sprintId');
             if (sprintIdFilter) {
               return bugsBySprint[sprintIdFilter.value] || [];
             }

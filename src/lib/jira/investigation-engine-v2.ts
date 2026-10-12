@@ -27,6 +27,8 @@ export type InvestigationType =
   | 'reporter' | 'sprint' | 'release' | 'feature'
   | 'regression' | 'assignee' | 'team' | 'component';
 
+export type RiskLevel = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+
 export interface DataQualityField {
   name: string;
   available: boolean;
@@ -167,6 +169,15 @@ export interface InvestigationReportV2 {
     generatedAt: string;
     totalIssuesAnalyzed: number;
     jql: string;
+    /** Deterministic risk score 0–100 (higher = more concerning). */
+    investigationScore: number;
+    riskLevel: RiskLevel;
+    verdict: RiskLevel;
+    verdictReason: string;
+    nextSteps: string[];
+    /** Narrative written by the LLM (falls back to deterministic text). */
+    aiExecutiveSummary?: string;
+    aiGeneratedFrom?: 'ai' | 'fallback';
   };
   dataQuality: DataQualityReport;
   limitations: { items: string[]; affectedSections: string[] };
@@ -701,6 +712,82 @@ function buildDimensionScores(
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
+/**
+ * Deterministic verdict — derived entirely from computed signals so the report
+ * never falls back to a hardcoded risk level. The LLM only writes narrative.
+ */
+function computeVerdict(params: {
+  totalIssues: number;
+  duplicatePairs: DuplicatePairV2[];
+  velocity: VelocityAnalysis;
+  reportingChars?: ReportingCharacteristics;
+  dataQuality: DataQualityReport;
+}): { investigationScore: number; riskLevel: RiskLevel; verdictReason: string; nextSteps: string[] } {
+  const confirmed = params.duplicatePairs.filter(p => p.confidenceLabel === 'CONFIRMED').length;
+  const likely = params.duplicatePairs.filter(p => p.confidenceLabel === 'LIKELY').length;
+  const unusual = params.velocity.unusualDays.length;
+  const acceptance = params.reportingChars?.acceptanceRate ?? 1;
+  const completeness = params.dataQuality.overallCompleteness;
+
+  const reasons: string[] = [];
+  let score = 0;
+
+  const dupScore = Math.min(30, confirmed * 10 + likely * 5);
+  if (dupScore > 0) {
+    score += dupScore;
+    reasons.push(`${confirmed} confirmed / ${likely} likely duplicate pair(s)`);
+  }
+
+  const spikeScore = Math.min(25, unusual * 8);
+  if (spikeScore > 0) {
+    score += spikeScore;
+    reasons.push(`${unusual} unusual filing day(s)`);
+  }
+
+  if (params.reportingChars && params.reportingChars.totalFiled >= 5) {
+    const accPenalty = Math.round(Math.max(0, 0.8 - acceptance) / 0.8 * 25);
+    if (accPenalty > 0) {
+      score += accPenalty;
+      reasons.push(`${Math.round(acceptance * 100)}% acceptance rate`);
+    }
+  }
+
+  if (completeness < 60) {
+    score += Math.round((60 - completeness) / 60 * 20);
+    reasons.push(`only ${completeness}% data completeness`);
+  }
+
+  score = Math.min(100, Math.round(score));
+  const riskLevel: RiskLevel = score >= 70 ? 'CRITICAL' : score >= 45 ? 'HIGH' : score >= 20 ? 'MEDIUM' : 'LOW';
+
+  const verdictReason = reasons.length
+    ? `Risk driven by: ${reasons.join('; ')}.`
+    : 'No significant anomalies detected across the analyzed issues.';
+
+  const nextSteps: string[] = [];
+  if (confirmed + likely > 0) {
+    const keys = params.duplicatePairs.slice(0, 3).map(p => `${p.issueA}/${p.issueB}`);
+    nextSteps.push(`Review duplicate candidates: ${keys.join(', ')}`);
+  }
+  if (unusual > 0) {
+    const top = params.velocity.unusualDays[0];
+    nextSteps.push(`Examine filing spike on ${top.date} (${top.count} issues)`);
+  }
+  if (params.reportingChars && params.reportingChars.invalid > 0) {
+    nextSteps.push(`Review ${params.reportingChars.invalid} invalid report(s) for scope/duplication issues`);
+  }
+  if (completeness < 60) {
+    const missing = params.dataQuality.fields
+      .filter(f => (f.impact === 'CRITICAL' || f.impact === 'HIGH') && !f.available)
+      .map(f => f.name);
+    nextSteps.push(`Improve Jira data coverage — missing: ${missing.join(', ') || 'critical fields'}`);
+  }
+  if (nextSteps.length === 0) nextSteps.push('No action required — metrics are within normal range');
+  nextSteps.push('Re-run after the next sprint to compare trends');
+
+  return { investigationScore: score, riskLevel, verdictReason, nextSteps: nextSteps.slice(0, 4) };
+}
+
 export function buildInvestigationReportV2(
   issues: any[],
   targetName: string,
@@ -750,17 +837,20 @@ export function buildInvestigationReportV2(
     componentCounts, resolutionCounts, confirmedDuplicateCount,
   };
 
-  // ── Filter person issues for reporter type ────────────────────────────────
+  // ── Filter scoped issues (reporter / assignee); other types use all issues ─
   const targetLower = targetName.toLowerCase();
   const personIssues = investigationType === 'reporter'
     ? issues.filter(i => (i.fields.reporter?.displayName || '').toLowerCase().includes(targetLower))
+    : investigationType === 'assignee'
+    ? issues.filter(i => (i.fields.assignee?.displayName || '').toLowerCase().includes(targetLower))
     : issues;
+  const isPersonScope = investigationType === 'reporter' || investigationType === 'assignee';
 
   // ── Reporting Characteristics (reporter type only) ────────────────────────
   let reporterActivity: ReporterActivity | undefined;
   let reportingChars: ReportingCharacteristics | undefined;
 
-  if (investigationType === 'reporter' && personIssues.length > 0) {
+  if (isPersonScope && personIssues.length > 0) {
     const INVALID = new Set(['not an issue', 'not reproducing', 'expected behaviour', "won't fix", 'by design']);
     const BYDESIGN = new Set(['by design', 'expected behaviour']);
 
@@ -856,6 +946,15 @@ export function buildInvestigationReportV2(
   // ── Dimension scores ──────────────────────────────────────────────────────
   const dimensionScores = buildDimensionScores(reportingChars, evidence, velocity, duplicatePairs, dataQuality);
 
+  // ── Deterministic verdict ─────────────────────────────────────────────────
+  const verdict = computeVerdict({
+    totalIssues: issues.length,
+    duplicatePairs,
+    velocity,
+    reportingChars,
+    dataQuality,
+  });
+
   // ── Audit trail ───────────────────────────────────────────────────────────
   const audit: AuditEntry[] = evidence.map(e => ({
     findingId: e.id,
@@ -869,7 +968,14 @@ export function buildInvestigationReportV2(
   return {
     schema: '2.1',
     investigationType,
-    metadata: { id, scope: targetName, query: question, generatedAt: now, totalIssuesAnalyzed: issues.length, jql },
+    metadata: {
+      id, scope: targetName, query: question, generatedAt: now, totalIssuesAnalyzed: issues.length, jql,
+      investigationScore: verdict.investigationScore,
+      riskLevel: verdict.riskLevel,
+      verdict: verdict.riskLevel,
+      verdictReason: verdict.verdictReason,
+      nextSteps: verdict.nextSteps,
+    },
     dataQuality,
     limitations: { items: dataQuality.limitations, affectedSections: ['duplicateAnalysis', 'reportingCharacteristics'] },
     facts,

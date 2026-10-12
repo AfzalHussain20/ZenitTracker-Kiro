@@ -16,7 +16,7 @@
  *   notes-ai         → Daily notes AI title generation
  *   jira-ai          → Jira AI features
  *
- * Providers: gemini | groq | huggingface
+ * Providers: nvidia | gemini | groq
  */
 
 import { getCompatDb } from '@/lib/firebase-compat';
@@ -32,7 +32,7 @@ export type AIFeatureKey =
   | 'notes-ai'
   | 'jira-ai';
 
-export type AIProviderKey = 'gemini' | 'groq' | 'huggingface';
+export type AIProviderKey = 'nvidia' | 'gemini' | 'groq';
 
 export interface AIFeatureFlags {
   // Master switch per feature
@@ -56,9 +56,9 @@ export const DEFAULT_FLAGS: AIFeatureFlags = {
     'jira-ai': true,
   },
   providers: {
+    nvidia: true,
     gemini: true,
     groq: true,
-    huggingface: true,
   },
   updatedAt: Date.now(),
 };
@@ -76,9 +76,9 @@ export const FEATURE_LABELS: Record<AIFeatureKey, { label: string; description: 
 };
 
 export const PROVIDER_LABELS: Record<AIProviderKey, { label: string; description: string; color: string }> = {
-  gemini: { label: 'Google Gemini', description: 'gemini-2.0-flash-lite (free tier, 1M RPD per key)', color: '#4285F4' },
-  groq: { label: 'Groq / LLaMA', description: 'llama-3.3-70b-versatile (fallback provider)', color: '#F55036' },
-  huggingface: { label: 'HuggingFace', description: 'Optional HuggingFace inference endpoints', color: '#FFD21E' },
+  nvidia: { label: 'NVIDIA NIM', description: 'Primary provider — Nemotron reasoning model', color: '#76B900' },
+  gemini: { label: 'Google Gemini', description: 'gemini-2.0-flash-lite (fallback, 1M RPD per key)', color: '#4285F4' },
+  groq: { label: 'Groq / LLaMA', description: 'llama-3.3-70b-versatile (final fallback)', color: '#F55036' },
 };
 
 // ─── Server-side in-memory cache ─────────────────────────────────────────────
@@ -143,7 +143,7 @@ export async function saveFeatureFlags(flags: Partial<AIFeatureFlags>, updatedBy
  * Checks if a specific feature + provider combination is currently enabled.
  * Returns false if either the feature OR the provider is disabled.
  */
-export async function isAIEnabled(feature: AIFeatureKey, provider: AIProviderKey = 'gemini'): Promise<boolean> {
+export async function isAIEnabled(feature: AIFeatureKey, provider: AIProviderKey = 'nvidia'): Promise<boolean> {
   const flags = await getFeatureFlags();
   return flags.features[feature] !== false && flags.providers[provider] !== false;
 }
@@ -152,7 +152,7 @@ export async function isAIEnabled(feature: AIFeatureKey, provider: AIProviderKey
  * Synchronous version — checks the in-memory cache only.
  * Use after a prior getFeatureFlags() call to avoid await in hot paths.
  */
-export function isAIEnabledSync(feature: AIFeatureKey, provider: AIProviderKey = 'gemini'): boolean {
+export function isAIEnabledSync(feature: AIFeatureKey, provider: AIProviderKey = 'nvidia'): boolean {
   if (!cachedFlags) return true; // not loaded yet → default allow
   return cachedFlags.features[feature] !== false && cachedFlags.providers[provider] !== false;
 }

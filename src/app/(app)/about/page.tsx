@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import {
   Zap, Shield, BarChart3, Users, Rocket, Bug,
   ClipboardList, Layers, Globe, CheckCircle2, ArrowRight, Sparkles,
-  ChevronDown, ChevronUp, ExternalLink, Activity, Calendar, Star,
+  ChevronDown, ChevronUp, ExternalLink, Activity, Star,
   Code2, Database, Cpu, GitBranch, Terminal, Workflow
 } from 'lucide-react';
 import Link from 'next/link';
@@ -54,11 +54,8 @@ const stats = [
 
 const quickLinks = [
   { label: 'Jira KPI Dashboard', href: '/analytics/bugs', icon: BarChart3, desc: 'Team bug analytics & KPIs', color: 'text-primary' },
-  { label: 'Test Sessions', href: '/test-suite', icon: ClipboardList, desc: 'Run & manage test sessions', color: 'text-emerald-600' },
-  { label: 'Task Board', href: '/tasks', icon: Layers, desc: 'Kanban task management', color: 'text-amber-600' },
-  { label: 'Vision AI', href: '/dashboard/vision', icon: Cpu, desc: 'AI-powered test automation', color: 'text-violet-600' },
-  { label: 'Performance', href: '/performance', desc: 'App performance metrics', icon: Activity, color: 'text-blue-600' },
-  { label: 'Work Logs', href: '/wrklog', desc: 'Time tracking & logs', icon: Calendar, color: 'text-rose-600' },
+  { label: 'Test Repository', href: '/dashboard/repository', icon: Layers, desc: 'Managed test case library', color: 'text-green-600' },
+  { label: 'New Session', href: '/dashboard/new-session', icon: Rocket, desc: 'Start a manual testing session', color: 'text-violet-600' },
 ];
 
 export default function AboutPage() {
@@ -95,9 +92,6 @@ export default function AboutPage() {
             <Button variant="outline" className="rounded-xl gap-2">
               <BarChart3 className="w-4 h-4" /> KPI Dashboard
             </Button>
-          </Link>
-          <Link href="/tasks">
-            <Button variant="outline" className="rounded-xl">View Tasks</Button>
           </Link>
         </div>
       </motion.div>

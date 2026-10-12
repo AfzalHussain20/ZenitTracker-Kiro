@@ -1,14 +1,13 @@
 "use client";
 
 import { motion } from 'framer-motion';
-import { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 
 interface EnhancedMetricCardProps {
   title: string;
   value: string | number;
-  icon: LucideIcon;
+  icon: React.ComponentType<{ className?: string; size?: string | number }>;
   trend?: {
     value: number;
     label: string;

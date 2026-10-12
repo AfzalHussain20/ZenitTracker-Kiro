@@ -311,7 +311,19 @@ export default function ConfluencePage() {
       setGenerationComplete(true);
       setIsGenerating(false);
       // Persist to Firestore
-      saveGenerationResult(selectedPage.id, selectedPage.title, storedCases).catch(console.error);
+      const categories: Record<TestCaseCategory, number> = {
+        Functional: 0, Negative: 0, Exploratory: 0, Sanity: 0, 'Edge Case': 0,
+      };
+      for (const tc of storedCases) categories[tc.category]++;
+      const metadata: GenerationMetadata = {
+        pageId: selectedPage.id,
+        pageTitle: selectedPage.title,
+        generatedAt: now,
+        totalCount: storedCases.length,
+        modelVersion: 'gemini-2.0-flash-lite',
+        categories,
+      };
+      saveGenerationResult(selectedPage.id, storedCases, metadata).catch(console.error);
     }
   }, [streaming.isComplete, streaming.testCases.length]); // eslint-disable-line
 

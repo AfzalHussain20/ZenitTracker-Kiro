@@ -44,7 +44,7 @@ export class FirebaseConnector {
       const documentId = docId || doc(collectionRef).id;
       const docRef = doc(collectionRef, documentId);
       
-      await setDoc(docRef, data);
+      await setDoc(docRef, data as any);
       return documentId;
     } catch (error) {
       console.error(`Error creating document in ${collectionName}:`, error);

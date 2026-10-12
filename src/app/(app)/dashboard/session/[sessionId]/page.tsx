@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import type { TestSession, TestCase } from '@/types';
@@ -46,17 +46,20 @@ const incompleteReasonOptions = [
 
 // ─── Hooks ───────────────────────────────────────────────────────────────────
 
-function useTimer(currentIndex: number) {
+// Isolated so the 1 Hz tick re-renders only the clock, not the entire session page.
+const SessionClock = memo(function SessionClock({ resetKey }: { resetKey: number }) {
   const [seconds, setSeconds] = useState(0);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     setSeconds(0);
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [currentIndex]);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-}
+    const intervalId = setInterval(() => setSeconds(s => s + 1), 1000);
+    return () => clearInterval(intervalId);
+  }, [resetKey]);
+  return (
+    <span className="text-[11px] font-mono tabular-nums">
+      {`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`}
+    </span>
+  );
+});
 
 function useJiraFetch(bugId: string) {
   const [bugTitle, setBugTitle] = useState<string | null>(null);
@@ -100,6 +103,22 @@ function useSwipe(onLeft: () => void, onRight: () => void) {
   };
   return { onTouchStart, onTouchEnd };
 }
+
+// Keeps the "Actual" text in local state so typing doesn't re-render the whole
+// session page; commits to Firestore only on blur.
+const ActualField = memo(function ActualField({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+  const [local, setLocal] = useState(value);
+  return (
+    <Textarea
+      placeholder="What happened..."
+      value={local}
+      onChange={e => setLocal(e.target.value)}
+      onBlur={() => { if (local !== value) onCommit(local); }}
+      rows={2}
+      className="resize-none text-[13px] bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 rounded-lg focus:border-primary/30 focus:ring-1 focus:ring-primary/20 min-h-0"
+    />
+  );
+});
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
@@ -148,9 +167,47 @@ export default function TestSessionPage() {
   const [jiraEnvironments, setJiraEnvironments] = useState<string[]>([]);
   const [jiraPriorities, setJiraPriorities] = useState<{id: string; name: string}[]>([]);
 
-  const timer = useTimer(currentIndex);
   const { bugTitle, fetching: bugFetching, fetchError: bugFetchError } = useJiraFetch(bugId);
   const anyDialogOpen = failOpen || naOpen || completeOpen || drawerOpen;
+
+  // ─── Memoized derived data (avoids rescanning 500+ cases on every render) ───
+  const stats = useMemo(() => {
+    const cases = session?.testCases ?? [];
+    let pass = 0, fail = 0, na = 0, untested = 0;
+    for (const t of cases) {
+      const s = t.status;
+      if (s === 'Pass') pass++;
+      else if (s?.includes('Fail')) fail++;
+      else if (s === 'N/A') na++;
+      else if (s === 'Untested') untested++;
+    }
+    const total = cases.length;
+    return { pass, fail, na, untested, total, progress: total > 0 ? Math.round(((total - untested) / total) * 100) : 0 };
+  }, [session]);
+
+  const indexById = useMemo(() => {
+    const map = new Map<string, number>();
+    (session?.testCases ?? []).forEach((t, i) => map.set(t.id, i));
+    return map;
+  }, [session]);
+
+  const drawerGroups = useMemo(() => {
+    if (!drawerOpen) return [] as { bed: string; cases: TestCase[] }[];
+    const q = searchQuery.toLowerCase();
+    const byBed = new Map<string, TestCase[]>();
+    for (const t of session?.testCases ?? []) {
+      if (q && !(t.testCaseTitle || '').toLowerCase().includes(q)) continue;
+      if (filterStatus !== 'all') {
+        if (filterStatus === 'fail') { if (!t.status?.includes('Fail')) continue; }
+        else if (t.status !== filterStatus) continue;
+      }
+      const bed = t.testBed || 'Uncategorized';
+      const list = byBed.get(bed);
+      if (list) list.push(t);
+      else byBed.set(bed, [t]);
+    }
+    return Array.from(byBed.entries()).map(([bed, cases]) => ({ bed, cases }));
+  }, [drawerOpen, session, searchQuery, filterStatus]);
 
   // Fetch ALL Jira data from single endpoint when form opens
   useEffect(() => {
@@ -370,15 +427,14 @@ export default function TestSessionPage() {
     return () => window.removeEventListener('keydown', handler);
   }, [anyDialogOpen, markStatus, goPrev, goNext]);
 
-  const patchField = (field: keyof TestCase, value: string) => {
+  const commitActual = useCallback((value: string) => {
     if (!session) return;
     const updated = [...session.testCases];
-    const tc = updated[currentIndex];
-    if (!tc) return;
-    updated[currentIndex] = { ...tc, [field]: value };
-    setSession({ ...session, testCases: updated });
-  };
-  const saveField = () => session && handleUpdate({ testCases: session.testCases });
+    const current = updated[currentIndex];
+    if (!current) return;
+    updated[currentIndex] = { ...current, actualResult: value };
+    handleUpdate({ testCases: updated });
+  }, [session, currentIndex, handleUpdate]);
 
   // Loading state
   if (isLoading || authLoading) return (
@@ -407,19 +463,8 @@ export default function TestSessionPage() {
 
   // Derived data
   const tc = session.testCases[currentIndex];
-  const untestedCount = session.testCases.filter(t => t.status === 'Untested').length;
-  const passCount = session.testCases.filter(t => t.status === 'Pass').length;
-  const failCount = session.testCases.filter(t => t.status?.includes('Fail')).length;
-  const naCount = session.testCases.filter(t => t.status === 'N/A').length;
-  const total = session.testCases.length;
-  const progress = total > 0 ? Math.round(((total - untestedCount) / total) * 100) : 0;
+  const { pass: passCount, fail: failCount, na: naCount, untested: untestedCount, total, progress } = stats;
   const steps = (tc?.testSteps || '').split('\n').filter(Boolean);
-  const testBeds = Array.from(new Set(session.testCases.map(t => t.testBed || 'Uncategorized')));
-  const filteredCases = session.testCases.filter(t => {
-    const matchSearch = !searchQuery || (t.testCaseTitle || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchFilter = filterStatus === 'all' || t.status === filterStatus || (filterStatus === 'fail' && t.status?.includes('Fail'));
-    return matchSearch && matchFilter;
-  });
 
   return (
     <div className="fixed inset-0 bg-background text-foreground flex flex-col overflow-hidden">
@@ -564,7 +609,7 @@ export default function TestSessionPage() {
                 </div>
                 <div className="flex items-center gap-1.5 text-muted-foreground">
                   <Clock className="w-3 h-3" />
-                  <span className="text-[11px] font-mono tabular-nums">{timer}</span>
+                  <SessionClock resetKey={currentIndex} />
                 </div>
               </div>
 
@@ -613,10 +658,7 @@ export default function TestSessionPage() {
                     <Bug className="w-3.5 h-3.5 text-muted-foreground" />
                     <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Actual</span>
                   </div>
-                  <Textarea placeholder="What happened..."
-                    value={tc?.actualResult || ''} onChange={e => patchField('actualResult', e.target.value)} onBlur={saveField}
-                    rows={2}
-                    className="resize-none text-[13px] bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 rounded-lg focus:border-primary/30 focus:ring-1 focus:ring-primary/20 min-h-0" />
+                  <ActualField key={tc?.id || currentIndex} value={tc?.actualResult || ''} onCommit={commitActual} />
                 </div>
 
                 {/* Linked Bugs Display */}
@@ -717,14 +759,12 @@ export default function TestSessionPage() {
                 ))}
               </div>
               <div className="flex-1 overflow-y-auto py-2 px-2 space-y-3">
-                {testBeds.map(bed => {
-                  const casesInBed = filteredCases.filter(t => (t.testBed || 'Uncategorized') === bed);
-                  if (casesInBed.length === 0) return null;
+                {drawerGroups.map(({ bed, cases: casesInBed }) => {
                   return (
                     <div key={bed}>
                       <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 px-2 py-1">{bed}</p>
                       {casesInBed.map(t => {
-                        const idx = session.testCases.findIndex(x => x.id === t.id);
+                        const idx = indexById.get(t.id) ?? -1;
                         const active = idx === currentIndex;
                         const dot = t.status === 'Pass' ? 'bg-emerald-500' : t.status?.includes('Fail') ? 'bg-red-500' : t.status === 'N/A' ? 'bg-muted-foreground/40' : 'bg-muted-foreground/15';
                         return (

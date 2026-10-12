@@ -331,7 +331,7 @@ describe('SprintFilter - Unit Tests', () => {
 
       // Mock query to return bugs for the appropriate sprint
       jest.spyOn(connector, 'query').mockImplementation(async (collection, options) => {
-        const sprintIdFilter = options.where?.find(w => w.field === 'sprintId');
+        const sprintIdFilter = options?.where?.find(w => w.field === 'sprintId');
         if (sprintIdFilter?.value === 'sprint-1') return bugs1;
         if (sprintIdFilter?.value === 'sprint-2') return bugs2;
         return [];

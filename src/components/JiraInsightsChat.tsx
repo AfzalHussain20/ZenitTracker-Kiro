@@ -366,7 +366,7 @@ export default function JiraInsightsChat() {
     setLoading(true);
 
     // Detect investigation / postmortem queries → use dedicated route
-    const isInvestigation = /postmortem|investigate\s+"/i.test(text);
+    const isInvestigation = /postmortem|investigate\s+("|sprint|component|regression|release|feature|assignee|team)/i.test(text);
 
     try {
       if (isInvestigation) {

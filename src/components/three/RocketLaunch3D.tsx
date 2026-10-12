@@ -242,7 +242,7 @@ function Embers({ sim }: { sim: React.MutableRefObject<Sim> }) {
     });
     return (
         <points ref={ref}>
-            <bufferGeometry><bufferAttribute attach="attributes-position" count={N} array={d.pos} itemSize={3} /></bufferGeometry>
+            <bufferGeometry><bufferAttribute attach="attributes-position" args={[d.pos, 3]} count={N} array={d.pos} itemSize={3} /></bufferGeometry>
             <pointsMaterial map={tex} color="#fdba74" size={0.2} transparent opacity={0.95} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
         </points>
     );
@@ -323,7 +323,7 @@ function Sparks({ sim }: { sim: React.MutableRefObject<Sim> }) {
     });
     return (
         <points ref={ref}>
-            <bufferGeometry><bufferAttribute attach="attributes-position" count={N} array={d.pos} itemSize={3} /></bufferGeometry>
+            <bufferGeometry><bufferAttribute attach="attributes-position" args={[d.pos, 3]} count={N} array={d.pos} itemSize={3} /></bufferGeometry>
             <pointsMaterial map={tex} color="#fff1a8" size={0.12} transparent opacity={1} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
         </points>
     );
@@ -413,7 +413,7 @@ function WarpStreaks({ sim }: { sim: React.MutableRefObject<Sim> }) {
     return (
         <group ref={grp}>
             <points ref={ref} visible={false}>
-                <bufferGeometry><bufferAttribute attach="attributes-position" count={N} array={d} itemSize={3} /></bufferGeometry>
+                <bufferGeometry><bufferAttribute attach="attributes-position" args={[d, 3]} count={N} array={d} itemSize={3} /></bufferGeometry>
                 <pointsMaterial map={tex} color="#cfe8ff" size={0.4} transparent opacity={0} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
             </points>
         </group>

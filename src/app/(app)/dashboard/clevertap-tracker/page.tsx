@@ -32,8 +32,8 @@ import { useAuth } from '@/context/AuthContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Step = 1 | 2 | 3;
-type Platform = { id: string; label: string; icon: React.ElementType; gradient: string };
-type ContentType = { id: string; label: string; icon: React.ElementType; color: string };
+type Platform = { id: string; label: string; icon: React.ComponentType<{ className?: string }>; gradient: string };
+type ContentType = { id: string; label: string; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; color: string };
 type ValidationStatus = 'VALUE_REQUIRED' | 'UNEXPECTED_VALUE' | 'CAPITAL_ATTR' | 'MISSING' | 'EXTRA' | 'PASS' | 'WEB_NA';
 type InHousePhase = 'choose' | 'phase1' | 'phase2' | 'coverage';
 

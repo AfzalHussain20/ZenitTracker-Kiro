@@ -139,3 +139,95 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: err.message }, { status: 500 });
     }
 }
+
+const ISSUE_KEY_RE = /^[A-Z][A-Z0-9_]*-\d+$/;
+
+/**
+ * POST: create a worklog on a Jira issue.
+ *
+ * NOTE: This integration authenticates with a Jira API token (Basic auth), which
+ * cannot log work *as* another user — Jira ignores any author override. The worklog
+ * is therefore attributed to the integration account; when `loggedForName` is
+ * supplied it is embedded into the comment so the intent stays visible.
+ */
+export async function POST(req: NextRequest) {
+    let body: any;
+    try {
+        body = await req.json();
+    } catch {
+        return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+
+    const issueKey = String(body?.issueKey || '').trim().toUpperCase();
+    const timeSpentSeconds = Number(body?.timeSpentSeconds);
+    const rawComment = typeof body?.comment === 'string' ? body.comment.trim() : '';
+    const loggedForName = typeof body?.loggedForName === 'string' ? body.loggedForName.trim() : '';
+    const started = typeof body?.started === 'string' ? body.started.trim() : '';
+
+    if (!ISSUE_KEY_RE.test(issueKey)) {
+        return NextResponse.json({ error: 'A valid issue key is required (e.g. SUN-123)' }, { status: 400 });
+    }
+    if (!Number.isFinite(timeSpentSeconds) || timeSpentSeconds <= 0 || timeSpentSeconds > 60 * 60 * 24 * 30) {
+        return NextResponse.json({ error: 'timeSpentSeconds must be between 1 second and 30 days' }, { status: 400 });
+    }
+
+    // Attribute visibility: prefix the comment when logging on behalf of someone.
+    const commentText = loggedForName
+        ? `[Logged via Zenit for ${loggedForName}]${rawComment ? ` ${rawComment}` : ''}`
+        : rawComment;
+
+    const payload: Record<string, any> = { timeSpentSeconds };
+    if (commentText) {
+        payload.comment = {
+            type: 'doc',
+            version: 1,
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: commentText }] }],
+        };
+    }
+    if (started) {
+        // Jira expects `yyyy-MM-dd'T'HH:mm:ss.SSSZ`; normalise ISO input.
+        const d = new Date(started);
+        if (!Number.isNaN(d.getTime())) {
+            const pad = (n: number, l = 2) => String(n).padStart(l, '0');
+            payload.started = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.000+0000`;
+        }
+    }
+
+    try {
+        const res = await fetch(
+            `${JIRA_BASE}/rest/api/3/issue/${encodeURIComponent(issueKey)}/worklog?adjustEstimate=auto&notifyUsers=false`,
+            {
+                method: 'POST',
+                headers: {
+                    Authorization: `Basic ${JIRA_AUTH()}`,
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                },
+                body: JSON.stringify(payload),
+            }
+        );
+
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            const msg = json?.errorMessages?.[0]
+                || Object.values(json?.errors || {})[0]
+                || 'Failed to create worklog';
+            return NextResponse.json({ error: String(msg) }, { status: res.status });
+        }
+
+        // Invalidate read caches so the new entry shows up on the next fetch.
+        cache.clear();
+
+        return NextResponse.json({
+            ok: true,
+            worklogId: json?.id,
+            issueKey,
+            issueUrl: `${JIRA_BASE}/browse/${issueKey}`,
+            timeSpent: json?.timeSpent,
+            author: json?.author?.displayName || 'Zenit Integration',
+            loggedForName: loggedForName || null,
+        });
+    } catch (err: any) {
+        return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+}

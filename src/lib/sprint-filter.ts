@@ -228,7 +228,7 @@ export class SprintFilter {
    */
   async getMultiSprintData(sprintIds: string[]): Promise<Record<string, any>> {
     try {
-      const sprintData: Record<string, any> = {};
+      const sprintData: Record<string, any> = Object.create(null);
 
       for (const sprintId of sprintIds) {
         const sprint = await this.getSprintById(sprintId);

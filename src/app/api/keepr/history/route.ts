@@ -18,7 +18,7 @@
  *            totalHours, topUser, topDevice, returnBreakdown } }
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCompatDb } from '@/lib/firebase-compat';
+import { getCompatDb, type CompatQuery } from '@/lib/firebase-compat';
 
 const HISTORY_COLLECTION = 'keepr_history';
 
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
 
         // Build the most selective query possible.
         // Firestore requires all equality filters before range filters.
-        let q: FirebaseFirestore.Query = db.collection(HISTORY_COLLECTION);
+        let q: CompatQuery = db.collection(HISTORY_COLLECTION);
 
         if (deviceId)  q = q.where('deviceId',  '==', deviceId);
         if (accountId) q = q.where('accountId', '==', accountId);
@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
 
         const snap = await q.get();
         let records: any[] = snap.docs.map(d => {
-            const data = d.data();
+            const data = (d.data() ?? {}) as Record<string, any>;
             // Convert Firestore Timestamp to ISO string for timestamp field
             const ts = data.timestamp;
             return {

@@ -479,11 +479,6 @@ export default function DashboardPage() {
                 </div>
                 <h2 className="text-2xl font-semibold">Active Sessions</h2>
               </div>
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/dashboard/sessions">
-                  View All <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
             </div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {activeSessions.slice(0, 4).map(session => (
@@ -503,11 +498,6 @@ export default function DashboardPage() {
                 </div>
                 <h2 className="text-2xl font-semibold">Recently Completed</h2>
               </div>
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/dashboard/sessions">
-                  View All <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
             </div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {completedSessions.slice(0, 4).map(session => (

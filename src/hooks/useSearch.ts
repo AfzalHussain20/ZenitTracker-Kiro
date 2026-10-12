@@ -5,6 +5,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { FirebaseConnector } from '@/lib/firebase-connector';
+import { db } from '@/lib/firebaseConfig';
 import { EnhancedBug, Epic, Story } from '@/types/bug-analytics';
 
 interface SearchFilters {
@@ -46,7 +47,7 @@ export function useSearch(debounceMs: number = 300): UseSearchReturn {
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const [connector] = useState(() => new FirebaseConnector());
+  const [connector] = useState(() => new FirebaseConnector(db));
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
   // Load saved searches on mount
@@ -96,10 +97,10 @@ export function useSearch(debounceMs: number = 300): UseSearchReturn {
                 bug.searchableText?.toLowerCase().includes(searchQuery);
 
               // Apply filters
-              if (filters?.category && bug.category !== filters.category) return false;
-              if (filters?.severity && bug.severity !== filters.severity) return false;
+              if (filters?.category && (bug as any).category !== filters.category) return false;
+              if (filters?.severity && (bug as any).severity !== filters.severity) return false;
               if (filters?.status && bug.status !== filters.status) return false;
-              if (filters?.assignee && bug.assignedTo !== filters.assignee) return false;
+              if (filters?.assignee && (bug as any).assignedTo !== filters.assignee) return false;
 
               return matchesQuery;
             });

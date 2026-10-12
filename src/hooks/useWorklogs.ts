@@ -66,6 +66,42 @@ export function filterWorklogsByPeriod(
     }));
 }
 
+export interface LogWorkInput {
+    issueKey: string;
+    timeSpentSeconds: number;
+    comment?: string;
+    /** ISO timestamp for when the work started; omit to use Jira's current time. */
+    started?: string;
+    /** When set, the person's name is embedded in the comment (see API note). */
+    loggedForName?: string;
+}
+
+export interface LogWorkResult {
+    ok: true;
+    worklogId?: string;
+    issueKey: string;
+    issueUrl: string;
+    timeSpent?: string;
+    author: string;
+    loggedForName: string | null;
+}
+
+/**
+ * Create a worklog on a Jira issue via the Zenit integration account.
+ * Jira attributes the log to the integration user (Basic-auth cannot impersonate);
+ * pass `loggedForName` to record who the work belongs to in the comment.
+ */
+export async function logWork(input: LogWorkInput): Promise<LogWorkResult> {
+    const res = await fetch('/api/jira/worklogs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+    return json as LogWorkResult;
+}
+
 export function useWorklogs() {
     const [data, setData] = useState<WorklogData | null>(null);
     const [loading, setLoading] = useState(false);

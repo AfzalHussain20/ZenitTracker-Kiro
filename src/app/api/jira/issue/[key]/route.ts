@@ -1,10 +1,10 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 
 export async function GET(
   _req: Request,
-  { params }: { params: { key: string } }
+  { params }: { params: Promise<{ key: string }> }
 ) {
-  const { key: issueKey } = params;
+  const { key: issueKey } = await params;
   try {
 
     if (!issueKey || !/^[A-Z]{2,10}-\d+$/.test(issueKey)) {
@@ -29,7 +29,7 @@ export async function GET(
           Authorization: `Basic ${auth}`,
           Accept: 'application/json',
         },
-        // Don't cache — always fetch fresh
+        // Don't cache â€” always fetch fresh
         cache: 'no-store',
       }
     );

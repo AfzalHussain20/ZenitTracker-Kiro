@@ -384,7 +384,7 @@ export function buildInvestigationReport(
     teamAvgPerReporter: Math.round(teamAvgPerReporter * 10) / 10,
     vsTeamAvg: ts.filed > teamAvgPerReporter * 2 ? 'above_2x' : ts.filed > teamAvgPerReporter ? 'above' : ts.filed < teamAvgPerReporter ? 'below' : 'at',
     platformCount: [...ts.platforms].length,
-    platforms: platformClusters,
+    platforms: platformClusters.map((c) => ({ name: c.platform, count: c.count })),
     statusBreakdown: Object.entries(ts.statuses).sort((a, b) => b[1] - a[1]).map(([status, count]) => ({ status, count })),
     priorityBreakdown: Object.entries(ts.priorities).sort((a, b) => b[1] - a[1]).map(([priority, count]) => ({ priority, count })),
     typeBreakdown: Object.entries(ts.types).sort((a, b) => b[1] - a[1]).map(([type, count]) => ({ type, count })),

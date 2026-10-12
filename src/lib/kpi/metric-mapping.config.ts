@@ -142,7 +142,7 @@ export const METRIC_DEFINITIONS: Record<TeamType, MetricDefinition[]> = {
             i.issueType === 'Task' &&
             i.statusCategory === 'Done' &&
             (i.summary?.toLowerCase().includes('design') ||
-              i.labels?.some((l) => l.toLowerCase().includes('design')) ||
+              i.labels?.some((l: string) => l.toLowerCase().includes('design')) ||
               false)
         ).length,
     },

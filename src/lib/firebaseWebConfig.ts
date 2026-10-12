@@ -9,7 +9,10 @@ import {
   type Firestore,
   connectFirestoreEmulator,
   serverTimestamp,
-  FieldValue as WebFieldValue
+  arrayUnion,
+  arrayRemove,
+  increment,
+  deleteField
 } from 'firebase/firestore';
 import { 
   getAuth, 
@@ -92,10 +95,10 @@ export async function authenticateServiceAccount(): Promise<Auth> {
  */
 export const FieldValue = {
   serverTimestamp: () => serverTimestamp(),
-  arrayUnion: WebFieldValue.arrayUnion,
-  arrayRemove: WebFieldValue.arrayRemove,
-  increment: WebFieldValue.increment,
-  delete: WebFieldValue.delete,
+  arrayUnion,
+  arrayRemove,
+  increment,
+  delete: deleteField,
 };
 
 /**

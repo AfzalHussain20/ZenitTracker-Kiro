@@ -1,15 +1,15 @@
-/**
+﻿/**
  * Single Test Run API
- * GET   — Get run details
- * PATCH — Update a case result within a run, or complete the run
+ * GET   â€” Get run details
+ * PATCH â€” Update a case result within a run, or complete the run
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCompatDb } from '@/lib/firebase-compat';
 
 const RUNS_COLLECTION = 'test_runs';
 
-export async function GET(_req: NextRequest, { params }: { params: { runId: string } }) {
-    const { runId } = params;
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ runId: string }> }) {
+    const { runId } = await params;
     try {
         const db = getCompatDb();
         const snap = await db.collection(RUNS_COLLECTION).doc(runId).get();
@@ -20,8 +20,8 @@ export async function GET(_req: NextRequest, { params }: { params: { runId: stri
     }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { runId: string } }) {
-    const { runId } = params;
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ runId: string }> }) {
+    const { runId } = await params;
     const body = await req.json();
 
     try {

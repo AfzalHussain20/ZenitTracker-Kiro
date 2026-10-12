@@ -20,6 +20,7 @@ import { useJiraKPI, type PersonKPI, type JiraIssueRaw } from '@/hooks/useJiraKP
 import { useExport } from '@/hooks/useExport';
 import { TeamCard } from '@/components/dashboard/TeamCard';
 import JiraInsightsChat from '@/components/JiraInsightsChat';
+import { LogWorkDialog } from '@/components/worklog/LogWorkDialog';
 
 // --- Status sets --------------------------------------------------------------
 const CLOSED_SET = new Set([
@@ -1135,6 +1136,12 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
     const [localTeam,setLocalTeam]=useState(teamFilter);
     const [localMember,setLocalMember]=useState(memberFilter);
     const [expandedUser,setExpandedUser]=useState<string|null>(null);
+    const [logWorkOpen,setLogWorkOpen]=useState(false);
+    const [logWorkPerson,setLogWorkPerson]=useState<string>('');
+
+    const openLogWork=(personName='')=>{setLogWorkPerson(personName);setLogWorkOpen(true);};
+
+    const issueOptions=useMemo(()=>allIssues.map(i=>({key:i.key,summary:(i as any).fields?.summary})),[allIssues]);
 
     // Sync parent filters into local state when they change
     useEffect(()=>{
@@ -1241,6 +1248,10 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
                                 <RefreshCw className={cn('w-3 h-3',loading&&'animate-spin')}/>
                                 {loading?'Loading...':loaded?'Refresh':'Load Work Logs'}
                             </Button>
+                            <Button onClick={()=>openLogWork()} variant="outline" className="h-8 text-xs gap-1">
+                                <Clock className="w-3 h-3"/>
+                                Log Work
+                            </Button>
                         </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap mt-3 pt-3 border-t border-white/20">
@@ -1288,11 +1299,16 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
                                     {missedLoggers.map(p=>{
                                         const av=getAvatarStyle(p.name);
                                         return (
-                                            <button key={p.userId} onClick={()=>onSelectPerson(p)}
-                                                className="inline-flex items-center gap-1.5 text-xs bg-amber-500/10 border border-amber-500/30 text-amber-800 px-2.5 py-1 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer">
-                                                <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white',av.bg)}>{p.name.charAt(0)}</span>
-                                                {p.name}
-                                            </button>
+                                            <span key={p.userId} className="inline-flex items-center gap-1 text-xs bg-amber-500/10 border border-amber-500/30 text-amber-800 pl-2.5 pr-1 py-1 rounded-full">
+                                                <button onClick={()=>onSelectPerson(p)} className="inline-flex items-center gap-1.5 hover:text-amber-900 transition-colors cursor-pointer">
+                                                    <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white',av.bg)}>{p.name.charAt(0)}</span>
+                                                    {p.name}
+                                                </button>
+                                                <button onClick={()=>openLogWork(p.name)} title={`Log work for ${p.name}`}
+                                                    className="inline-flex items-center gap-0.5 bg-amber-500/20 hover:bg-amber-500/40 text-amber-900 px-1.5 py-0.5 rounded-full transition-colors cursor-pointer">
+                                                    <Clock className="w-2.5 h-2.5"/>Log
+                                                </button>
+                                            </span>
                                         );
                                     })}
                                 </div>
@@ -1397,6 +1413,14 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
                     )}
                 </>
             )}
+
+            <LogWorkDialog
+                open={logWorkOpen}
+                onOpenChange={setLogWorkOpen}
+                loggedForName={logWorkPerson}
+                issues={issueOptions}
+                onLogged={load}
+            />
         </div>
     );
 }
@@ -1405,7 +1429,7 @@ function WorkLogsTab({teamFilter,memberFilter,kpiPeople,onSelectPerson,allIssues
 // --- Main Dashboard -----------------------------------------------------------
 export default function KPIDashboard() {
     const [activeSprint, setActiveSprint] = useState<string|undefined>(undefined);
-    const { kpi, loading, error, lastSync, forceRefresh, allSprints } = useJiraKPI(activeSprint);
+    const { kpi, loading, error, lastSync, forceRefresh, allSprints = [] } = useJiraKPI(activeSprint);
 
     // Auto-select the active sprint as soon as sprint list is available
     // This ensures first load is always sprint-scoped, not all-time

@@ -4,7 +4,7 @@
  * GET  — List pending invites for an org
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCompatDb } from '@/lib/firebase-compat';
+import { getCompatDb, type CompatQuery } from '@/lib/firebase-compat';
 
 const INVITES_COLLECTION = 'org_invites';
 
@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
 
     try {
         const db = getCompatDb();
-        let q: FirebaseFirestore.Query = db.collection(INVITES_COLLECTION);
+        let q: CompatQuery = db.collection(INVITES_COLLECTION);
 
         if (orgId) q = q.where('orgId', '==', orgId);
         if (email) q = q.where('email', '==', email.toLowerCase());

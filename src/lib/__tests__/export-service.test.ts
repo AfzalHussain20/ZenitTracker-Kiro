@@ -9,8 +9,18 @@ import * as XLSX from 'xlsx';
 
 // Mock dependencies
 jest.mock('xlsx');
-jest.mock('jspdf');
-jest.mock('jspdf-autotable');
+jest.mock('jspdf', () => {
+  const mockPdfDoc = {
+    setFontSize: jest.fn(),
+    text: jest.fn(),
+    output: jest.fn(() => new Blob(['%PDF-1.4'], { type: 'application/pdf' })),
+  };
+  return { jsPDF: jest.fn(() => mockPdfDoc) };
+});
+jest.mock('jspdf-autotable', () => ({
+  __esModule: true,
+  default: jest.fn(),
+}));
 jest.mock('../firebase-connector');
 
 describe('ExportService', () => {

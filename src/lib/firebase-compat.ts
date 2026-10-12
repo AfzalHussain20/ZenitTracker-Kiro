@@ -52,9 +52,9 @@ function getFirebaseApp(): FirebaseApp {
 
 // ─── Compat wrapper types ─────────────────────────────────────────────────────
 
-type WhereFilterOp = '<' | '<=' | '==' | '!=' | '>=' | '>' | 'array-contains' | 'in' | 'not-in' | 'array-contains-any';
+export type WhereFilterOp = '<' | '<=' | '==' | '!=' | '>=' | '>' | 'array-contains' | 'in' | 'not-in' | 'array-contains-any';
 
-interface CompatDocSnapshot {
+export interface CompatDocSnapshot {
   id: string;
   exists: boolean;
   ref: CompatDocRef;
@@ -62,14 +62,14 @@ interface CompatDocSnapshot {
   get(field: string): any;
 }
 
-interface CompatQuerySnapshot {
+export interface CompatQuerySnapshot {
   empty: boolean;
   size: number;
   docs: CompatDocSnapshot[];
   forEach(cb: (snap: CompatDocSnapshot) => void): void;
 }
 
-interface CompatDocRef {
+export interface CompatDocRef {
   id: string;
   path: string;
   collection(subPath: string): CompatCollectionRef;
@@ -79,28 +79,28 @@ interface CompatDocRef {
   delete(): Promise<void>;
 }
 
-interface CompatQuery {
+export interface CompatQuery {
   where(field: string, op: WhereFilterOp, value: any): CompatQuery;
   orderBy(field: string, direction?: 'asc' | 'desc'): CompatQuery;
   limit(n: number): CompatQuery;
   get(): Promise<CompatQuerySnapshot>;
 }
 
-interface CompatCollectionRef extends CompatQuery {
+export interface CompatCollectionRef extends CompatQuery {
   id: string;
   path: string;
   doc(id?: string): CompatDocRef;
   add(data: Record<string, any>): Promise<CompatDocRef>;
 }
 
-interface CompatBatch {
+export interface CompatBatch {
   set(ref: CompatDocRef, data: Record<string, any>): CompatBatch;
   update(ref: CompatDocRef, data: Record<string, any>): CompatBatch;
   delete(ref: CompatDocRef): CompatBatch;
   commit(): Promise<void>;
 }
 
-interface CompatDb {
+export interface CompatDb {
   collection(path: string): CompatCollectionRef;
   batch(): CompatBatch;
   _native: Firestore;

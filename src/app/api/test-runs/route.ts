@@ -4,7 +4,7 @@
  * POST — Create a new run from a plan (copies all cases into the run)
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCompatDb } from '@/lib/firebase-compat';
+import { getCompatDb, type CompatQuery } from '@/lib/firebase-compat';
 
 const RUNS_COLLECTION = 'test_runs';
 const CASES_COLLECTION = 'test_cases';
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
 
     try {
         const db = getCompatDb();
-        let q: FirebaseFirestore.Query = db.collection(RUNS_COLLECTION).orderBy('startedAt', 'desc').limit(limit);
+        let q: CompatQuery = db.collection(RUNS_COLLECTION).orderBy('startedAt', 'desc').limit(limit);
         if (planId) q = q.where('planId', '==', planId);
 
         const snap = await q.get();
@@ -43,10 +43,10 @@ export async function POST(req: NextRequest) {
         const casesSnap = await db.collection(CASES_COLLECTION).where('planId', '==', planId).get();
         const cases = casesSnap.docs.map(d => ({
             caseId: d.id,
-            title: d.data().title ?? '',
-            steps: d.data().steps ?? '',
-            expectedResult: d.data().expectedResult ?? '',
-            priority: d.data().priority ?? 'P1',
+            title: d.data()?.title ?? '',
+            steps: d.data()?.steps ?? '',
+            expectedResult: d.data()?.expectedResult ?? '',
+            priority: d.data()?.priority ?? 'P1',
             // execution fields
             result: 'not_run' as const,
             actualResult: '',

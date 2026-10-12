@@ -61,7 +61,7 @@ interface JiraTeam {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const TYPE_ICONS: Record<string, React.ElementType> = {
+const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     phone: Smartphone, tablet: Tablet, laptop: Laptop,
     tv: Tv, monitor: Monitor, other: Box,
 };

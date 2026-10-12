@@ -115,7 +115,7 @@ export class StoryManager {
     await this.updateStory(storyId, { epicId });
 
     // Update epic's storyIds array
-    const epic = await this.connector.read('epics', epicId);
+    const epic = await this.connector.read<any>('epics', epicId);
     if (epic) {
       const storyIds = epic.storyIds || [];
       if (!storyIds.includes(storyId)) {
@@ -143,7 +143,7 @@ export class StoryManager {
     await this.updateStory(storyId, { epicId: '' });
 
     // Update epic's storyIds array
-    const epic = await this.connector.read('epics', epicId);
+    const epic = await this.connector.read<any>('epics', epicId);
     if (epic) {
       const storyIds = (epic.storyIds || []).filter((id: string) => id !== storyId);
       await this.connector.update('epics', epicId, {

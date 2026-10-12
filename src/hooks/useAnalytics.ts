@@ -7,7 +7,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { AnalyticsTracker } from '@/lib/analytics-tracker';
 import { FirebaseConnector } from '@/lib/firebase-connector';
 import { db } from '@/lib/firebaseConfig';
-import { AnalyticsEvent, AnalyticsDomain } from '@/types/bug-analytics';
+import { AnalyticsEvent, AnalyticsDomain, AggregatedEvents } from '@/types/bug-analytics';
 
 interface UseAnalyticsOptions {
   autoFlush?: boolean;
@@ -29,7 +29,7 @@ interface UseAnalyticsReturn {
   aggregateEvents: (
     timeWindow: 'hour' | 'day' | 'week' | 'month',
     groupBy: 'eventType' | 'domain' | 'userId'
-  ) => Promise<Record<string, number>>;
+  ) => Promise<AggregatedEvents[]>;
   loading: boolean;
   error: Error | null;
 }

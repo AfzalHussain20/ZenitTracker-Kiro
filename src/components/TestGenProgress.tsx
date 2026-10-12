@@ -25,6 +25,7 @@ export default function TestGenProgress({
   countdown = 0,
 }: TestGenProgressProps) {
   const progress = isComplete ? 100 : ((currentPass - 1) / 3) * 100 + (1 / 3) * (countdown > 0 ? 80 : 50);
+  const caseWord = totalGenerated === 1 ? 'case' : 'cases';
 
   return (
     <div className="w-full rounded-lg border border-border/50 bg-card/80 px-4 py-2.5 shadow-sm">
@@ -40,7 +41,7 @@ export default function TestGenProgress({
           )}
           <span className="text-xs font-medium text-foreground truncate">
             {isComplete
-              ? `Done — ${totalGenerated} test cases generated`
+              ? `Done — ${totalGenerated} test ${caseWord} generated`
               : countdown > 0
                 ? `Waiting ${countdown}s for rate limit... (batch ${currentPass}/3 complete)`
                 : `Generating batch ${currentPass}/3 — ${passName}...`}
@@ -80,7 +81,7 @@ export default function TestGenProgress({
 
         {/* Right: Count */}
         <span className="text-[10px] text-muted-foreground tabular-nums flex-shrink-0">
-          {totalGenerated} cases
+          {totalGenerated} {caseWord}
         </span>
       </div>
 

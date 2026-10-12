@@ -90,19 +90,20 @@ export default function InvestigationsPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map(inv => {
-            const Icon = RISK_ICONS[inv.riskLevel];
+            const risk: RiskLevel = inv.riskLevel || 'LOW';
+            const Icon = RISK_ICONS[risk];
             return (
               <Link key={inv.id} href={`/investigations/${inv.id}`}
                 className="block rounded-2xl border border-border bg-card p-5 hover:border-primary/30 hover:shadow-md transition-all group">
                 <div className="flex items-start gap-4">
-                  <div className={cn('w-10 h-10 rounded-xl border flex items-center justify-center shrink-0', RISK_COLORS[inv.riskLevel])}>
+                  <div className={cn('w-10 h-10 rounded-xl border flex items-center justify-center shrink-0', RISK_COLORS[risk])}>
                     <Icon className="w-5 h-5" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="font-semibold text-foreground group-hover:text-primary transition-colors">{inv.reporterName}</span>
-                      <span className={cn('text-[11px] font-bold px-2 py-0.5 rounded-full border', RISK_COLORS[inv.riskLevel])}>
-                        {inv.riskLevel} · {inv.investigationScore}/100
+                      <span className={cn('text-[11px] font-bold px-2 py-0.5 rounded-full border', RISK_COLORS[risk])}>
+                        {risk} · {inv.investigationScore || 0}/100
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{inv.executiveSummary}</p>

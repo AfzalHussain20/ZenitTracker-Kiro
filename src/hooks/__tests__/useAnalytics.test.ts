@@ -7,6 +7,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { useAnalytics } from '../useAnalytics';
 import { AnalyticsTracker } from '@/lib/analytics-tracker';
 import { FirebaseConnector } from '@/lib/firebase-connector';
+import { AggregatedEvents } from '@/types/bug-analytics';
 
 // Mock dependencies
 jest.mock('@/lib/analytics-tracker');
@@ -19,8 +20,12 @@ describe('useAnalytics', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    mockConnector = new FirebaseConnector() as jest.Mocked<FirebaseConnector>;
-    mockTracker = new AnalyticsTracker(mockConnector) as jest.Mocked<AnalyticsTracker>;
+    mockConnector = new FirebaseConnector({} as any) as jest.Mocked<FirebaseConnector>;
+    mockTracker = new AnalyticsTracker(mockConnector, {} as any) as jest.Mocked<AnalyticsTracker>;
+
+    // The hook flushes on unmount by default; auto-mocked flush would return
+    // undefined and crash the effect cleanup with `undefined.catch(...)`.
+    mockTracker.flush = jest.fn().mockResolvedValue(undefined);
 
     (AnalyticsTracker as jest.Mock).mockImplementation(() => mockTracker);
     (FirebaseConnector as jest.Mock).mockImplementation(() => mockConnector);
@@ -74,18 +79,27 @@ describe('useAnalytics', () => {
   });
 
   it('should aggregate events', async () => {
-    const mockAggregation = { button_click: 10, page_view: 5 };
+    const mockAggregation: AggregatedEvents[] = [
+      { groupKey: 'button_click', count: 10, events: [], timeRange: { start: new Date(), end: new Date() } },
+      { groupKey: 'page_view', count: 5, events: [], timeRange: { start: new Date(), end: new Date() } },
+    ];
     mockTracker.aggregateEvents = jest.fn().mockResolvedValue(mockAggregation);
 
     const { result } = renderHook(() => useAnalytics());
 
-    let aggregation: Record<string, number> = {};
+    let aggregation: AggregatedEvents[] = [];
     await act(async () => {
       aggregation = await result.current.aggregateEvents('day', 'eventType');
     });
 
     expect(aggregation).toEqual(mockAggregation);
-    expect(mockTracker.aggregateEvents).toHaveBeenCalledWith('day', 'eventType');
+    expect(mockTracker.aggregateEvents).toHaveBeenCalledWith(
+      {
+        start: expect.any(Date),
+        end: expect.any(Date),
+      },
+      'eventType'
+    );
   });
 
   it('should flush on unmount when autoFlush is enabled', () => {

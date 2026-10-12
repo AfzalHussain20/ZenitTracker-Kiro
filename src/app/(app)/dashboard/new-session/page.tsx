@@ -377,7 +377,7 @@ export default function NewTestSessionPage() {
                         {librarySuites.map((suite: any) => (
                           <button key={suite.id} onClick={() => {
                             setSelectedSuiteId(suite.id);
-                            const cases = (suite.testCases || []).map((tc: any, idx: number) => ({ ...tc, orderIndex: idx }));
+                            const cases: any[] = (suite.testCases || []).map((tc: any, idx: number) => ({ ...tc, orderIndex: idx }));
                             setParsedTestCases(cases);
                             setTestBeds([...new Set(cases.map((c: any) => c.testBed || 'General'))]);
                             setSelectedTestBed(null);

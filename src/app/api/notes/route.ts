@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
     let notes = snapshot.docs
       .map(doc => {
-        const data = doc.data();
+        const data = doc.data() ?? {};
         return {
           id: doc.id,
           ...data,

@@ -14,7 +14,7 @@ interface PageShellProps {
 
 export function PageShell({ title, description, children, actions, className }: PageShellProps) {
     return (
-        <div className={cn("p-6 space-y-8 w-full max-w-7xl mx-auto", className)}>
+        <div className={cn("space-y-8 w-full", className)}>
             <motion.div
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}

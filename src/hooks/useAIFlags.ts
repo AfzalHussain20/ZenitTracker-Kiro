@@ -89,7 +89,7 @@ export function useAIFlags(): UseAIFlagsReturn {
     }
   }, [flags, fetchFlags]);
 
-  const isEnabled = useCallback((feature: AIFeatureKey, provider: AIProviderKey = 'gemini'): boolean => {
+  const isEnabled = useCallback((feature: AIFeatureKey, provider: AIProviderKey = 'nvidia'): boolean => {
     if (!flags) return true; // default allow while loading
     return flags.features[feature] !== false && flags.providers[provider] !== false;
   }, [flags]);

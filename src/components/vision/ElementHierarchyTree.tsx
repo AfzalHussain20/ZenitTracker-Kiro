@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, type JSX } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, ChevronDown, Search, Eye, EyeOff, Box } from 'lucide-react';
 import { Input } from '@/components/ui/input';

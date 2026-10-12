@@ -15,52 +15,50 @@ describe('TestGenProgress', () => {
     );
     // The stepper always shows all three pass labels
     const allLabels = screen.getAllByText(/Functional|Negative|Exploratory/);
-    // At minimum: Functional appears in stepper + status, Negative in stepper, Exploratory in stepper
     expect(allLabels.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('shows the current pass name and number in the status', () => {
+  it('shows the current pass number and pass name while in progress', () => {
     render(
       <TestGenProgress currentPass={2} passName="Negative" totalGenerated={12} isComplete={false} />
     );
-    expect(screen.getByText(/Running pass 2\/3/)).toBeInTheDocument();
-    // The status line includes the pass name
-    expect(screen.getByText(/Running pass 2\/3/).closest('p')).toHaveTextContent('Negative');
+    const status = screen.getByText(/Generating batch 2\/3/);
+    expect(status).toBeInTheDocument();
+    expect(status).toHaveTextContent('Negative');
   });
 
   it('displays running count of generated test cases', () => {
     render(
       <TestGenProgress currentPass={1} passName="Functional" totalGenerated={7} isComplete={false} />
     );
-    expect(screen.getByText('7 test cases generated')).toBeInTheDocument();
+    expect(screen.getByText('7 cases')).toBeInTheDocument();
   });
 
   it('uses singular form for 1 test case', () => {
     render(
       <TestGenProgress currentPass={1} passName="Functional" totalGenerated={1} isComplete={false} />
     );
-    expect(screen.getByText('1 test case generated')).toBeInTheDocument();
+    expect(screen.getByText('1 case')).toBeInTheDocument();
   });
 
-  it('shows generating header while in progress', () => {
+  it('shows generating status while in progress', () => {
     render(
       <TestGenProgress currentPass={1} passName="Functional" totalGenerated={0} isComplete={false} />
     );
-    expect(screen.getByText('Generating Test Cases…')).toBeInTheDocument();
+    expect(screen.getByText(/Generating batch 1\/3/)).toBeInTheDocument();
   });
 
   it('shows completion state with success message when isComplete is true', () => {
     render(
       <TestGenProgress currentPass={3} passName="Exploratory" totalGenerated={45} isComplete={true} />
     );
-    expect(screen.getByText('Generation Complete')).toBeInTheDocument();
-    expect(screen.getByText('All 45 test cases generated successfully')).toBeInTheDocument();
+    expect(screen.getByText('Done — 45 test cases generated')).toBeInTheDocument();
   });
 
   it('displays total count in completion state', () => {
     render(
       <TestGenProgress currentPass={3} passName="Exploratory" totalGenerated={30} isComplete={true} />
     );
-    expect(screen.getByText('30 test cases generated')).toBeInTheDocument();
+    expect(screen.getByText('Done — 30 test cases generated')).toBeInTheDocument();
   });
 });

@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { toPositiveInt } from '@/lib/jira/jql';
-import { PROJECT_KEY, JIRA_AUTH, fetchAllPages } from '@/lib/jira/sync-data';
+import { PROJECT_KEY, JIRA_BASE, JIRA_AUTH, fetchAllPages } from '@/lib/jira/sync-data';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes — reduced API calls, data rarely changes mid-session
@@ -174,7 +174,7 @@ function respondEntry(entry: CacheEntry, now: number, extra: Record<string, stri
         'X-Force-Refresh': '0',
     };
     for (const [k, v] of Object.entries(extra)) headers[k] = String(v);
-    return new Response(entry.gz, { status: 200, headers });
+    return new Response(entry.gz as unknown as BodyInit, { status: 200, headers });
 }
 
 // GET: return (KV- or memory-)cached payload immediately, refresh in background if stale
@@ -188,7 +188,7 @@ export async function GET(req: NextRequest) {
     let entry = cache.get(key);
     const now = Date.now();
     if (!entry) {
-        entry = await kvGet(key);
+        entry = (await kvGet(key)) ?? undefined;
         if (entry) cache.set(key, entry);
     }
 
