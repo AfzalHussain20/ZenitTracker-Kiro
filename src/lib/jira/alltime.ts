@@ -5,6 +5,7 @@
  * the browser HTTP cache afterwards, so it is never re-downloaded on every
  * navigation. Merge its result into a sync payload before processing KPIs.
  */
+import { fetchApiJson } from './fetchJson';
 
 export interface AllTimeSnapshot {
     allTimeBugs: any[];
@@ -13,24 +14,10 @@ export interface AllTimeSnapshot {
 
 let pending: Promise<AllTimeSnapshot | null> | null = null;
 
-async function gunzipArrayBuffer(buf: ArrayBuffer): Promise<string> {
-    const ds = new DecompressionStream('gzip');
-    const stream = new Blob([buf]).stream().pipeThrough(ds);
-    return new Response(stream).text();
-}
-
 export function fetchAllTime(force = false): Promise<AllTimeSnapshot | null> {
     if (!force && pending) return pending;
-    pending = fetch('/api/jira/alltime', { cache: force ? 'no-store' : 'default' })
-        .then(async (r) => {
-            if (!r.ok) return null;
-            // The endpoint streams the stored gzip bytes (Content-Encoding is
-            // stripped by the OpenNext runtime) — decompress explicitly.
-            const buf = await r.arrayBuffer();
-            const snap = JSON.parse(await gunzipArrayBuffer(buf));
-            if (!Array.isArray(snap?.allTimeBugs) || !Array.isArray(snap?.allTimeAll)) return null;
-            return { allTimeBugs: snap.allTimeBugs, allTimeAll: snap.allTimeAll };
-        })
+    pending = fetchApiJson<AllTimeSnapshot>('/api/jira/alltime', { cache: force ? 'no-store' : 'default' })
+        .then((snap) => (Array.isArray(snap?.allTimeBugs) && Array.isArray(snap?.allTimeAll) ? snap : null))
         .catch(() => null);
     return pending;
 }

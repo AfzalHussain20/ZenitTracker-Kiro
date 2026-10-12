@@ -9,10 +9,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { toPositiveInt } from '@/lib/jira/jql';
 import { PROJECT_KEY, JIRA_AUTH, fetchAllPages } from '@/lib/jira/sync-data';
+import { getCloudflareContext } from '@opennextjs/cloudflare';
 
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes — reduced API calls, data rarely changes mid-session
+const CACHE_TTL_SECONDS = Math.round(CACHE_TTL / 1000) + 60; // KV expiry (slight buffer)
 
-interface CacheEntry { data: any; ts: number; fetching: boolean; }
+// In-memory cache only survives the lifetime of an isolate — Cloudflare recycles
+// idle isolates, so the same payload is ALSO persisted to KV (gzip bytes + ts)
+// to survive across restarts and make every navigation fast.
+const KV_PREFIX = 'syncv2:';
+interface CacheEntry { gz: Uint8Array; ts: number; fetching: boolean; }
 const cache = new Map<string, CacheEntry>();
 
 async function buildFullSync(sprintId?: string) {
@@ -102,7 +108,76 @@ async function buildFullSync(sprintId?: string) {
     };
 }
 
-// GET: return cached data immediately, refresh in background if stale
+// ─── Compressed + KV-persisted cache ──────────────────────────────────────────
+// The full sprint payload (~6.7 MB JSON) is gzipped ONCE per cache fill and the
+// bytes stored — per-request CPU is ~zero (just piping stored bytes), which
+// keeps us well under the free plan's resource limit. Volatile meta (cache age,
+// refreshing) travels in headers instead of the body so the body stays immutable.
+
+function alltimeKV(): any | undefined {
+    try {
+        const { env } = getCloudflareContext();
+        return (env as any)?.ALLTIME_KV;
+    } catch {
+        return undefined;
+    }
+}
+
+async function kvGet(key: string): Promise<CacheEntry | null> {
+    try {
+        const kv = alltimeKV();
+        if (!kv) return null;
+        const raw = await kv.get(KV_PREFIX + key);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as { ts: number; gzB64: string };
+        const gz = new Uint8Array(Buffer.from(parsed.gzB64, 'base64'));
+        return { gz, ts: parsed.ts, fetching: false };
+    } catch {
+        return null;
+    }
+}
+
+async function kvPut(key: string, entry: CacheEntry) {
+    try {
+        const kv = alltimeKV();
+        if (!kv) return;
+        const gzB64 = Buffer.from(entry.gz).toString('base64');
+        await kv.put(KV_PREFIX + key, JSON.stringify({ ts: entry.ts, gzB64 }), { expirationTtl: CACHE_TTL_SECONDS });
+    } catch {
+        // Persistence is best-effort — in-memory cache still serves this isolate.
+    }
+}
+
+async function compressPayload(payload: any): Promise<Uint8Array> {
+    const cs = new CompressionStream('gzip');
+    const stream = new Blob([JSON.stringify(payload)]).stream().pipeThrough(cs);
+    const buf = await new Response(stream).arrayBuffer();
+    return new Uint8Array(buf);
+}
+
+async function fill(key: string, data: any, ts: number): Promise<CacheEntry> {
+    const gz = await compressPayload(data);
+    const entry: CacheEntry = { gz, ts, fetching: false };
+    cache.set(key, entry);
+    await kvPut(key, entry);
+    return entry;
+}
+
+function respondEntry(entry: CacheEntry, now: number, extra: Record<string, string | number | boolean> = {}) {
+    const cacheAge = Math.round((now - entry.ts) / 1000);
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store', // sprint data freshness is handled server-side; meta lives in headers
+        'X-Cache-Age': String(cacheAge),
+        'X-Next-Refresh': String(Math.max(0, Math.round((CACHE_TTL - (now - entry.ts)) / 1000))),
+        'X-From-Cache': '1',
+        'X-Force-Refresh': '0',
+    };
+    for (const [k, v] of Object.entries(extra)) headers[k] = String(v);
+    return new Response(entry.gz, { status: 200, headers });
+}
+
+// GET: return (KV- or memory-)cached payload immediately, refresh in background if stale
 export async function GET(req: NextRequest) {
     const sprintIdParam = req.nextUrl.searchParams.get('sprintId');
     const parsedSprintId = toPositiveInt(sprintIdParam);
@@ -110,44 +185,43 @@ export async function GET(req: NextRequest) {
     const sprintId = parsedSprintId ? String(parsedSprintId) : undefined;
     // Cache key includes sprint ID — different sprints have separate caches
     const key = `full_sync_${sprintId || 'auto'}`;
-    const entry = cache.get(key);
+    let entry = cache.get(key);
     const now = Date.now();
+    if (!entry) {
+        entry = await kvGet(key);
+        if (entry) cache.set(key, entry);
+    }
+
     const isStale = !entry || (now - entry.ts) >= CACHE_TTL;
 
-    // If we have data (even stale), return it immediately
-    if (entry?.data) {
-        // Trigger background refresh if stale and not already fetching
+    // Have a payload (even stale) — return it immediately, refresh in background
+    if (entry?.gz?.length) {
         if (isStale && !entry.fetching) {
-            cache.set(key, { ...entry, fetching: true });
-            buildFullSync(sprintId).then(data => {
-                cache.set(key, { data, ts: Date.now(), fetching: false });
+            const prev = { ...entry, fetching: true };
+            cache.set(key, prev);
+            buildFullSync(sprintId).then(async data => {
+                await fill(key, data, Date.now());
                 console.log('[Sync] Background refresh complete');
             }).catch(err => {
-                cache.set(key, { ...entry, fetching: false });
+                cache.set(key, { ...prev, fetching: false });
                 console.error('[Sync] Background refresh failed:', err.message);
             });
         }
 
-        return NextResponse.json({
-            ...entry.data,
-            cacheAge: Math.round((now - entry.ts) / 1000),
-            nextRefresh: Math.max(0, Math.round((CACHE_TTL - (now - entry.ts)) / 1000)),
-            fromCache: true,
-            refreshing: isStale && entry.fetching,
-        });
+        return respondEntry(entry, now, { 'X-Refreshing': (isStale && entry.fetching) ? '1' : '0' });
     }
 
-    // No cache at all — must fetch synchronously (first load)
+    // No cached payload — must fetch synchronously (first load / stale KV miss)
     if (!entry?.fetching) {
-        cache.set(key, { data: null, ts: 0, fetching: true });
+        cache.set(key, { gz: new Uint8Array(0), ts: 0, fetching: true });
     }
 
     try {
         const data = await buildFullSync(sprintId);
-        cache.set(key, { data, ts: now, fetching: false });
-        return NextResponse.json({ ...data, cacheAge: 0, nextRefresh: CACHE_TTL / 1000, fromCache: false });
+        const filled = await fill(key, data, Date.now());
+        return respondEntry(filled, Date.now(), { 'X-From-Cache': '0', 'X-Refreshing': '0' });
     } catch (err: any) {
-        cache.set(key, { data: null, ts: 0, fetching: false });
+        cache.delete(key);
         return NextResponse.json({ error: err.message }, { status: 500 });
     }
 }
@@ -160,12 +234,12 @@ export async function POST(req: NextRequest) {
     const sprintId = parsedSprintId ? String(parsedSprintId) : undefined;
     const key = `full_sync_${sprintId || 'auto'}`;
     try {
-        cache.set(key, { data: cache.get(key)?.data || null, ts: 0, fetching: true });
+        cache.set(key, { gz: new Uint8Array(0), ts: 0, fetching: true });
         const data = await buildFullSync(sprintId);
-        cache.set(key, { data, ts: Date.now(), fetching: false });
-        return NextResponse.json({ ...data, fromCache: false, forced: true });
+        const filled = await fill(key, data, Date.now());
+        return respondEntry(filled, Date.now(), { 'X-From-Cache': '0', 'X-Force-Refresh': '1' });
     } catch (err: any) {
-        cache.set(key, { data: cache.get(key)?.data || null, ts: 0, fetching: false });
+        cache.delete(key);
         return NextResponse.json({ error: err.message }, { status: 500 });
     }
 }

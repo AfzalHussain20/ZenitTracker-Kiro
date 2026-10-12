@@ -18,6 +18,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { fetchApiJson } from '@/lib/jira/fetchJson';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import {
@@ -187,8 +188,7 @@ export default function PublicScanPage() {
                     // sprintId — the sync API auto-detects the active sprint, and the
                     // response exposes ".all" (issues), not a ".people" array.
                     try {
-                        const syncRes = await fetch('/api/jira/sync');
-                        const syncData = await syncRes.json();
+                        const syncData = await fetchApiJson('/api/jira/sync');
                         const issues: any[] = syncData?.all ?? [];
                         // Group assignees by their team field
                         const seen = new Set<string>();

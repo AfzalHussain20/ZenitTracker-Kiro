@@ -15,6 +15,7 @@ import {
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { attachAllTime } from '@/lib/jira/alltime';
+import { fetchApiJson } from '@/lib/jira/fetchJson';
 import { useJiraKPI, type PersonKPI, type JiraIssueRaw } from '@/hooks/useJiraKPI';
 import { useExport } from '@/hooks/useExport';
 import { TeamCard } from '@/components/dashboard/TeamCard';
@@ -181,8 +182,7 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
     useEffect(() => {
         if (viewScope !== 'sprint' || !selectedSprintId) return;
         setLoadingSprint(true);
-        fetch(`/api/jira/sync?sprintId=${selectedSprintId}`)
-            .then(r => r.json())
+        fetchApiJson(`/api/jira/sync?sprintId=${selectedSprintId}`)
             .then(async d => {
                 await attachAllTime(d);
                 const sprintAll = [...(d.bugs||[]), ...(d.stories||[]), ...(d.epics||[]), ...(d.tasks||[]), ...(d.subtasks||[])];

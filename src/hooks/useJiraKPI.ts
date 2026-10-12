@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { attachAllTime } from '@/lib/jira/alltime';
+import { fetchApiJson } from '@/lib/jira/fetchJson';
 
 const POLL_INTERVAL = 10 * 60 * 1000; // 10 minutes
 
@@ -443,12 +444,10 @@ export function useJiraKPI(sprintId?: string) {
             // Build URL with optional sprintId for sprint-scoped fetch
             const sprintParam = sprintId ? `?sprintId=${sprintId}` : '';
             // Fetch sync data and teams in parallel
-            const [syncRes, teamsRes] = await Promise.all([
-                fetch(`/api/jira/sync${sprintParam}`, { method: force ? 'POST' : 'GET' }),
+            const [data, teamsRes] = await Promise.all([
+                fetchApiJson(`/api/jira/sync${sprintParam}`, { method: force ? 'POST' : 'GET' }),
                 fetch('/api/jira/teams').catch(() => null),
             ]);
-            if (!syncRes.ok) throw new Error(`HTTP ${syncRes.status}`);
-            const data = await syncRes.json();
             if (data.error) throw new Error(data.error);
             // Attach the all-time snapshot (fetched separately, HTTP-cached) so
             // processKPI keeps computing overall numbers without the sync route
