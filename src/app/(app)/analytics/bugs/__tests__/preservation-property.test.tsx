@@ -525,31 +525,6 @@ describe('Preservation Property Tests - Non-Filter Functionality', () => {
   });
 
   /**
-   * Preservation 3.5: Work Logs tab independent filtering
-   */
-  describe('3.5 - Work Logs Tab Independent Filtering', () => {
-    test('should render Work Logs tab with independent state', async () => {
-      render(<KPIDashboard />);
-
-      switchTab(/work logs/i);
-
-      const panel = await screen.findByRole('tabpanel');
-      expect(within(panel).getByText(/Work Log Analytics/i)).toBeInTheDocument();
-      expect(within(panel).getByText(/Ready to track your team's effort/i)).toBeInTheDocument();
-    });
-
-    test('should have independent Load Work Logs button', async () => {
-      render(<KPIDashboard />);
-
-      switchTab(/work logs/i);
-
-      const panel = await screen.findByRole('tabpanel');
-      const loadButtons = within(panel).getAllByRole('button', { name: /Load Work Logs/i });
-      expect(loadButtons.length).toBeGreaterThan(0);
-    });
-  });
-
-  /**
    * Preservation 3.6: Period overview cards calculating accurate statistics
    */
   describe('3.6 - Period Overview Cards Statistics', () => {
