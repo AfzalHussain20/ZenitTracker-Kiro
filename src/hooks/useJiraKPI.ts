@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { attachAllTime } from '@/lib/jira/alltime';
 
 const POLL_INTERVAL = 10 * 60 * 1000; // 10 minutes
 
@@ -449,6 +450,10 @@ export function useJiraKPI(sprintId?: string) {
             if (!syncRes.ok) throw new Error(`HTTP ${syncRes.status}`);
             const data = await syncRes.json();
             if (data.error) throw new Error(data.error);
+            // Attach the all-time snapshot (fetched separately, HTTP-cached) so
+            // processKPI keeps computing overall numbers without the sync route
+            // shipping a ~16 MB payload on every navigation.
+            await attachAllTime(data);
 
             // Merge teams data — use API teams if available, else empty (will use issue-based teams)
             if (teamsRes?.ok) {

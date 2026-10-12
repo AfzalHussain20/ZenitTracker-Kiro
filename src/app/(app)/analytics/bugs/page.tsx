@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { attachAllTime } from '@/lib/jira/alltime';
 import { useJiraKPI, type PersonKPI, type JiraIssueRaw } from '@/hooks/useJiraKPI';
 import { useExport } from '@/hooks/useExport';
 import { TeamCard } from '@/components/dashboard/TeamCard';
@@ -182,7 +183,8 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
         setLoadingSprint(true);
         fetch(`/api/jira/sync?sprintId=${selectedSprintId}`)
             .then(r => r.json())
-            .then(d => {
+            .then(async d => {
+                await attachAllTime(d);
                 const sprintAll = [...(d.bugs||[]), ...(d.stories||[]), ...(d.epics||[]), ...(d.tasks||[]), ...(d.subtasks||[])];
                 const sprintInfo = localSprints.find(s => String(s.id) === selectedSprintId);
                 if (sprintInfo?.startDate && sprintInfo?.endDate) {

@@ -9,51 +9,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { toPositiveInt } from '@/lib/jira/jql';
 import { PROJECT_KEY, JIRA_AUTH, fetchAllPages } from '@/lib/jira/sync-data';
-import { getCloudflareContext } from '@opennextjs/cloudflare';
 
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes — reduced API calls, data rarely changes mid-session
 
-// All-time snapshot (uploaded daily by .github/workflows/refresh-alltime.yml)
-const ALLTIME_KEY = 'alltime.json';
-
 interface CacheEntry { data: any; ts: number; fetching: boolean; }
 const cache = new Map<string, CacheEntry>();
-
-interface AllTimeSnapshot { allTimeBugs: any[]; allTimeAll: any[]; builtAt?: string; total?: number; }
-
-async function loadAllTimeSnapshot(): Promise<AllTimeSnapshot | null> {
-    try {
-        // KV binding — available in the Workers runtime; missing locally/dev/null otherwise.
-        // Stored value is gzip-compressed by scripts/refresh-alltime.ts to stay under KV's 25 MiB cap.
-        const { env } = getCloudflareContext();
-        const kv: any = (env as any)?.ALLTIME_KV;
-        if (!kv) return null;
-        const buf: ArrayBuffer | null = await kv.get(ALLTIME_KEY, 'arrayBuffer');
-        if (!buf) return null;
-        // DecompressionStream is available in the Workers runtime (and polyfilled in node).
-        const ds = new DecompressionStream('gzip');
-        const stream = new Response(buf).body!.pipeThrough(ds);
-        const text = await new Response(stream).text();
-        const snap: AllTimeSnapshot = JSON.parse(text);
-        if (!Array.isArray(snap.allTimeBugs) || !Array.isArray(snap.allTimeAll)) return null;
-        return snap;
-    } catch {
-        return null;
-    }
-}
-
-function withAllTime(data: any, snap: AllTimeSnapshot | null) {
-    if (!snap) {
-        return { ...data, allTimeFromCache: false };
-    }
-    return {
-        ...data,
-        allTimeBugs: snap.allTimeBugs,
-        allTimeAll: snap.allTimeAll,
-        allTimeFromCache: true,
-        allTimeUpdatedAt: snap.builtAt || null,
-    };
-}
 
 async function buildFullSync(sprintId?: string) {
     const start = Date.now();
@@ -159,9 +119,8 @@ export async function GET(req: NextRequest) {
         // Trigger background refresh if stale and not already fetching
         if (isStale && !entry.fetching) {
             cache.set(key, { ...entry, fetching: true });
-            buildFullSync(sprintId).then(async data => {
-                const snap = await loadAllTimeSnapshot();
-                cache.set(key, { data: withAllTime(data, snap), ts: Date.now(), fetching: false });
+            buildFullSync(sprintId).then(data => {
+                cache.set(key, { data, ts: Date.now(), fetching: false });
                 console.log('[Sync] Background refresh complete');
             }).catch(err => {
                 cache.set(key, { ...entry, fetching: false });
@@ -185,10 +144,8 @@ export async function GET(req: NextRequest) {
 
     try {
         const data = await buildFullSync(sprintId);
-        const snap = await loadAllTimeSnapshot();
-        const result = withAllTime(data, snap);
-        cache.set(key, { data: result, ts: now, fetching: false });
-        return NextResponse.json({ ...result, cacheAge: 0, nextRefresh: CACHE_TTL / 1000, fromCache: false });
+        cache.set(key, { data, ts: now, fetching: false });
+        return NextResponse.json({ ...data, cacheAge: 0, nextRefresh: CACHE_TTL / 1000, fromCache: false });
     } catch (err: any) {
         cache.set(key, { data: null, ts: 0, fetching: false });
         return NextResponse.json({ error: err.message }, { status: 500 });
@@ -205,10 +162,8 @@ export async function POST(req: NextRequest) {
     try {
         cache.set(key, { data: cache.get(key)?.data || null, ts: 0, fetching: true });
         const data = await buildFullSync(sprintId);
-        const snap = await loadAllTimeSnapshot();
-        const result = withAllTime(data, snap);
-        cache.set(key, { data: result, ts: Date.now(), fetching: false });
-        return NextResponse.json({ ...result, fromCache: false, forced: true });
+        cache.set(key, { data, ts: Date.now(), fetching: false });
+        return NextResponse.json({ ...data, fromCache: false, forced: true });
     } catch (err: any) {
         cache.set(key, { data: cache.get(key)?.data || null, ts: 0, fetching: false });
         return NextResponse.json({ error: err.message }, { status: 500 });
