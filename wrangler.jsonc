@@ -10,6 +10,12 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  "kv_namespaces": [
+    {
+      "binding": "ALLTIME_KV",
+      "id": "1aa1f38fd3404ccc93de06073b50e17e"
+    }
+  ],
   "vars": {
     "NEXTJS_ENV": "production"
   }

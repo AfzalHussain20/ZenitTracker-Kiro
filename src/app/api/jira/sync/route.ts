@@ -8,142 +8,51 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { toPositiveInt } from '@/lib/jira/jql';
+import { PROJECT_KEY, JIRA_AUTH, fetchAllPages } from '@/lib/jira/sync-data';
+import { getCloudflareContext } from '@opennextjs/cloudflare';
 
-const JIRA_BASE = process.env.JIRA_BASE_URL!;
-const JIRA_AUTH = () => Buffer.from(`${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64');
-const PROJECT_KEY = process.env.JIRA_PROJECT_KEY || 'SUN';
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes — reduced API calls, data rarely changes mid-session
 
-// Story points field — Jira uses customfield_10016 (most common) or customfield_10028
-const STORY_POINTS_FIELD = 'customfield_10016';
-
-const FIELDS = [
-    'summary', 'status', 'priority', 'assignee', 'reporter',
-    'created', 'updated', 'resolutiondate', 'issuetype', 'labels',
-    'customfield_10103', 'customfield_10201',
-    'timespent', 'timeoriginalestimate',
-    STORY_POINTS_FIELD,  // story points
-    'customfield_10028', // story points alt field
-    'fixVersions',       // for live build tracking
-    'versions',
-    'customfield_10001', // Team field
-    'customfield_10020', // Sprint field
-];
+// All-time snapshot (uploaded daily by .github/workflows/refresh-alltime.yml)
+const ALLTIME_KEY = 'alltime.json';
 
 interface CacheEntry { data: any; ts: number; fetching: boolean; }
 const cache = new Map<string, CacheEntry>();
 
-function mapIssue(issue: any) {
-    const f = issue.fields;
-    // Story points — try both common fields
-    const storyPoints = f[STORY_POINTS_FIELD] ?? f['customfield_10028'] ?? null;
-    // Live build = has a fixVersion with "released: true" or name contains "Live"
-    const fixVersions: any[] = f.fixVersions || [];
-    const isLive = fixVersions.some((v: any) => v.released === true || /live|prod|release/i.test(v.name || ''));
-    const liveVersion = fixVersions.find((v: any) => v.released || /live|prod/i.test(v.name || ''))?.name || null;
-    // Team field (customfield_10001) — Jira returns { id, name, title } or just a string
-    const teamField = f['customfield_10001'];
-    let team: string | null = null;
-    if (teamField) {
-        if (typeof teamField === 'string') team = teamField;
-        else if (typeof teamField === 'object') {
-            team = teamField.name || teamField.title || teamField.displayName || teamField.value || null;
-        }
-    }
+interface AllTimeSnapshot { allTimeBugs: any[]; allTimeAll: any[]; builtAt?: string; total?: number; }
 
-    return {
-        id: issue.id,
-        key: issue.key,
-        url: `${JIRA_BASE}/browse/${issue.key}`,
-        summary: f.summary,
-        issueType: f.issuetype?.name || 'Unknown',
-        status: f.status?.name || 'Unknown',
-        statusCategory: f.status?.statusCategory?.name || 'Unknown',
-        priority: f.priority?.name || 'Medium',
-        assignee: f.assignee ? {
-            accountId: f.assignee.accountId,
-            displayName: f.assignee.displayName,
-            avatarUrl: f.assignee.avatarUrls?.['48x48'],
-        } : null,
-        reporter: f.reporter ? {
-            accountId: f.reporter.accountId,
-            displayName: f.reporter.displayName,
-            avatarUrl: f.reporter.avatarUrls?.['48x48'],
-        } : null,
-        labels: f.labels || [],
-        platform: Array.isArray(f.customfield_10103) ? f.customfield_10103.map((p: any) => p.value).join(', ') : null,
-        environment: Array.isArray(f.customfield_10201) ? f.customfield_10201.join(', ') : null,
-        created: f.created,
-        updated: f.updated,
-        resolutionDate: f.resolutiondate || null,
-        timeSpent: f.timespent || 0,
-        timeEstimate: f.timeoriginalestimate || 0,
-        storyPoints: typeof storyPoints === 'number' ? storyPoints : null,
-        isLive,
-        liveVersion,
-        fixVersions: fixVersions.map((v: any) => ({ name: v.name, released: v.released })),
-        team,  // Team name from customfield_10001
-        isSubTask: f.issuetype?.subtask === true || f.issuetype?.name === 'Sub-task',
-        sprint: (() => {
-            // customfield_10020 can be an array of sprint objects or a single object
-            const sf = f['customfield_10020'];
-            if (!sf) return null;
-            const sprints: any[] = Array.isArray(sf) ? sf : [sf];
-            // Find the active sprint first, then the most recent
-            const active = sprints.find((s: any) => s.state === 'active');
-            const latest = active || sprints[sprints.length - 1];
-            if (!latest) return null;
-            return {
-                id: latest.id,
-                name: latest.name,
-                state: latest.state, // 'active' | 'closed' | 'future'
-                startDate: latest.startDate || null,
-                endDate: latest.endDate || null,
-            };
-        })(),
-    };
+async function loadAllTimeSnapshot(): Promise<AllTimeSnapshot | null> {
+    try {
+        // KV binding — available in the Workers runtime; missing locally/dev/null otherwise.
+        // Stored value is gzip-compressed by scripts/refresh-alltime.ts to stay under KV's 25 MiB cap.
+        const { env } = getCloudflareContext();
+        const kv: any = (env as any)?.ALLTIME_KV;
+        if (!kv) return null;
+        const buf: ArrayBuffer | null = await kv.get(ALLTIME_KEY, 'arrayBuffer');
+        if (!buf) return null;
+        // DecompressionStream is available in the Workers runtime (and polyfilled in node).
+        const ds = new DecompressionStream('gzip');
+        const stream = new Response(buf).body!.pipeThrough(ds);
+        const text = await new Response(stream).text();
+        const snap: AllTimeSnapshot = JSON.parse(text);
+        if (!Array.isArray(snap.allTimeBugs) || !Array.isArray(snap.allTimeAll)) return null;
+        return snap;
+    } catch {
+        return null;
+    }
 }
 
-// Fetch all pages for a given JQL using cursor pagination — no artificial delays
-async function fetchAllPages(jql: string): Promise<any[]> {
-    const all: any[] = [];
-    let nextPageToken: string | null = null;
-    const encodedJql = encodeURIComponent(jql);
-    const fieldsParam = FIELDS.join(',');
-    let attempt = 0;
-
-    while (true) {
-        let url = `${JIRA_BASE}/rest/api/3/search/jql?jql=${encodedJql}&maxResults=500&fields=${fieldsParam}`;
-        if (nextPageToken) url += `&nextPageToken=${encodeURIComponent(nextPageToken)}`;
-
-        const res = await fetch(url, {
-            headers: { Authorization: `Basic ${JIRA_AUTH()}`, Accept: 'application/json' },
-            // No cache on server-side fetch
-            cache: 'no-store',
-        });
-
-        if (!res.ok) {
-            // Retry transient failures; otherwise fail loudly so a truncated
-            // result is never cached as if it were complete.
-            if ((res.status === 429 || res.status >= 500) && attempt < 2) {
-                attempt++;
-                await new Promise(r => setTimeout(r, 500 * attempt));
-                continue;
-            }
-            throw new Error(`[Sync] Jira API HTTP ${res.status} for JQL: ${jql.slice(0, 60)}`);
-        }
-        attempt = 0;
-
-        const data = await res.json();
-        const batch = data.issues || [];
-        all.push(...batch.map(mapIssue));
-
-        if (data.isLast || !data.nextPageToken) break;
-        nextPageToken = data.nextPageToken;
-        // No delay — let Jira rate limit naturally
+function withAllTime(data: any, snap: AllTimeSnapshot | null) {
+    if (!snap) {
+        return { ...data, allTimeFromCache: false };
     }
-
-    return all;
+    return {
+        ...data,
+        allTimeBugs: snap.allTimeBugs,
+        allTimeAll: snap.allTimeAll,
+        allTimeFromCache: true,
+        allTimeUpdatedAt: snap.builtAt || null,
+    };
 }
 
 async function buildFullSync(sprintId?: string) {
@@ -189,9 +98,8 @@ async function buildFullSync(sprintId?: string) {
     console.log(`[Sync] Starting parallel Jira sync... sprint=${resolvedSprintId || 'openSprints()'}`);
 
     // Fetch all issue types in parallel (sprint-scoped only)
-    // Note: the all-time slices were dropped — Cloudflare's free plan caps
-    // subrequests at 50 per invocation and the all-time dataset alone needs
-    // more pages than that. Consumers fall back to sprint data for KPIs.
+    // Live subrequests stay under Cloudflare's free-plan cap (50); the all-time
+    // dataset is fetched outside the worker and served from the R2 snapshot.
     const [bugs, stories, epics, tasks, subtasks] = await Promise.all([
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Bug" ORDER BY created DESC`),
         fetchAllPages(`project = ${PROJECT_KEY} ${sprintClause} AND issuetype = "Story" ORDER BY created DESC`),
@@ -251,8 +159,9 @@ export async function GET(req: NextRequest) {
         // Trigger background refresh if stale and not already fetching
         if (isStale && !entry.fetching) {
             cache.set(key, { ...entry, fetching: true });
-            buildFullSync(sprintId).then(data => {
-                cache.set(key, { data, ts: Date.now(), fetching: false });
+            buildFullSync(sprintId).then(async data => {
+                const snap = await loadAllTimeSnapshot();
+                cache.set(key, { data: withAllTime(data, snap), ts: Date.now(), fetching: false });
                 console.log('[Sync] Background refresh complete');
             }).catch(err => {
                 cache.set(key, { ...entry, fetching: false });
@@ -276,8 +185,10 @@ export async function GET(req: NextRequest) {
 
     try {
         const data = await buildFullSync(sprintId);
-        cache.set(key, { data, ts: now, fetching: false });
-        return NextResponse.json({ ...data, cacheAge: 0, nextRefresh: CACHE_TTL / 1000, fromCache: false });
+        const snap = await loadAllTimeSnapshot();
+        const result = withAllTime(data, snap);
+        cache.set(key, { data: result, ts: now, fetching: false });
+        return NextResponse.json({ ...result, cacheAge: 0, nextRefresh: CACHE_TTL / 1000, fromCache: false });
     } catch (err: any) {
         cache.set(key, { data: null, ts: 0, fetching: false });
         return NextResponse.json({ error: err.message }, { status: 500 });
@@ -294,8 +205,10 @@ export async function POST(req: NextRequest) {
     try {
         cache.set(key, { data: cache.get(key)?.data || null, ts: 0, fetching: true });
         const data = await buildFullSync(sprintId);
-        cache.set(key, { data, ts: Date.now(), fetching: false });
-        return NextResponse.json({ ...data, fromCache: false, forced: true });
+        const snap = await loadAllTimeSnapshot();
+        const result = withAllTime(data, snap);
+        cache.set(key, { data: result, ts: Date.now(), fetching: false });
+        return NextResponse.json({ ...result, fromCache: false, forced: true });
     } catch (err: any) {
         cache.set(key, { data: cache.get(key)?.data || null, ts: 0, fetching: false });
         return NextResponse.json({ error: err.message }, { status: 500 });
