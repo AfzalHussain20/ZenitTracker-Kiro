@@ -4,16 +4,23 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import {
-  Library, Users, BarChart3, ArrowRight, Play, Layers, StickyNote
+  Clock, Shield, Library, Wand2, Users, Bug, FileText,
+  BarChart3, ArrowRight, Zap, TestTube, Layers, StickyNote, BookOpen
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const apps = [
-  { id: 'new-session', name: 'New Session', desc: 'Start a manual testing session', icon: Play, href: '/dashboard/new-session', color: 'text-violet-600 bg-violet-50 dark:bg-violet-500/10 border-violet-200 dark:border-violet-500/20' },
-  { id: 'repository', name: 'Test Repository', desc: 'Managed test case library', icon: Library, href: '/dashboard/repository', color: 'text-green-600 bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/20' },
-  { id: 'jira-kpi', name: 'Jira KPI', desc: 'Advanced Jira analytics & team metrics', icon: BarChart3, href: '/analytics/bugs', color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20' },
-  { id: 'notes', name: 'Daily Notes', desc: 'Quick capture notes with AI titles & tags', icon: StickyNote, href: '/notes', color: 'text-yellow-600 bg-yellow-50 dark:bg-yellow-500/10 border-yellow-200 dark:border-yellow-500/20' },
+  { id: 'sessions', name: 'Test Sessions', desc: 'Execute & track manual testing sessions', icon: TestTube, href: '/dashboard/sessions', color: 'text-violet-600 bg-violet-50 dark:bg-violet-500/10 border-violet-200 dark:border-violet-500/20' },
   { id: 'team', name: 'Team Performance', desc: 'Track team metrics & member activity', icon: Users, href: '/team', color: 'text-blue-600 bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20', leadOnly: true },
+  { id: 'bug-tracker', name: 'Bug Tracker', desc: 'Jira-synced bug dashboard & analytics', icon: Bug, href: '/bugs', color: 'text-red-600 bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20' },
+  { id: 'jira-kpi', name: 'Jira KPI', desc: 'Advanced Jira analytics & team metrics', icon: BarChart3, href: '/analytics/bugs', color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20' },
+  { id: 'wrklog', name: 'Wrklog', desc: 'Track testing time & productivity', icon: Clock, href: '/wrklog', color: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/20' },
+  { id: 'keepr', name: 'Keepr', desc: 'Device check-in & check-out management', icon: Shield, href: '/keepr', color: 'text-cyan-600 bg-cyan-50 dark:bg-cyan-500/10 border-cyan-200 dark:border-cyan-500/20' },
+  { id: 'repository', name: 'Test Repository', desc: 'Managed test case library', icon: Library, href: '/dashboard/repository', color: 'text-green-600 bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/20' },
+  { id: 'clevertap', name: 'CleverTap Tracker', desc: 'Analytics event validation', icon: Wand2, href: '/dashboard/clevertap-tracker', color: 'text-pink-600 bg-pink-50 dark:bg-pink-500/10 border-pink-200 dark:border-pink-500/20' },
+  { id: 'performance', name: 'Performance Lab', desc: 'Device performance monitoring', icon: Zap, href: '/performance', color: 'text-amber-600 bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20' },
+  { id: 'confluence', name: 'Confluence PRDs', desc: 'Browse PRDs, generate test cases with AI', icon: BookOpen, href: '/confluence', color: 'text-blue-600 bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20' },
+  { id: 'notes', name: 'Daily Notes', desc: 'Quick capture notes with AI titles & tags', icon: StickyNote, href: '/notes', color: 'text-yellow-600 bg-yellow-50 dark:bg-yellow-500/10 border-yellow-200 dark:border-yellow-500/20' },
 ];
 
 export default function AppsPage() {
