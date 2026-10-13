@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils';
 
 const apps = [
   { id: 'sessions', name: 'Test Sessions', desc: 'Execute & track manual testing sessions', icon: TestTube, href: '/dashboard/sessions', color: 'text-violet-600 bg-violet-50 dark:bg-violet-500/10 border-violet-200 dark:border-violet-500/20' },
-  { id: 'team', name: 'Team Performance', desc: 'Track team metrics & member activity', icon: Users, href: '/team', color: 'text-blue-600 bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20', leadOnly: true },
+  { id: 'team', name: 'Leads Portal', desc: 'Team worklogs, compliance & test reports', icon: Users, href: '/team', color: 'text-blue-600 bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20', leadOnly: true },
   { id: 'bug-tracker', name: 'Bug Tracker', desc: 'Jira-synced bug dashboard & analytics', icon: Bug, href: '/bugs', color: 'text-red-600 bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20' },
   { id: 'jira-kpi', name: 'Jira KPI', desc: 'Advanced Jira analytics & team metrics', icon: BarChart3, href: '/analytics/bugs', color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20' },
   { id: 'wrklog', name: 'Wrklog', desc: 'Track testing time & productivity', icon: Clock, href: '/wrklog', color: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/20' },

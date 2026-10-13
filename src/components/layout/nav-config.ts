@@ -50,7 +50,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Workspace',
     items: [
       { title: 'Notes', href: '/notes', icon: StickyNote },
-      { title: 'Team', href: '/team', icon: Users, leadOnly: true },
+      { title: 'Leads Portal', href: '/team', icon: Users, leadOnly: true },
     ],
   },
   {
