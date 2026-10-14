@@ -36,22 +36,37 @@ export default function PublicReportPage() {
     if (!sessionId) return;
     (async () => {
       setLoading(true);
+      setError(null);
       try {
-        let ref = doc(db, 'sessions', sessionId);
-        let snap = await getDoc(ref);
-        if (!snap.exists()) { ref = doc(db, 'testSessions', sessionId); snap = await getDoc(ref); }
-        if (snap.exists()) {
-          const data = snap.data();
+        // A session may live in either collection (current `sessions` vs legacy
+        // `testSessions`). Read each independently: a getDoc for a document that
+        // does not exist is rejected by the security rules, so a failure on the
+        // first collection must not prevent the second from being attempted.
+        let data: any = null;
+        let id = sessionId;
+        let denied = false;
+        for (const col of ['sessions', 'testSessions'] as const) {
+          try {
+            const snap = await getDoc(doc(db, col, sessionId));
+            if (snap.exists()) { data = snap.data(); id = snap.id; break; }
+          } catch (e: any) {
+            if (e?.code === 'permission-denied') denied = true;
+          }
+        }
+        if (data) {
           setSession({
-            id: snap.id, ...data,
+            id, ...data,
             createdAt: getValidDate(data.createdAt),
             completedAt: getValidDate(data.completedAt),
             testCases: (data.testCases || []).map((tc: any) => ({ ...tc, lastModified: getValidDate(tc.lastModified) }))
           } as TestSession);
-        } else { setError('Report not found'); }
-      } catch (e: any) {
-        const msg = e?.code === 'permission-denied' ? 'This report is not publicly available yet. Only completed sessions can be shared.' : 'Failed to load report';
-        setError(msg);
+        } else if (denied) {
+          setError('This report is not publicly available yet. Only completed sessions can be shared.');
+        } else {
+          setError('Report not found');
+        }
+      } catch {
+        setError('Failed to load report');
       }
       finally { setLoading(false); }
     })();

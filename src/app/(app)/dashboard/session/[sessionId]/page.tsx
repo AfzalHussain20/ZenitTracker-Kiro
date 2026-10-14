@@ -331,12 +331,20 @@ export default function TestSessionPage() {
     (async () => {
       setIsLoading(true);
       try {
-        // Locate the session in either collection (legacy `testSessions` vs `sessions`).
-        let ref = doc(db, 'sessions', sessionId);
-        let snap = await getDoc(ref);
-        if (!snap.exists()) { ref = doc(db, 'testSessions', sessionId); snap = await getDoc(ref); }
+        // Locate the session in either collection (current `sessions` vs legacy
+        // `testSessions`). Read each independently because getDoc for a missing
+        // document is rejected by the rules and must not abort the fallback.
+        let ref: any = null;
+        let snap: any = null;
+        for (const col of ['sessions', 'testSessions'] as const) {
+          try {
+            const r = doc(db, col, sessionId);
+            const s = await getDoc(r);
+            if (s.exists()) { ref = r; snap = s; break; }
+          } catch { /* denied / missing — try the next collection */ }
+        }
         if (cancelled) return;
-        if (!snap.exists() || !canAccessSession(snap.data(), { uid: user.uid, isLead: userRole === 'lead' })) {
+        if (!snap || !snap.exists() || !canAccessSession(snap.data(), { uid: user.uid, isLead: userRole === 'lead' })) {
           router.replace('/dashboard'); return;
         }
         setSessionCollection(ref.path.startsWith('sessions/') ? 'sessions' : 'testSessions');

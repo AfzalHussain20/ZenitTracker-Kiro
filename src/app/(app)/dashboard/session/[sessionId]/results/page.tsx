@@ -80,13 +80,19 @@ export default function TestSessionResultPage() {
     (async () => {
       setLoading(true);
       try {
-        let ref = doc(db, 'sessions', sessionId);
-        let snap = await getDoc(ref);
-        if (!snap.exists()) { ref = doc(db, 'testSessions', sessionId); snap = await getDoc(ref); }
-        if (snap.exists()) {
-          const data = snap.data();
+        // Read both collections independently: a getDoc for a missing document is
+        // rejected by the security rules and must not abort the other collection.
+        let data: any = null;
+        let id = sessionId;
+        for (const col of ['sessions', 'testSessions'] as const) {
+          try {
+            const snap = await getDoc(doc(db, col, sessionId));
+            if (snap.exists()) { data = snap.data(); id = snap.id; break; }
+          } catch { /* denied / missing — try the next collection */ }
+        }
+        if (data) {
           setSession({
-            id: snap.id, ...data,
+            id, ...data,
             createdAt: getValidDate(data.createdAt),
             completedAt: getValidDate(data.completedAt),
             testCases: (data.testCases || []).map((tc: any) => ({ ...tc, lastModified: getValidDate(tc.lastModified) }))
