@@ -42,6 +42,11 @@ export interface TestCase {
   lastModified: Date | Timestamp;
   priority?: "High" | "Medium" | "Low";
   platform?: string;
+  // Multi-tester collaboration (added for shared sessions)
+  assignedToUid?: string | null; // Tester this case is assigned/claimed by
+  assignedToName?: string | null;
+  executedByUid?: string | null; // Tester who actually marked the verdict
+  executedByName?: string | null;
 }
 
 export interface TestSession {
@@ -50,6 +55,9 @@ export interface TestSession {
   userName: string; // Name of the tester
   platformDetails: PlatformDetails;
   testCases: TestCase[]; // Test cases are now an array within the session document
+  // Shared-session membership: testers invited by the owner/lead who may run cases.
+  testerIds?: string[];
+  testers?: { uid: string; name: string }[];
   status: "In Progress" | "Completed" | "Aborted";
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;

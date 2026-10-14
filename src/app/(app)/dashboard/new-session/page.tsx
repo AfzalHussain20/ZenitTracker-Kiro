@@ -140,6 +140,7 @@ export default function NewTestSessionPage() {
         id: sessionRef.id, userId: user.uid,
         userName: displayName || user.email?.split('@')[0] || 'Tester',
         platformDetails, testCases: testCasesWithIds, status: 'In Progress',
+        testerIds: [], testers: [],
         createdAt: now, updatedAt: now,
         summary: { total: testCasesWithIds.length, pass: 0, fail: 0, na: 0, untested: testCasesWithIds.length, failKnown: 0 },
       };

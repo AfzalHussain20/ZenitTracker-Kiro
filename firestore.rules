@@ -3,7 +3,28 @@ service cloud.firestore {
   match /databases/{database}/documents {
     
     function isLead() {
-        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lead';
+        return request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lead';
+    }
+
+    // True when the caller is an invited tester on this session.
+    function isSessionTester() {
+        return request.auth != null
+            && request.auth.uid in resource.data.get('testerIds', []);
+    }
+
+    // Owner, invited tester, or lead may read; anyone (guest) may read a shared,
+    // finished session so the public /report/{id} link works without login.
+    function canReadSharedSession() {
+        return (request.auth != null && (request.auth.uid == resource.data.userId || isSessionTester() || isLead()))
+            || resource.data.status == 'Completed'
+            || resource.data.status == 'Aborted';
+    }
+
+    // Owner, invited tester, or lead may update an in-progress session.
+    // Owner-only for create/delete; anyone (incl. guests) can read finished sessions.
+    function canWriteSession() {
+        return request.auth != null
+            && (request.auth.uid == resource.data.userId || isSessionTester() || isLead());
     }
 
     match /users/{userId} {
@@ -12,13 +33,15 @@ service cloud.firestore {
     }
     
     match /testSessions/{sessionId} {
-      allow read: if request.auth.uid == resource.data.userId || isLead();
-      allow create, update, delete: if request.auth.uid == request.resource.data.userId;
+      allow read: if canReadSharedSession();
+      allow create, delete: if request.auth.uid == request.resource.data.userId;
+      allow update: if canWriteSession();
     }
 
     match /sessions/{sessionId} {
-      allow read: if request.auth.uid == resource.data.userId || isLead();
-      allow create, update, delete: if request.auth.uid == request.resource.data.userId;
+      allow read: if canReadSharedSession();
+      allow create, delete: if request.auth.uid == request.resource.data.userId;
+      allow update: if canWriteSession();
     }
 
     match /managedTestCases/{testCaseId} {

@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import type { TestSession, TestCase } from '@/types';
 import { db } from '@/lib/firebaseConfig';
-import { doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, onSnapshot, runTransaction } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -15,7 +15,7 @@ import {
   CheckCircle2, XCircle, ChevronLeft, ChevronRight,
   Menu, X, Loader2, Search, Bug, ExternalLink,
   ArrowRight, Zap, ListChecks, Target, Keyboard,
-  SkipForward, Clock, Plus
+  SkipForward, Clock, Plus, Users
 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
@@ -26,6 +26,13 @@ import {
 } from '@/components/ui/select';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { SessionTeamDialog } from '@/components/session/SessionTeamDialog';
+import {
+  buildAssignRangePatch, buildUnassignRangePatch, buildCasePatch,
+  canAccessSession, computeSummary, findNextUnassigned, isSessionOwner,
+  mergeTesters, parseSessionDoc, removeTester, splitEvenRanges,
+  type SessionTester,
+} from '@/lib/session-collab';
 
 const naReasonOptions = [
   "Content not available in this region/language",
@@ -126,7 +133,7 @@ export default function TestSessionPage() {
   const params = useParams();
   const router = useRouter();
   const sessionId = params.sessionId as string;
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, userRole, displayName: authDisplayName } = useAuth();
   const { toast } = useToast();
 
   const [session, setSession] = useState<TestSession | null>(null);
@@ -135,8 +142,10 @@ export default function TestSessionPage() {
   const [showEntrance, setShowEntrance] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [teamOpen, setTeamOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [assigneeFilter, setAssigneeFilter] = useState<'all' | 'mine' | 'unassigned'>('all');
   const [failOpen, setFailOpen] = useState(false);
   const [naOpen, setNaOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
@@ -191,12 +200,26 @@ export default function TestSessionPage() {
     return map;
   }, [session]);
 
+  // Identity / permissions for shared-session collaboration.
+  const myUid = user?.uid || '';
+  const myName = myUid && session?.userId === myUid
+    ? session.userName
+    : (user?.displayName || authDisplayName || user?.email?.split('@')[0] || 'Tester');
+  const canManage = !!session && (isSessionOwner(session, myUid) || userRole === 'lead');
+
+  const matchesAssignee = useCallback((t: TestCase) => {
+    if (assigneeFilter === 'mine') return t.assignedToUid === myUid;
+    if (assigneeFilter === 'unassigned') return !t.assignedToUid;
+    return true;
+  }, [assigneeFilter, myUid]);
+
   const drawerGroups = useMemo(() => {
     if (!drawerOpen) return [] as { bed: string; cases: TestCase[] }[];
     const q = searchQuery.toLowerCase();
     const byBed = new Map<string, TestCase[]>();
     for (const t of session?.testCases ?? []) {
       if (q && !(t.testCaseTitle || '').toLowerCase().includes(q)) continue;
+      if (!matchesAssignee(t)) continue;
       if (filterStatus !== 'all') {
         if (filterStatus === 'fail') { if (!t.status?.includes('Fail')) continue; }
         else if (t.status !== filterStatus) continue;
@@ -207,7 +230,7 @@ export default function TestSessionPage() {
       else byBed.set(bed, [t]);
     }
     return Array.from(byBed.entries()).map(([bed, cases]) => ({ bed, cases }));
-  }, [drawerOpen, session, searchQuery, filterStatus]);
+  }, [drawerOpen, session, searchQuery, filterStatus, matchesAssignee]);
 
   // Fetch ALL Jira data from single endpoint when form opens
   useEffect(() => {
@@ -299,34 +322,39 @@ export default function TestSessionPage() {
     return () => clearTimeout(t);
   }, []);
 
-  // Load session
+  // Load session + live sync for shared (multi-tester) sessions.
   useEffect(() => {
     if (authLoading) return; // Wait for auth to resolve
     if (!sessionId || !user) { router.replace('/dashboard'); return; }
+    let cancelled = false;
+    let unsub: (() => void) | null = null;
     (async () => {
       setIsLoading(true);
       try {
+        // Locate the session in either collection (legacy `testSessions` vs `sessions`).
         let ref = doc(db, 'sessions', sessionId);
         let snap = await getDoc(ref);
         if (!snap.exists()) { ref = doc(db, 'testSessions', sessionId); snap = await getDoc(ref); }
-        if (!snap.exists() || snap.data()?.userId !== user.uid) { router.replace('/dashboard'); return; }
+        if (cancelled) return;
+        if (!snap.exists() || !canAccessSession(snap.data(), { uid: user.uid, isLead: userRole === 'lead' })) {
+          router.replace('/dashboard'); return;
+        }
         setSessionCollection(ref.path.startsWith('sessions/') ? 'sessions' : 'testSessions');
-        const data = snap.data();
-        const parsed: TestSession = {
-          id: snap.id, ...data,
-          createdAt: (data.createdAt as Timestamp)?.toDate?.() ?? new Date(),
-          testCases: (data.testCases || []).map((tc: any) => ({
-            ...tc, lastModified: (tc.lastModified as Timestamp)?.toDate?.() ?? new Date()
-          }))
-        } as TestSession;
+        const parsed = parseSessionDoc(snap.id, snap.data());
         if (parsed.status === 'Completed') { router.replace(`/dashboard/session/${sessionId}/results`); return; }
         setSession(parsed);
         const first = parsed.testCases.findIndex(tc => tc.status === 'Untested');
         setCurrentIndex(first !== -1 ? first : 0);
+
+        // Live sync: other testers' verdicts/claims appear without a refresh.
+        unsub = onSnapshot(ref, s => {
+          if (s.exists()) setSession(parseSessionDoc(s.id, s.data()));
+        }, () => {});
       } catch { toast({ title: 'Error', description: 'Failed to load session.', variant: 'destructive' }); }
-      finally { setIsLoading(false); }
+      finally { if (!cancelled) setIsLoading(false); }
     })();
-  }, [sessionId, user, authLoading, router, toast]);
+    return () => { cancelled = true; if (unsub) unsub(); };
+  }, [sessionId, user, authLoading, userRole, router, toast]);
 
   // Reset on index change
   useEffect(() => {
@@ -334,13 +362,105 @@ export default function TestSessionPage() {
     setBugId(''); setLinkedBugs([]); setBugDesc(''); setNaReason('');
   }, [currentIndex]);
 
-  // Firestore sync
+  // Firestore sync (session-level fields: status, testers, …)
   const handleUpdate = useCallback(async (data: Partial<TestSession>) => {
     try {
       await updateDoc(doc(db, sessionCollection, sessionId), JSON.parse(JSON.stringify(data)));
       setSession(prev => prev ? { ...prev, ...data, updatedAt: new Date() } as TestSession : null);
     } catch { toast({ title: 'Sync Error', description: 'Cloud save failed.', variant: 'destructive' }); }
   }, [sessionId, sessionCollection, toast]);
+
+  // Atomic per-case write. Never rewrites the whole array, so concurrent testers
+  // editing different cases don't clobber each other. `onSnapshot` reconciles.
+  const writeCasePatch = useCallback(async (index: number, patch: Partial<TestCase>) => {
+    const merged = session ? [...session.testCases] : [];
+    if (merged[index]) merged[index] = { ...merged[index], ...patch } as TestCase;
+    const payload: Record<string, unknown> = {
+      ...buildCasePatch(index, patch),
+      summary: computeSummary(merged),
+      updatedAt: new Date(),
+    };
+    try {
+      await updateDoc(doc(db, sessionCollection, sessionId), payload as any);
+      setSession(prev => {
+        if (!prev) return prev;
+        const cases = [...prev.testCases];
+        if (cases[index]) cases[index] = { ...cases[index], ...patch } as TestCase;
+        return { ...prev, testCases: cases, summary: computeSummary(cases), updatedAt: new Date() };
+      });
+    } catch { toast({ title: 'Sync Error', description: 'Cloud save failed.', variant: 'destructive' }); }
+  }, [session, sessionCollection, sessionId, toast]);
+
+  // Claim a case inside a transaction so two testers can't grab the same one.
+  const claimCase = useCallback(async (index: number) => {
+    if (!user) return false;
+    const ref = doc(db, sessionCollection, sessionId);
+    try {
+      await runTransaction(db, async tx => {
+        const snap = await tx.get(ref);
+        const cases = (snap.data()?.testCases || []) as TestCase[];
+        const c = cases[index];
+        if (!c) return;
+        if (c.assignedToUid && c.assignedToUid !== user.uid) {
+          throw new Error(`Already claimed by ${c.assignedToName || 'another tester'}`);
+        }
+        if (c.assignedToUid === user.uid) return;
+        tx.update(ref, buildCasePatch(index, { assignedToUid: user.uid, assignedToName: myName }) as any);
+      });
+      return true;
+    } catch (e: any) {
+      toast({ title: 'Cannot claim', description: e.message, variant: 'destructive' });
+      return false;
+    }
+  }, [user, sessionCollection, sessionId, myName, toast]);
+
+  const claimNext = useCallback(async () => {
+    if (!session) return;
+    const idx = findNextUnassigned(session.testCases, currentIndex);
+    if (idx === -1) { toast({ title: 'Nothing to claim', description: 'Every case is assigned.' }); return; }
+    if (await claimCase(idx)) setCurrentIndex(idx);
+  }, [session, currentIndex, claimCase, toast]);
+
+  const assignRange = useCallback(async (start: number, end: number, tester: SessionTester) => {
+    if (!session) return;
+    try {
+      await updateDoc(doc(db, sessionCollection, sessionId),
+        buildAssignRangePatch(start - 1, end - 1, tester, session.testCases.length) as any);
+      toast({ title: `Assigned ${start}–${end} to ${tester.name}` });
+    } catch { toast({ title: 'Sync Error', description: 'Could not assign cases.', variant: 'destructive' }); }
+  }, [session, sessionCollection, sessionId, toast]);
+
+  const unassignRange = useCallback(async (start: number, end: number) => {
+    if (!session) return;
+    try {
+      await updateDoc(doc(db, sessionCollection, sessionId),
+        buildUnassignRangePatch(start - 1, end - 1, session.testCases.length) as any);
+    } catch { toast({ title: 'Sync Error', description: 'Could not clear assignment.', variant: 'destructive' }); }
+  }, [session, sessionCollection, sessionId, toast]);
+
+  const evenSplit = useCallback(async () => {
+    if (!session) return;
+    const participants = mergeTesters([{ uid: session.userId, name: session.userName }], session.testers || []);
+    const ranges = splitEvenRanges(session.testCases.length, participants.length);
+    const patch: Record<string, unknown> = {};
+    ranges.forEach((r, i) => Object.assign(patch, buildAssignRangePatch(r.start, r.end, participants[i], session.testCases.length)));
+    try {
+      await updateDoc(doc(db, sessionCollection, sessionId), patch as any);
+      toast({ title: `Split across ${participants.length} tester${participants.length === 1 ? '' : 's'}` });
+    } catch { toast({ title: 'Sync Error', description: 'Could not distribute cases.', variant: 'destructive' }); }
+  }, [session, sessionCollection, sessionId, toast]);
+
+  const inviteTester = useCallback(async (tester: SessionTester) => {
+    if (!session) return;
+    const testers = mergeTesters(session.testers, [tester]);
+    await handleUpdate({ testers, testerIds: testers.map(t => t.uid) });
+  }, [session, handleUpdate]);
+
+  const removeTesterCb = useCallback(async (uid: string) => {
+    if (!session) return;
+    const testers = removeTester(session.testers, uid);
+    await handleUpdate({ testers, testerIds: testers.map(t => t.uid) });
+  }, [session, handleUpdate]);
 
   const handleComplete = async (reason?: string) => {
     if (!session) return;
@@ -352,7 +472,7 @@ export default function TestSessionPage() {
     router.replace(`/dashboard/session/${sessionId}/results`);
   };
 
-  // Mark verdict — with double-click guard
+  // Mark verdict — writes only this case's fields (concurrency-safe).
   const [isMarking, setIsMarking] = useState(false);
   const markStatus = useCallback(async (base: 'Pass' | 'Fail' | 'N/A', details?: any) => {
     if (!session || isMarking) return;
@@ -364,32 +484,26 @@ export default function TestSessionPage() {
     // Brief success toast for Pass
     if (base === 'Pass') toast({ title: '✓ Passed' });
 
-    // Save any pending actual result before marking
-    const updated = [...session.testCases];
-    updated[currentIndex] = {
-      ...currentTc, status: base, lastModified: new Date(),
-      bugId: details?.bugId || null, bugTitle: details?.bugTitle || null,
+    const patch: Partial<TestCase> = {
+      status: base,
+      lastModified: new Date(),
+      bugId: details?.bugId || null,
+      bugTitle: details?.bugTitle || null,
       linkedBugs: details?.linkedBugs || [],
       naReason: details?.naReason || null,
       notes: details?.bugDesc ? (currentTc.notes || '') + `\nBug: ${details.bugDesc}` : currentTc.notes,
       actualResult: base === 'Pass' ? currentTc.expectedResult : (currentTc.actualResult || ''),
+      executedByUid: myUid || null,
+      executedByName: myName,
     };
-    const summary = {
-      pass: updated.filter(t => t.status === 'Pass').length,
-      fail: updated.filter(t => t.status === 'Fail' || t.status === 'Fail (Known)').length,
-      failKnown: updated.filter(t => t.status === 'Fail (Known)').length,
-      na: updated.filter(t => t.status === 'N/A').length,
-      untested: updated.filter(t => t.status === 'Untested').length,
-      total: updated.length,
-    };
-    await handleUpdate({ testCases: updated, summary, updatedAt: new Date() });
+    await writeCasePatch(currentIndex, patch);
     setTimeout(() => {
-      if (currentIndex < updated.length - 1) setCurrentIndex(i => i + 1);
+      if (currentIndex < session.testCases.length - 1) setCurrentIndex(i => i + 1);
       else setCompleteOpen(true);
       setIsMarking(false);
     }, 300);
     setFailOpen(false); setNaOpen(false);
-  }, [session, currentIndex, handleUpdate, isMarking]);
+  }, [session, currentIndex, writeCasePatch, isMarking, toast, myUid, myName]);
 
   // Keyboard shortcuts — FIXED: preventDefault BEFORE action, check anyDialogOpen
   useEffect(() => {
@@ -429,12 +543,8 @@ export default function TestSessionPage() {
 
   const commitActual = useCallback((value: string) => {
     if (!session) return;
-    const updated = [...session.testCases];
-    const current = updated[currentIndex];
-    if (!current) return;
-    updated[currentIndex] = { ...current, actualResult: value };
-    handleUpdate({ testCases: updated });
-  }, [session, currentIndex, handleUpdate]);
+    writeCasePatch(currentIndex, { actualResult: value });
+  }, [session, currentIndex, writeCasePatch]);
 
   // Loading state
   if (isLoading || authLoading) return (
@@ -544,6 +654,15 @@ export default function TestSessionPage() {
         </div>
 
         <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={() => setTeamOpen(true)}
+            className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted relative">
+            <Users className="w-4 h-4" />
+            {((session.testers?.length || 0) + 1) > 1 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-primary text-white text-[9px] font-bold flex items-center justify-center">
+                {(session.testers?.length || 0) + 1}
+              </span>
+            )}
+          </Button>
           <Button variant="ghost" size="icon" onClick={() => setShowShortcuts(s => !s)}
             className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted hidden sm:flex">
             <Keyboard className="w-3.5 h-3.5" />
@@ -605,6 +724,19 @@ export default function TestSessionPage() {
                   )}
                   {tc?.testBed && (
                     <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-md border border-border">{tc.testBed}</span>
+                  )}
+                  {tc?.assignedToName ? (
+                    <span className={cn('text-[10px] px-2 py-0.5 rounded-md border flex items-center gap-1',
+                      tc.assignedToUid === myUid
+                        ? 'bg-primary/5 text-primary border-primary/20'
+                        : 'bg-muted text-muted-foreground border-border')}>
+                      <Users className="w-2.5 h-2.5" />{tc.assignedToUid === myUid ? 'You' : tc.assignedToName}
+                    </span>
+                  ) : (
+                    <button onClick={() => claimCase(currentIndex)}
+                      className="text-[10px] px-2 py-0.5 rounded-md border border-dashed border-border text-muted-foreground hover:text-primary hover:border-primary/40 flex items-center gap-1 transition-colors">
+                      <Users className="w-2.5 h-2.5" />Claim
+                    </button>
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -755,6 +887,19 @@ export default function TestSessionPage() {
                     className={cn('text-[10px] font-semibold px-2.5 py-1 rounded-md transition-colors',
                       filterStatus === f.key ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted')}>
                     {f.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-1 px-3 py-2 border-b border-border">
+                {([
+                  { key: 'all', label: 'Everyone' },
+                  { key: 'mine', label: 'Assigned to me' },
+                  { key: 'unassigned', label: 'Unassigned' },
+                ] as const).map(f => (
+                  <button key={f.key} onClick={() => setAssigneeFilter(f.key)}
+                    className={cn('text-[10px] font-semibold px-2.5 py-1 rounded-md transition-colors flex items-center gap-1',
+                      assigneeFilter === f.key ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted')}>
+                    {f.key !== 'all' && <Users className="w-2.5 h-2.5" />}{f.label}
                   </button>
                 ))}
               </div>
@@ -1161,6 +1306,23 @@ export default function TestSessionPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ─── Session Team (invite / assign / claim) ─── */}
+      <SessionTeamDialog
+        open={teamOpen}
+        onOpenChange={setTeamOpen}
+        testers={session.testers || []}
+        cases={session.testCases}
+        currentUid={myUid}
+        currentName={myName}
+        canManage={canManage}
+        onInvite={inviteTester}
+        onRemove={removeTesterCb}
+        onAssignRange={assignRange}
+        onUnassignRange={unassignRange}
+        onEvenSplit={evenSplit}
+        onClaimNext={claimNext}
+      />
     </div>
   );
 }
