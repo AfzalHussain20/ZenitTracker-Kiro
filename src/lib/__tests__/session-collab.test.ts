@@ -1,7 +1,7 @@
 import {
   buildAssignRangePatch, buildCasePatch, buildUnassignRangePatch,
   canAccessSession, computeSummary, countAssigned, findNextUnassigned,
-  isSessionOwner, mergeTesters, normalizeCases, parseSessionDoc, removeTester, splitEvenRanges,
+  findResumeIndex, isSessionOwner, mergeTesters, normalizeCases, parseSessionDoc, removeTester, splitEvenRanges,
 } from '../session-collab';
 import type { TestCase } from '@/types';
 
@@ -188,6 +188,35 @@ describe('session-collab', () => {
       expect(Array.isArray(parsed.testCases)).toBe(true);
       expect(parsed.testCases).toHaveLength(1);
       expect(parsed.testCases[0].id).toBe('5');
+    });
+  });
+
+  describe('findResumeIndex', () => {
+    const d = (t: number) => new Date(2026, 0, 1, 0, 0, t);
+    it('returns the first untested case for a fresh session', () => {
+      const cases = [tc(), tc(), tc()];
+      expect(findResumeIndex(cases)).toBe(0);
+    });
+    it('resumes after the most recently executed case (mid-suite start)', () => {
+      const cases = Array.from({ length: 10 }, (_, i) => tc({ orderIndex: i }));
+      cases[0].status = 'Pass'; cases[0].lastModified = d(1);
+      cases[3].status = 'Pass'; cases[3].lastModified = d(5);
+      cases[4].status = 'Fail'; cases[4].lastModified = d(9);
+      // untested 1,2 and 5..9 remain; last executed is 4 -> resume at 5
+      expect(findResumeIndex(cases)).toBe(5);
+    });
+    it('wraps to the first untested when the tail is all executed', () => {
+      const cases = Array.from({ length: 4 }, (_, i) => tc({ orderIndex: i }));
+      cases[1].status = 'Pass'; cases[1].lastModified = d(3);
+      cases[2].status = 'Pass'; cases[2].lastModified = d(4);
+      cases[3].status = 'Pass'; cases[3].lastModified = d(5);
+      expect(findResumeIndex(cases)).toBe(0);
+    });
+    it('handles empty and all-executed lists', () => {
+      expect(findResumeIndex([])).toBe(0);
+      expect(findResumeIndex(null)).toBe(0);
+      const done = Array.from({ length: 3 }, (_, i) => tc({ orderIndex: i, status: 'Pass', lastModified: d(i) }));
+      expect(findResumeIndex(done)).toBe(2);
     });
   });
 });

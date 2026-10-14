@@ -29,8 +29,8 @@ import { cn } from '@/lib/utils';
 import { SessionTeamDialog } from '@/components/session/SessionTeamDialog';
 import {
   buildAssignRangePatch, buildUnassignRangePatch, buildCasePatch,
-  canAccessSession, computeSummary, findNextUnassigned, isSessionOwner,
-  mergeTesters, parseSessionDoc, removeTester, splitEvenRanges,
+  canAccessSession, computeSummary, findNextUnassigned, findResumeIndex,
+  isSessionOwner, mergeTesters, parseSessionDoc, removeTester, splitEvenRanges,
   type SessionTester,
 } from '@/lib/session-collab';
 
@@ -128,6 +128,27 @@ const ActualField = memo(function ActualField({ value, onCommit }: { value: stri
 });
 
 // ─── Main Component ──────────────────────────────────────────────────────────
+
+/**
+ * Resolve a session's test cases into a full array. Normal sessions store an
+ * array; a few anomalous/legacy sessions store only results as a map keyed by
+ * `orderIndex`, with the case definitions in a `testSuites` doc. For those we
+ * ask the public report endpoint (which joins suite + results) so the runner
+ * still shows every case instead of just the executed ones.
+ */
+async function resolveCases(id: string, rawData: any): Promise<TestCase[]> {
+  if (Array.isArray(rawData?.testCases)) return parseSessionDoc(id, rawData).testCases;
+  try {
+    const res = await fetch(`/api/public/report/${encodeURIComponent(id)}`, { cache: 'no-store' });
+    if (res.ok) {
+      const json = await res.json();
+      if (Array.isArray(json?.session?.testCases) && json.session.testCases.length) {
+        return parseSessionDoc(id, json.session).testCases;
+      }
+    }
+  } catch { /* fall through to the (partial) local shape */ }
+  return parseSessionDoc(id, rawData).testCases;
+}
 
 export default function TestSessionPage() {
   const params = useParams();
@@ -350,13 +371,17 @@ export default function TestSessionPage() {
         setSessionCollection(ref.path.startsWith('sessions/') ? 'sessions' : 'testSessions');
         const parsed = parseSessionDoc(snap.id, snap.data());
         if (parsed.status === 'Completed') { router.replace(`/dashboard/session/${sessionId}/results`); return; }
+        parsed.testCases = await resolveCases(snap.id, snap.data());
+        if (cancelled) return;
         setSession(parsed);
-        const first = parsed.testCases.findIndex(tc => tc.status === 'Untested');
-        setCurrentIndex(first !== -1 ? first : 0);
+        setCurrentIndex(findResumeIndex(parsed.testCases));
 
         // Live sync: other testers' verdicts/claims appear without a refresh.
         unsub = onSnapshot(ref, s => {
-          if (s.exists()) setSession(parseSessionDoc(s.id, s.data()));
+          if (!s.exists()) return;
+          const d: any = s.data();
+          if (Array.isArray(d.testCases)) setSession(parseSessionDoc(s.id, d));
+          else setSession(prev => prev ? { ...parseSessionDoc(s.id, d), testCases: prev.testCases } : prev);
         }, () => {});
       } catch { toast({ title: 'Error', description: 'Failed to load session.', variant: 'destructive' }); }
       finally { if (!cancelled) setIsLoading(false); }

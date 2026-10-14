@@ -189,6 +189,35 @@ export function splitEvenRanges(count: number, parts: number): { start: number; 
   return ranges;
 }
 
+/**
+ * Index to resume a session at so "Continue" lands where the tester left off
+ * rather than at case 1. Returns the first untested case *after* the most
+ * recently executed one (testers often start mid-suite, e.g. an assigned
+ * range), falling back to the first untested case anywhere, then 0.
+ */
+export function findResumeIndex(cases: TestCase[] | undefined | null): number {
+  if (!cases || cases.length === 0) return 0;
+  const isUntested = (tc: TestCase | undefined) => !tc || !tc.status || tc.status === 'Untested';
+
+  let lastExecuted = -1;
+  let lastTime = -Infinity;
+  for (let i = 0; i < cases.length; i++) {
+    if (isUntested(cases[i])) continue;
+    const lm: any = cases[i].lastModified;
+    const t = lm instanceof Date ? lm.getTime() : (lm?.getTime?.() ?? (lm ? new Date(lm).getTime() : 0)) || 0;
+    if (t >= lastTime) { lastTime = t; lastExecuted = i; }
+  }
+  if (lastExecuted === -1) {
+    const first = cases.findIndex(isUntested);
+    return first !== -1 ? first : 0;
+  }
+  for (let i = lastExecuted + 1; i < cases.length; i++) {
+    if (isUntested(cases[i])) return i;
+  }
+  const anyUntested = cases.findIndex(isUntested);
+  return anyUntested !== -1 ? anyUntested : lastExecuted;
+}
+
 /** First unassigned case index at/after `fromIndex` (wraps once), else -1. */
 export function findNextUnassigned(cases: TestCase[], fromIndex = 0): number {
   const n = cases.length;
