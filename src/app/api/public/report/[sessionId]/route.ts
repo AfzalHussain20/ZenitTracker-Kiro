@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchSessionById } from '@/lib/server/firestore-rest';
+import { fetchSessionById, fetchSuiteMatchingTotal, mergeSuiteResults } from '@/lib/server/firestore-rest';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +17,22 @@ export async function GET(_req: Request, { params }: { params: Promise<{ session
     if (!session) {
       return NextResponse.json({ error: 'not_found' }, { status: 404 });
     }
+
+    // Some legacy sessions store only results as a map keyed by case orderIndex,
+    // with the case definitions living in a `testSuites` document. Recover the
+    // definitions so the report can render titles/steps/expected results.
+    const cases = session.testCases;
+    if (cases && !Array.isArray(cases) && typeof cases === 'object') {
+      const total = Number(session.summary?.total) || Object.keys(cases).length;
+      let suite: Record<string, any> | null = null;
+      try {
+        suite = total ? await fetchSuiteMatchingTotal(total, session.platformDetails?.platformName) : null;
+      } catch { /* enrichment is best-effort */ }
+      session.testCases = mergeSuiteResults(suite?.testCases, cases);
+    } else if (!Array.isArray(cases)) {
+      session.testCases = [];
+    }
+
     return NextResponse.json(
       { session },
       { headers: { 'Cache-Control': 'no-store' } },

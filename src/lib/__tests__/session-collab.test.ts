@@ -1,7 +1,7 @@
 import {
   buildAssignRangePatch, buildCasePatch, buildUnassignRangePatch,
   canAccessSession, computeSummary, countAssigned, findNextUnassigned,
-  isSessionOwner, mergeTesters, removeTester, splitEvenRanges,
+  isSessionOwner, mergeTesters, normalizeCases, parseSessionDoc, removeTester, splitEvenRanges,
 } from '../session-collab';
 import type { TestCase } from '@/types';
 
@@ -149,6 +149,45 @@ describe('session-collab', () => {
       const cases = [tc({ assignedToUid: 'a' }), tc({ assignedToUid: 'a' }), tc({ assignedToUid: null }), tc()];
       expect(countAssigned(cases, 'a')).toBe(2);
       expect(countAssigned(cases, null)).toBe(2);
+    });
+  });
+
+  describe('normalizeCases', () => {
+    it('passes an array through and dates lastModified', () => {
+      const out = normalizeCases([{ id: 'x', testCaseTitle: 'T', lastModified: '2026-01-02T00:00:00Z' }]);
+      expect(out).toHaveLength(1);
+      expect(out[0].id).toBe('x');
+      expect(out[0].lastModified).toBeInstanceOf(Date);
+    });
+
+    it('converts a results map keyed by orderIndex into a sorted array', () => {
+      const out = normalizeCases({
+        '101': { status: 'Pass', actualResult: 'b' },
+        '100': { status: 'Fail', bugId: 'SUN-1' },
+      });
+      expect(out.map((c) => c.id)).toEqual(['100', '101']);
+      expect(out[0].orderIndex).toBe(100);
+      expect(out[0].status).toBe('Fail');
+      expect(out[0].testCaseTitle).toBe('Test case 100');
+      expect(out[1].testCaseTitle).toBe('Test case 101');
+    });
+
+    it('returns an empty array for null / primitives', () => {
+      expect(normalizeCases(null)).toEqual([]);
+      expect(normalizeCases(undefined)).toEqual([]);
+      expect(normalizeCases('nope')).toEqual([]);
+    });
+  });
+
+  describe('parseSessionDoc', () => {
+    it('normalises a map-shaped testCases without throwing', () => {
+      const parsed = parseSessionDoc('s1', {
+        userId: 'u1', status: 'Aborted',
+        testCases: { '5': { status: 'Pass' } },
+      });
+      expect(Array.isArray(parsed.testCases)).toBe(true);
+      expect(parsed.testCases).toHaveLength(1);
+      expect(parsed.testCases[0].id).toBe('5');
     });
   });
 });

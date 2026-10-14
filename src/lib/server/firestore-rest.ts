@@ -114,6 +114,69 @@ export function decodeFirestoreFields(fields: Record<string, any>): Record<strin
 }
 
 /**
+ * Normalise a session's `testCases` so the report always receives an array.
+ *
+ * Most sessions store `testCases` as an array of full case objects. A few
+ * legacy/partial sessions instead store only the *results* as a map keyed by
+ * the case's `orderIndex` (e.g. `{ "100": { status: "Pass", … } }`) with the
+ * case definitions living in a `testSuites` document. When that shape is
+ * detected, `suiteCases` (the matching suite's full cases) is merged in so the
+ * report can still show titles/steps/expected results while keeping the stored
+ * results. Results whose key is absent from the suite are appended so nothing
+ * is dropped.
+ */
+export function mergeSuiteResults(suiteCases: any, resultMap: Record<string, any>): any[] {
+  const map = resultMap && typeof resultMap === 'object' ? resultMap : {};
+  const out: any[] = [];
+  const used = new Set<string>();
+  if (Array.isArray(suiteCases)) {
+    suiteCases.forEach((c: any, i: number) => {
+      const key = String(c?.orderIndex ?? i);
+      used.add(key);
+      out.push({ ...c, ...(map[key] || {}), id: c?.id ?? key });
+    });
+  }
+  for (const key of Object.keys(map)) {
+    if (used.has(key)) continue;
+    out.push({ id: key, orderIndex: Number(key), testCaseTitle: `Test case ${key}`, ...map[key] });
+  }
+  return out;
+}
+
+/**
+ * Find a `testSuites` document whose `totalCases` matches the given total.
+ * Used to recover case definitions for sessions that only store results.
+ */
+export async function fetchSuiteMatchingTotal(
+  total: number,
+  platform?: string,
+): Promise<Record<string, any> | null> {
+  const creds = getCredentials();
+  if (!creds) throw new Error('Service account credentials are not configured');
+  const token = await getServiceAccountToken();
+  if (!token) throw new Error('Failed to obtain service account token');
+
+  const base = `https://firestore.googleapis.com/v1/projects/${creds.projectId}/databases/(default)/documents`;
+  const res = await fetch(`${base}/testSuites?pageSize=100`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+  if (!res.ok) return null;
+  const json: any = await res.json();
+  const suites = (json.documents || []).map((d: any) => ({
+    id: d.name.split('/').pop(),
+    ...decodeFirestoreFields(d.fields || {}),
+  }));
+  const matches = suites.filter((s: any) => Number(s.totalCases) === total);
+  if (matches.length === 0) return null;
+  if (platform && matches.length > 1) {
+    const exact = matches.find((s: any) => s.platform === platform || s.name?.includes(platform));
+    if (exact) return exact;
+  }
+  return matches[0];
+}
+
+/**
  * Read a session document by id as the service account. Checks `sessions` first
  * then the legacy `testSessions` collection. Returns the decoded document or
  * null when neither exists.

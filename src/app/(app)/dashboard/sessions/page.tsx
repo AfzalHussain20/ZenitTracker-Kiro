@@ -16,6 +16,7 @@ import {
 import { format, formatDistanceStrict } from 'date-fns';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { normalizeCases } from '@/lib/session-collab';
 import { useRouter } from 'next/navigation';
 
 const getValidDate = (d: any): Date | null => {
@@ -49,7 +50,7 @@ export default function SessionHistoryPage() {
         [...s1.docs, ...s2.docs].forEach(doc => {
           if (map.has(doc.id)) return;
           const data = doc.data();
-          map.set(doc.id, { id: doc.id, ...data, createdAt: getValidDate(data.createdAt), completedAt: getValidDate(data.completedAt), testCases: data.testCases || [] } as TestSession);
+          map.set(doc.id, { id: doc.id, ...data, createdAt: getValidDate(data.createdAt), completedAt: getValidDate(data.completedAt), testCases: normalizeCases(data.testCases) } as TestSession);
         });
         setSessions(Array.from(map.values()).sort((a, b) => {
           const da = getValidDate(a.createdAt)?.getTime() || 0;

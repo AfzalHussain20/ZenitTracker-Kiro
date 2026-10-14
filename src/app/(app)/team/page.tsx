@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { subDays, isAfter } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { normalizeCases } from '@/lib/session-collab';
 import { useJiraKPI } from '@/hooks/useJiraKPI';
 import { LogWorkDialog, type IssueOption } from '@/components/worklog/LogWorkDialog';
 import { LeadsOverviewTab } from '@/components/leads/LeadsOverviewTab';
@@ -81,7 +82,7 @@ export default function LeadsPortalPage() {
             id: doc.id, ...data,
             createdAt: getValidDate(data.createdAt) || new Date(),
             completedAt: getValidDate(data.completedAt),
-            testCases: data.testCases || [],
+            testCases: normalizeCases(data.testCases),
           } as TestSession);
         });
         setAllSessions(sessions);

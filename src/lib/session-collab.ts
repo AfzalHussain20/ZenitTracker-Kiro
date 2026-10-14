@@ -24,6 +24,50 @@ export interface SessionTester {
   name: string;
 }
 
+/** Coerce a Firestore Timestamp | ISO string | Date into a Date. */
+function coerceDate(value: any): Date {
+  if (value instanceof Date) return value;
+  if (value && typeof value.toDate === 'function') return value.toDate();
+  if (typeof value === 'string' || typeof value === 'number') {
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return new Date();
+}
+
+/**
+ * Normalise a session's `testCases` into an array. Most sessions store an array
+ * of full case objects, but a few legacy sessions store only results as a map
+ * keyed by the case `orderIndex`. Those are converted to an array so downstream
+ * code never crashes on a missing `.map`/`.filter`.
+ */
+export function normalizeCases(raw: any): TestCase[] {
+  if (Array.isArray(raw)) {
+    return raw.map((tc: any) => ({ ...tc, lastModified: coerceDate(tc?.lastModified) }));
+  }
+  if (raw && typeof raw === 'object') {
+    return Object.keys(raw)
+      .sort((a, b) => {
+        const na = Number(a);
+        const nb = Number(b);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return a.localeCompare(b);
+      })
+      .map((key) => {
+        const tc: any = raw[key] || {};
+        const numeric = Number(key);
+        return {
+          ...tc,
+          id: tc.id ?? key,
+          orderIndex: tc.orderIndex ?? (isNaN(numeric) ? undefined : numeric),
+          testCaseTitle: tc.testCaseTitle ?? tc.title ?? `Test case ${key}`,
+          lastModified: coerceDate(tc.lastModified),
+        };
+      }) as TestCase[];
+  }
+  return [];
+}
+
 /** Normalise a raw Firestore session document into a `TestSession`. */
 export function parseSessionDoc(id: string, data: any): TestSession {
   return {
@@ -32,10 +76,7 @@ export function parseSessionDoc(id: string, data: any): TestSession {
     createdAt: (data?.createdAt as any)?.toDate?.() ?? new Date(),
     updatedAt: (data?.updatedAt as any)?.toDate?.() ?? new Date(),
     completedAt: (data?.completedAt as any)?.toDate?.() ?? (data?.completedAt ?? undefined),
-    testCases: (data?.testCases || []).map((tc: any) => ({
-      ...tc,
-      lastModified: (tc?.lastModified as any)?.toDate?.() ?? new Date(),
-    })),
+    testCases: normalizeCases(data?.testCases),
   } as TestSession;
 }
 

@@ -17,6 +17,7 @@ import {
 import { format, formatDistanceStrict } from 'date-fns';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { normalizeCases } from '@/lib/session-collab';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { JIRA_BASE_URL as JIRA_BASE } from '@/lib/jira/config';
 
@@ -95,7 +96,7 @@ export default function TestSessionResultPage() {
             id, ...data,
             createdAt: getValidDate(data.createdAt),
             completedAt: getValidDate(data.completedAt),
-            testCases: (data.testCases || []).map((tc: any) => ({ ...tc, lastModified: getValidDate(tc.lastModified) }))
+            testCases: normalizeCases(data.testCases)
           } as TestSession);
         }
       } catch (e) { console.error(e); }
