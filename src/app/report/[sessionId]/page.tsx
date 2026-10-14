@@ -38,21 +38,36 @@ export default function PublicReportPage() {
       setLoading(true);
       setError(null);
       try {
-        // A session may live in either collection (current `sessions` vs legacy
-        // `testSessions`). Read each independently: a getDoc for a document that
-        // does not exist is rejected by the security rules, so a failure on the
-        // first collection must not prevent the second from being attempted.
         let data: any = null;
         let id = sessionId;
         let denied = false;
-        for (const col of ['sessions', 'testSessions'] as const) {
-          try {
-            const snap = await getDoc(doc(db, col, sessionId));
-            if (snap.exists()) { data = snap.data(); id = snap.id; break; }
-          } catch (e: any) {
-            if (e?.code === 'permission-denied') denied = true;
+
+        // Preferred: the server route reads with the service account, so it can
+        // serve a session of any status (bypasses Firestore security rules).
+        try {
+          const res = await fetch(`/api/public/report/${encodeURIComponent(sessionId)}`, { cache: 'no-store' });
+          if (res.ok) {
+            const json = await res.json();
+            if (json?.session) { data = json.session; id = json.session.id || sessionId; }
+          }
+        } catch { /* server route unavailable — fall back to a client read */ }
+
+        // Fallback: direct client read from either collection (current `sessions`
+        // vs legacy `testSessions`). Read each independently: a getDoc for a
+        // document that does not exist is rejected by the security rules, so a
+        // failure on the first collection must not prevent the second. Only
+        // Completed sessions are world-readable this way.
+        if (!data) {
+          for (const col of ['sessions', 'testSessions'] as const) {
+            try {
+              const snap = await getDoc(doc(db, col, sessionId));
+              if (snap.exists()) { data = snap.data(); id = snap.id; break; }
+            } catch (e: any) {
+              if (e?.code === 'permission-denied') denied = true;
+            }
           }
         }
+
         if (data) {
           setSession({
             id, ...data,
