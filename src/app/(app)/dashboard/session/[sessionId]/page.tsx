@@ -28,9 +28,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { SessionTeamDialog } from '@/components/session/SessionTeamDialog';
 import {
-  buildAssignRangePatch, buildUnassignRangePatch, buildCasePatch,
+  applyAssignRange, applyCasePatch, applyEvenSplit, applyUnassignRange, stripUndefined,
   canAccessSession, computeSummary, findNextUnassigned, findResumeIndex,
-  isSessionOwner, mergeTesters, parseSessionDoc, removeTester, splitEvenRanges,
+  isSessionOwner, mergeTesters, normalizeCases, parseSessionDoc, removeTester,
   type SessionTester,
 } from '@/lib/session-collab';
 
@@ -403,22 +403,24 @@ export default function TestSessionPage() {
     } catch { toast({ title: 'Sync Error', description: 'Cloud save failed.', variant: 'destructive' }); }
   }, [sessionId, sessionCollection, toast]);
 
-  // Atomic per-case write. Never rewrites the whole array, so concurrent testers
-  // editing different cases don't clobber each other. `onSnapshot` reconciles.
+  // Per-case write. The whole array is rewritten *inside a transaction* so
+  // concurrent testers editing different cases can't clobber each other, while
+  // never using dotted field paths (those convert the array into a map and wipe
+  // every other case). `onSnapshot` reconciles the result.
   const writeCasePatch = useCallback(async (index: number, patch: Partial<TestCase>) => {
-    const merged = session ? [...session.testCases] : [];
-    if (merged[index]) merged[index] = { ...merged[index], ...patch } as TestCase;
-    const payload: Record<string, unknown> = {
-      ...buildCasePatch(index, patch),
-      summary: computeSummary(merged),
-      updatedAt: new Date(),
-    };
+    const ref = doc(db, sessionCollection, sessionId);
     try {
-      await updateDoc(doc(db, sessionCollection, sessionId), payload as any);
+      await runTransaction(db, async tx => {
+        const snap = await tx.get(ref);
+        const raw = snap.data()?.testCases;
+        const base = Array.isArray(raw) ? normalizeCases(raw) : (session?.testCases ?? normalizeCases(raw));
+        const next = applyCasePatch(base, index, patch);
+        tx.update(ref, { testCases: next, summary: computeSummary(next), updatedAt: new Date() });
+      });
       setSession(prev => {
         if (!prev) return prev;
         const cases = [...prev.testCases];
-        if (cases[index]) cases[index] = { ...cases[index], ...patch } as TestCase;
+        if (cases[index]) cases[index] = { ...cases[index], ...(stripUndefined(patch) as Partial<TestCase>) } as TestCase;
         return { ...prev, testCases: cases, summary: computeSummary(cases), updatedAt: new Date() };
       });
     } catch { toast({ title: 'Sync Error', description: 'Cloud save failed.', variant: 'destructive' }); }
@@ -431,14 +433,15 @@ export default function TestSessionPage() {
     try {
       await runTransaction(db, async tx => {
         const snap = await tx.get(ref);
-        const cases = (snap.data()?.testCases || []) as TestCase[];
+        const cases = normalizeCases(snap.data()?.testCases);
         const c = cases[index];
         if (!c) return;
         if (c.assignedToUid && c.assignedToUid !== user.uid) {
           throw new Error(`Already claimed by ${c.assignedToName || 'another tester'}`);
         }
         if (c.assignedToUid === user.uid) return;
-        tx.update(ref, buildCasePatch(index, { assignedToUid: user.uid, assignedToName: myName }) as any);
+        const next = applyCasePatch(cases, index, { assignedToUid: user.uid, assignedToName: myName });
+        tx.update(ref, { testCases: next, summary: computeSummary(next), updatedAt: new Date() });
       });
       return true;
     } catch (e: any) {
@@ -456,29 +459,39 @@ export default function TestSessionPage() {
 
   const assignRange = useCallback(async (start: number, end: number, tester: SessionTester) => {
     if (!session) return;
+    const ref = doc(db, sessionCollection, sessionId);
     try {
-      await updateDoc(doc(db, sessionCollection, sessionId),
-        buildAssignRangePatch(start - 1, end - 1, tester, session.testCases.length) as any);
+      await runTransaction(db, async tx => {
+        const snap = await tx.get(ref);
+        const cases = normalizeCases(snap.data()?.testCases);
+        tx.update(ref, { testCases: applyAssignRange(cases, start - 1, end - 1, tester) });
+      });
       toast({ title: `Assigned ${start}–${end} to ${tester.name}` });
     } catch { toast({ title: 'Sync Error', description: 'Could not assign cases.', variant: 'destructive' }); }
   }, [session, sessionCollection, sessionId, toast]);
 
   const unassignRange = useCallback(async (start: number, end: number) => {
     if (!session) return;
+    const ref = doc(db, sessionCollection, sessionId);
     try {
-      await updateDoc(doc(db, sessionCollection, sessionId),
-        buildUnassignRangePatch(start - 1, end - 1, session.testCases.length) as any);
+      await runTransaction(db, async tx => {
+        const snap = await tx.get(ref);
+        const cases = normalizeCases(snap.data()?.testCases);
+        tx.update(ref, { testCases: applyUnassignRange(cases, start - 1, end - 1) });
+      });
     } catch { toast({ title: 'Sync Error', description: 'Could not clear assignment.', variant: 'destructive' }); }
   }, [session, sessionCollection, sessionId, toast]);
 
   const evenSplit = useCallback(async () => {
     if (!session) return;
     const participants = mergeTesters([{ uid: session.userId, name: session.userName }], session.testers || []);
-    const ranges = splitEvenRanges(session.testCases.length, participants.length);
-    const patch: Record<string, unknown> = {};
-    ranges.forEach((r, i) => Object.assign(patch, buildAssignRangePatch(r.start, r.end, participants[i], session.testCases.length)));
+    const ref = doc(db, sessionCollection, sessionId);
     try {
-      await updateDoc(doc(db, sessionCollection, sessionId), patch as any);
+      await runTransaction(db, async tx => {
+        const snap = await tx.get(ref);
+        const cases = normalizeCases(snap.data()?.testCases);
+        tx.update(ref, { testCases: applyEvenSplit(cases, participants) });
+      });
       toast({ title: `Split across ${participants.length} tester${participants.length === 1 ? '' : 's'}` });
     } catch { toast({ title: 'Sync Error', description: 'Could not distribute cases.', variant: 'destructive' }); }
   }, [session, sessionCollection, sessionId, toast]);

@@ -1,5 +1,5 @@
 import {
-  buildAssignRangePatch, buildCasePatch, buildUnassignRangePatch,
+  applyAssignRange, applyCasePatch, applyEvenSplit, applyUnassignRange, stripUndefined,
   canAccessSession, computeSummary, countAssigned, findNextUnassigned,
   findResumeIndex, isSessionOwner, mergeTesters, normalizeCases, parseSessionDoc, removeTester, splitEvenRanges,
 } from '../session-collab';
@@ -55,50 +55,71 @@ describe('session-collab', () => {
     });
   });
 
-  describe('buildCasePatch', () => {
-    it('builds dotted field paths', () => {
-      expect(buildCasePatch(3, { status: 'Pass', bugId: 'ABC-1' })).toEqual({
-        'testCases.3.status': 'Pass',
-        'testCases.3.bugId': 'ABC-1',
-      });
+  describe('applyCasePatch', () => {
+    it('merges a patch without touching the other cases (pure)', () => {
+      const cases = [tc({ id: 'a' }), tc({ id: 'b' }), tc({ id: 'c' })];
+      const next = applyCasePatch(cases, 1, { status: 'Pass', bugId: 'ABC-1' });
+      expect(next[1].status).toBe('Pass');
+      expect(next[1].bugId).toBe('ABC-1');
+      expect(next[0].status).toBe('Untested');
+      expect(next).toHaveLength(3);
+      expect(cases[1].status).toBe('Untested');
     });
-    it('skips undefined but keeps null', () => {
-      expect(buildCasePatch(0, { status: 'Fail', assignedToUid: null, notes: undefined })).toEqual({
-        'testCases.0.status': 'Fail',
-        'testCases.0.assignedToUid': null,
-      });
+    it('drops undefined values but keeps null so Firestore accepts the write', () => {
+      const next = applyCasePatch([tc()], 0, { status: 'Fail', notes: undefined, assignedToUid: null });
+      expect('notes' in next[0]).toBe(false);
+      expect(next[0].assignedToUid).toBeNull();
+    });
+    it('ignores out-of-range indices', () => {
+      const cases = [tc()];
+      expect(applyCasePatch(cases, 5, { status: 'Pass' })).toEqual(cases);
     });
   });
 
-  describe('buildAssignRangePatch', () => {
+  describe('applyAssignRange / applyUnassignRange', () => {
+    const make = (n: number) => Array.from({ length: n }, (_, i) => tc({ orderIndex: i }));
     it('assigns an inclusive range clamped to bounds', () => {
-      const patch = buildAssignRangePatch(2, 4, { uid: 'u2', name: 'Bob' }, 10);
-      expect(Object.keys(patch)).toHaveLength(6);
-      expect(patch['testCases.2.assignedToUid']).toBe('u2');
-      expect(patch['testCases.4.assignedToName']).toBe('Bob');
-      expect(patch['testCases.5.assignedToUid']).toBeUndefined();
+      const next = applyAssignRange(make(10), 2, 4, { uid: 'u2', name: 'Bob' });
+      expect(next[2].assignedToUid).toBe('u2');
+      expect(next[4].assignedToName).toBe('Bob');
+      expect(next[5].assignedToUid).toBeUndefined();
     });
-    it('normalises reversed ranges and clamps the end', () => {
-      const patch = buildAssignRangePatch(4, 2, { uid: 'u2', name: 'Bob' }, 100);
-      expect(patch['testCases.2.assignedToUid']).toBe('u2');
-      expect(patch['testCases.4.assignedToName']).toBe('Bob');
+    it('normalises reversed ranges', () => {
+      const next = applyAssignRange(make(10), 4, 2, { uid: 'u2', name: 'Bob' });
+      expect(next[2].assignedToUid).toBe('u2');
+      expect(next[4].assignedToName).toBe('Bob');
     });
-    it('clamps to the last index', () => {
-      const patch = buildAssignRangePatch(8, 99, { uid: 'u2', name: 'Bob' }, 10);
-      expect(patch['testCases.9.assignedToUid']).toBe('u2');
-      expect(patch['testCases.10.assignedToUid']).toBeUndefined();
+    it('clamps the end to the last index', () => {
+      const next = applyAssignRange(make(10), 8, 99, { uid: 'u2', name: 'Bob' });
+      expect(next[9].assignedToUid).toBe('u2');
+      expect(next).toHaveLength(10);
+    });
+    it('nulls the assignment fields on an unassign range', () => {
+      const cases = [tc({ assignedToUid: 'x', assignedToName: 'X' }), tc({ assignedToUid: 'x' }), tc()];
+      const next = applyUnassignRange(cases, 0, 1);
+      expect(next[0].assignedToUid).toBeNull();
+      expect(next[0].assignedToName).toBeNull();
+      expect(next[1].assignedToUid).toBeNull();
     });
   });
 
-  describe('buildUnassignRangePatch', () => {
-    it('nulls the assignment fields', () => {
-      const patch = buildUnassignRangePatch(0, 1, 5);
-      expect(patch).toEqual({
-        'testCases.0.assignedToUid': null,
-        'testCases.0.assignedToName': null,
-        'testCases.1.assignedToUid': null,
-        'testCases.1.assignedToName': null,
-      });
+  describe('applyEvenSplit', () => {
+    it('splits cases across participants in order', () => {
+      const cases = Array.from({ length: 500 }, (_, i) => tc({ orderIndex: i }));
+      const next = applyEvenSplit(cases, [{ uid: 'a', name: 'A' }, { uid: 'b', name: 'B' }, { uid: 'c', name: 'C' }]);
+      expect(next[0].assignedToUid).toBe('a');
+      expect(next[166].assignedToUid).toBe('a');
+      expect(next[167].assignedToUid).toBe('b');
+      expect(next[499].assignedToUid).toBe('c');
+    });
+  });
+
+  describe('stripUndefined', () => {
+    it('recursively removes undefined while keeping null, arrays and Dates', () => {
+      const d = new Date();
+      const out = stripUndefined({ a: 1, b: undefined, c: null, d: { e: undefined, f: 2 }, g: [1, undefined, 3], h: d });
+      expect(out).toEqual({ a: 1, c: null, d: { f: 2 }, g: [1, 3], h: d });
+      expect(out.h).toBe(d);
     });
   });
 

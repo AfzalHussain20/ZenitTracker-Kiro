@@ -2,10 +2,11 @@
  * Pure helpers for multi-tester (shared) test sessions.
  *
  * Sessions keep their cases in the `testCases` array on the session document.
- * To stay concurrent-safe we never rewrite the whole array from a tester's
- * client — instead we write atomic field paths (e.g. `testCases.12.status`) and
- * use a transaction when claiming a case. These helpers build those payloads
- * and make the access/summary logic unit-testable.
+ * Per-case updates are applied as pure array transforms and persisted inside a
+ * `runTransaction`, which is concurrency-safe (conflicting writers retry) while
+ * never using dotted field paths — those silently convert an array into a map
+ * in Firestore and destroy every other case. These helpers keep that logic
+ * unit-testable.
  */
 
 import type { TestCase, TestSession } from '@/types';
@@ -116,49 +117,71 @@ export function isSessionOwner(data: Partial<TestSession> | null | undefined, ui
 }
 
 /**
- * Build an `updateDoc` payload of atomic field paths for a single case.
- * `undefined` values are skipped (Firestore rejects them). `null` is allowed
- * and clears a field.
+ * Recursively drop `undefined` members so the value can be written to Firestore
+ * (which rejects undefined at any depth). `Date` and Firestore `Timestamp`
+ * values are kept as leaves.
  */
-export function buildCasePatch(index: number, patch: Partial<TestCase>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(patch)) {
-    if (v === undefined) continue;
-    out[`testCases.${index}.${k}`] = v;
+export function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) return value.filter((v) => v !== undefined).map((v) => stripUndefined(v)) as unknown as T;
+  if (value && typeof value === 'object' && !(value instanceof Date) && typeof (value as any).toDate !== 'function') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v !== undefined) out[k] = stripUndefined(v);
+    }
+    return out as T;
   }
-  return out;
+  return value;
 }
 
 /**
- * Build an `updateDoc` payload assigning a contiguous index range (inclusive)
- * to a tester, clamped to the session bounds.
+ * Return a copy of `cases` with `patch` merged into the case at `index`.
+ *
+ * IMPORTANT: never write per-case updates as dotted field paths
+ * (e.g. `testCases.3.status`). Firestore treats the numeric segment as a *map*
+ * key, so the first such write silently converts the `testCases` array into a
+ * map and destroys every other case. Instead, callers persist the returned
+ * array inside a `runTransaction` — concurrent writers conflict and retry, so
+ * two testers editing different cases never clobber each other.
  */
-export function buildAssignRangePatch(
+export function applyCasePatch(cases: TestCase[], index: number, patch: Partial<TestCase>): TestCase[] {
+  const next = [...cases];
+  if (index >= 0 && next[index]) {
+    next[index] = { ...next[index], ...(stripUndefined(patch) as Partial<TestCase>) } as TestCase;
+  }
+  return next;
+}
+
+/** Assign an inclusive index range to a tester, clamped to the array bounds. */
+export function applyAssignRange(
+  cases: TestCase[],
   startIndex: number,
   endIndex: number,
   tester: SessionTester,
-  total: number,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
+): TestCase[] {
+  const next = [...cases];
   const lo = Math.max(0, Math.min(startIndex, endIndex));
-  const hi = Math.min(total - 1, Math.max(startIndex, endIndex));
+  const hi = Math.min(next.length - 1, Math.max(startIndex, endIndex));
   for (let i = lo; i <= hi; i++) {
-    out[`testCases.${i}.assignedToUid`] = tester.uid;
-    out[`testCases.${i}.assignedToName`] = tester.name;
+    next[i] = { ...next[i], assignedToUid: tester.uid, assignedToName: tester.name } as TestCase;
   }
-  return out;
+  return next;
 }
 
-/** Build a payload clearing the assignment on an index range. */
-export function buildUnassignRangePatch(startIndex: number, endIndex: number, total: number): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
+/** Clear the assignment on an inclusive index range. */
+export function applyUnassignRange(cases: TestCase[], startIndex: number, endIndex: number): TestCase[] {
+  const next = [...cases];
   const lo = Math.max(0, Math.min(startIndex, endIndex));
-  const hi = Math.min(total - 1, Math.max(startIndex, endIndex));
+  const hi = Math.min(next.length - 1, Math.max(startIndex, endIndex));
   for (let i = lo; i <= hi; i++) {
-    out[`testCases.${i}.assignedToUid`] = null;
-    out[`testCases.${i}.assignedToName`] = null;
+    next[i] = { ...next[i], assignedToUid: null, assignedToName: null } as TestCase;
   }
-  return out;
+  return next;
+}
+
+/** Split cases evenly across participants (in order). */
+export function applyEvenSplit(cases: TestCase[], participants: SessionTester[]): TestCase[] {
+  const ranges = splitEvenRanges(cases.length, participants.length);
+  return ranges.reduce((acc, r, i) => applyAssignRange(acc, r.start, r.end, participants[i]), [...cases]);
 }
 
 /** Merge testers without duplicates (later entries win). */
