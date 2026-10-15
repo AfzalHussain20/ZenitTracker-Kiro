@@ -12,10 +12,10 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import {
-  CheckCircle2, XCircle, ChevronLeft, ChevronRight,
+  CheckCircle2, XCircle, ChevronLeft, ChevronRight, CornerUpLeft,
   Menu, X, Loader2, Search, Bug, ExternalLink,
   ArrowRight, Zap, ListChecks, Target, Keyboard,
-  SkipForward, Clock, Plus, Users
+  SkipForward, Clock, Plus, Users, Hash
 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
@@ -163,6 +163,9 @@ export default function TestSessionPage() {
   const [showEntrance, setShowEntrance] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const [jumpInput, setJumpInput] = useState('');
+  const [returnIndex, setReturnIndex] = useState<number | null>(null);
   const [teamOpen, setTeamOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -307,6 +310,27 @@ export default function TestSessionPage() {
   const goPrev = useCallback(() => {
     if (currentIndex > 0) setCurrentIndex(i => i - 1);
   }, [currentIndex]);
+
+  // Jump directly to any case. Remembers where you were (once) so you can
+  // return after editing an earlier case without stepping back one-by-one.
+  const jumpTo = useCallback((idx: number) => {
+    if (!session || idx < 0 || idx >= session.testCases.length) return;
+    setReturnIndex(prev => (prev === null && idx !== currentIndex ? currentIndex : prev));
+    setCurrentIndex(idx);
+  }, [session, currentIndex]);
+  const resumeReturn = useCallback(() => {
+    if (returnIndex === null) return;
+    setCurrentIndex(returnIndex);
+    setReturnIndex(null);
+  }, [returnIndex]);
+  const submitJump = useCallback(() => {
+    const n = parseInt(jumpInput, 10);
+    const len = session?.testCases.length ?? 0;
+    if (!isNaN(n) && n >= 1 && n <= len) jumpTo(n - 1);
+    setJumpInput('');
+    setJumpOpen(false);
+  }, [jumpInput, session, jumpTo]);
+
   const swipeHandlers = useSwipe(goNext, goPrev);
 
   // Push to Jira
@@ -714,6 +738,10 @@ export default function TestSessionPage() {
             className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted hidden sm:flex">
             <Keyboard className="w-3.5 h-3.5" />
           </Button>
+          <Button variant="ghost" size="icon" onClick={() => setJumpOpen(o => !o)}
+            className={cn('h-8 w-8 rounded-lg hover:bg-muted', jumpOpen ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground')}>
+            <Hash className="w-4 h-4" />
+          </Button>
           <Button variant="ghost" size="icon" onClick={() => setDrawerOpen(true)}
             className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted">
             <Menu className="w-4 h-4" />
@@ -727,6 +755,67 @@ export default function TestSessionPage() {
           </Button>
         </div>
       </header>
+
+      {/* ─── Jump to Test Case (inline navigator) ─── */}
+      <AnimatePresence initial={false}>
+        {jumpOpen && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="shrink-0 border-b border-border bg-muted/20 overflow-hidden z-20">
+            <div className="max-w-[680px] mx-auto px-4 py-3 space-y-2.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <Hash className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Jump to case</span>
+                </div>
+                <div className="flex items-center gap-1.5 ml-auto">
+                  {returnIndex !== null && (
+                    <Button size="sm" variant="outline" onClick={resumeReturn}
+                      className="h-8 text-xs rounded-lg gap-1 border-primary/30 text-primary hover:bg-primary/5">
+                      <CornerUpLeft className="w-3.5 h-3.5" />Back to {returnIndex + 1}
+                    </Button>
+                  )}
+                  <Input
+                    type="number" min={1} max={total} value={jumpInput}
+                    onChange={e => setJumpInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitJump(); }}
+                    placeholder={`1–${total}`}
+                    className="h-8 w-24 text-xs font-mono bg-card border-border text-foreground rounded-lg" />
+                  <Button size="sm" onClick={submitJump} disabled={!jumpInput}
+                    className="h-8 text-xs rounded-lg">Go</Button>
+                  <Button size="icon" variant="ghost" onClick={() => setJumpOpen(false)}
+                    className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted">
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto pr-1">
+                {session.testCases.map((t, i) => {
+                  const active = i === currentIndex;
+                  const isReturn = i === returnIndex;
+                  return (
+                    <button
+                      key={t.id || i}
+                      onClick={() => jumpTo(i)}
+                      title={t.testCaseTitle}
+                      className={cn(
+                        'w-8 h-7 rounded-md text-[10px] font-semibold tabular-nums border transition-colors',
+                        active ? 'bg-primary text-white border-primary' :
+                        t.status === 'Pass' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20 hover:border-emerald-400' :
+                        t.status?.includes('Fail') ? 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20 hover:border-red-400' :
+                        t.status === 'N/A' ? 'bg-muted text-muted-foreground border-border hover:border-muted-foreground/40' :
+                        'bg-card text-muted-foreground/70 border-border hover:border-primary/40 hover:text-foreground',
+                        isReturn && !active && 'ring-2 ring-primary/40',
+                      )}>
+                      {i + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Shortcuts tooltip */}
       <AnimatePresence>
@@ -890,7 +979,18 @@ export default function TestSessionPage() {
                 className="rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-20 gap-1">
                 <ChevronLeft className="w-3.5 h-3.5" /> Prev
               </Button>
-              <span className="text-[11px] text-muted-foreground tabular-nums">{currentIndex + 1} of {total}</span>
+              <div className="flex items-center gap-2">
+                {returnIndex !== null && (
+                  <Button variant="outline" size="sm" onClick={resumeReturn}
+                    className="rounded-lg text-xs gap-1 h-7 border-primary/30 text-primary hover:bg-primary/5">
+                    <CornerUpLeft className="w-3.5 h-3.5" /> Back to {returnIndex + 1}
+                  </Button>
+                )}
+                <button onClick={() => setJumpOpen(o => !o)}
+                  className="text-[11px] text-muted-foreground tabular-nums hover:text-primary flex items-center gap-1 transition-colors">
+                  <Hash className="w-3 h-3" />{currentIndex + 1} of {total}
+                </button>
+              </div>
               <Button variant="ghost" size="sm" disabled={currentIndex === total - 1} onClick={goNext}
                 className="rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-20 gap-1">
                 Next <ChevronRight className="w-3.5 h-3.5" />
@@ -960,7 +1060,7 @@ export default function TestSessionPage() {
                         const active = idx === currentIndex;
                         const dot = t.status === 'Pass' ? 'bg-emerald-500' : t.status?.includes('Fail') ? 'bg-red-500' : t.status === 'N/A' ? 'bg-muted-foreground/40' : 'bg-muted-foreground/15';
                         return (
-                          <button key={t.id} onClick={() => { setCurrentIndex(idx); setDrawerOpen(false); }}
+                          <button key={t.id} onClick={() => { jumpTo(idx); setDrawerOpen(false); }}
                             className={cn('w-full flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-all',
                               active ? 'bg-primary/5 border border-primary/20' : 'hover:bg-muted/50 border border-transparent')}>
                             <div className={cn('mt-1.5 w-2 h-2 rounded-full shrink-0', dot)} />
