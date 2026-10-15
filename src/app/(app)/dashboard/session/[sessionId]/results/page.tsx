@@ -17,7 +17,7 @@ import {
 import { format, formatDistanceStrict } from 'date-fns';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { normalizeCases } from '@/lib/session-collab';
+import { normalizeCases, getCaseBugs } from '@/lib/session-collab';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { JIRA_BASE_URL as JIRA_BASE } from '@/lib/jira/config';
 
@@ -192,10 +192,10 @@ export default function TestSessionResultPage() {
             <Button variant="outline" size="sm" onClick={() => window.print()} className="text-xs"><Printer className="w-3.5 h-3.5 mr-1.5" />Print</Button>
             <Button size="sm" className="text-xs bg-primary hover:bg-primary/90" onClick={() => {
               if (!session) return;
-              const rows = [['#', 'Test Case', 'Module', 'Priority', 'Status', 'Bug ID', 'Linked Bugs', 'Bug Title', 'Notes'].join(',')];
+              const rows = [['#', 'Test Case', 'Module', 'Priority', 'Status', 'Bug ID', 'Bugs', 'Bug Title', 'Notes'].join(',')];
               session.testCases.forEach((tc, i) => {
-                const allBugs = tc.linkedBugs?.length ? tc.linkedBugs.join('; ') : (tc.bugId || '');
-                rows.push([i + 1, `"${tc.testCaseTitle.replace(/"/g, '""')}"`, tc.testBed, tc.priority || '', tc.status, tc.bugId || '', `"${allBugs}"`, tc.bugTitle || '', `"${(tc.notes || tc.naReason || tc.actualResult || '').replace(/"/g, '""')}"`].join(','));
+                const allBugs = getCaseBugs(tc).map(b => (b.title ? `${b.id} — ${b.title}` : b.id)).join('; ');
+                rows.push([i + 1, `"${tc.testCaseTitle.replace(/"/g, '""')}"`, tc.testBed, tc.priority || '', tc.status, tc.bugId || '', `"${allBugs.replace(/"/g, '""')}"`, `"${(tc.bugTitle || '').replace(/"/g, '""')}"`, `"${(tc.notes || tc.naReason || tc.actualResult || '').replace(/"/g, '""')}"`].join(','));
               });
               const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
               const url = URL.createObjectURL(blob);
@@ -211,7 +211,7 @@ export default function TestSessionResultPage() {
                 const newRef = docRef(sessionsCol);
                 const now = Ts.now();
                 const freshCases = session.testCases.map((tc: any, i: number) => ({
-                  ...tc, id: `${newRef.id}-tc-${i}`, status: 'Untested', actualResult: '', notes: '', bugId: null, bugTitle: null, naReason: null, lastModified: now,
+                  ...tc, id: `${newRef.id}-tc-${i}`, status: 'Untested', actualResult: '', notes: '', bugId: null, bugTitle: null, linkedBugs: [], linkedBugDetails: [], naReason: null, lastModified: now,
                 }));
                 await setDoc(newRef, {
                   id: newRef.id, userId: user.uid, userName: session.userName,
@@ -326,13 +326,13 @@ export default function TestSessionResultPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground">{tc.testCaseTitle}</p>
                     {/* Show all linked bugs as a clean list */}
-                    {((tc.linkedBugs?.length ?? 0) > 0 || tc.bugId) && (
+                    {getCaseBugs(tc).length > 0 && (
                       <div className="flex flex-wrap gap-1.5 mt-1.5">
-                        {((tc.linkedBugs && tc.linkedBugs.length > 0 ? tc.linkedBugs : [tc.bugId]).filter((k): k is string => Boolean(k))).map((bugKey) => (
-                          <a key={bugKey} href={`${JIRA_BASE}/browse/${bugKey}`} target="_blank" rel="noopener noreferrer"
+                        {getCaseBugs(tc).map((bug) => (
+                          <a key={bug.id} href={`${JIRA_BASE}/browse/${bug.id}`} target="_blank" rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-xs text-primary hover:underline bg-primary/5 border border-primary/10 px-2 py-0.5 rounded-md">
                             <ExternalLink className="w-3 h-3" />
-                            {bugKey}{bugKey === tc.bugId && tc.bugTitle ? ` — ${tc.bugTitle}` : ''}
+                            {bug.id}{bug.title ? ` — ${bug.title}` : ''}
                           </a>
                         ))}
                       </div>
@@ -400,25 +400,18 @@ export default function TestSessionResultPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground max-w-[250px] hidden md:table-cell">
-                      {tc.bugId ? (
-                        <a href={`${JIRA_BASE}/browse/${tc.bugId}`} target="_blank" rel="noopener noreferrer"
-                          className="text-primary hover:underline flex items-center gap-1">
-                          <ExternalLink className="w-3 h-3 shrink-0" />
-                          <span className="truncate">{tc.bugId}{tc.bugTitle ? ` — ${tc.bugTitle}` : ''}</span>
-                        </a>
-                      ) : (
-                        <span className="truncate block">{tc.naReason || tc.notes || tc.actualResult || '—'}</span>
-                      )}
-                      {tc.linkedBugs && tc.linkedBugs.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {tc.linkedBugs.filter((b: string) => b !== tc.bugId).map((bugKey: string) => (
-                            <a key={bugKey} href={`${JIRA_BASE}/browse/${bugKey}`} target="_blank" rel="noopener noreferrer"
-                              className="inline-flex items-center gap-0.5 text-[10px] text-primary hover:underline bg-primary/5 px-1.5 py-0.5 rounded">
-                              <ExternalLink className="w-2.5 h-2.5" />
-                              {bugKey}
+                      {getCaseBugs(tc).length > 0 ? (
+                        <div className="flex flex-col gap-1">
+                          {getCaseBugs(tc).map((bug) => (
+                            <a key={bug.id} href={`${JIRA_BASE}/browse/${bug.id}`} target="_blank" rel="noopener noreferrer"
+                              className="text-primary hover:underline flex items-center gap-1">
+                              <ExternalLink className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{bug.id}{bug.title ? ` — ${bug.title}` : ''}</span>
                             </a>
                           ))}
                         </div>
+                      ) : (
+                        <span className="truncate block">{tc.naReason || tc.notes || tc.actualResult || '—'}</span>
                       )}
                     </td>
                   </tr>

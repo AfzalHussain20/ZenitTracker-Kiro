@@ -14,7 +14,7 @@ import {
 import { format, formatDistanceStrict } from 'date-fns';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { normalizeCases } from '@/lib/session-collab';
+import { normalizeCases, getCaseBugs } from '@/lib/session-collab';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { JIRA_BASE_URL as JIRA_BASE } from '@/lib/jira/config';
 
@@ -196,12 +196,12 @@ export default function PublicReportPage() {
                   <XCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">{tc.testCaseTitle}</p>
-                    {tc.bugId && (
-                      <a href={`${JIRA_BASE}/browse/${tc.bugId}`} target="_blank" rel="noopener noreferrer"
+                    {getCaseBugs(tc).map(bug => (
+                      <a key={bug.id} href={`${JIRA_BASE}/browse/${bug.id}`} target="_blank" rel="noopener noreferrer"
                         className="text-xs text-primary hover:underline flex items-center gap-1 mt-0.5">
-                        <ExternalLink className="w-3 h-3" />{tc.bugId}{tc.bugTitle ? ` — ${tc.bugTitle}` : ''}
+                        <ExternalLink className="w-3 h-3" />{bug.id}{bug.title ? ` — ${bug.title}` : ''}
                       </a>
-                    )}
+                    ))}
                   </div>
                 </div>
               ))}
@@ -238,10 +238,14 @@ export default function PublicReportPage() {
                       {(tc.status === 'N/A' || tc.status === 'Untested') && <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full"><AlertTriangle className="w-3 h-3" />{tc.status}</span>}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-muted-foreground hidden md:table-cell">
-                      {tc.bugId ? (
-                        <a href={`${JIRA_BASE}/browse/${tc.bugId}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                          {tc.bugId}{tc.bugTitle ? ` — ${tc.bugTitle}` : ''}
-                        </a>
+                      {getCaseBugs(tc).length > 0 ? (
+                        <span className="flex flex-col gap-0.5">
+                          {getCaseBugs(tc).map(bug => (
+                            <a key={bug.id} href={`${JIRA_BASE}/browse/${bug.id}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                              {bug.id}{bug.title ? ` — ${bug.title}` : ''}
+                            </a>
+                          ))}
+                        </span>
                       ) : (tc.naReason || tc.actualResult || '—')}
                     </td>
                   </tr>

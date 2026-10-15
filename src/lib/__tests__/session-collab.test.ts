@@ -1,7 +1,7 @@
 import {
   applyAssignRange, applyCasePatch, applyEvenSplit, applyUnassignRange, stripUndefined,
   canAccessSession, computeSummary, countAssigned, findNextUnassigned,
-  findResumeIndex, isSessionOwner, mergeTesters, normalizeCases, parseSessionDoc, removeTester, splitEvenRanges,
+  findResumeIndex, getCaseBugs, isSessionOwner, mergeTesters, normalizeCases, parseSessionDoc, removeTester, splitEvenRanges,
 } from '../session-collab';
 import type { TestCase } from '@/types';
 
@@ -197,6 +197,46 @@ describe('session-collab', () => {
       expect(normalizeCases(null)).toEqual([]);
       expect(normalizeCases(undefined)).toEqual([]);
       expect(normalizeCases('nope')).toEqual([]);
+    });
+  });
+
+  describe('getCaseBugs', () => {
+    it('returns the primary bug with its title', () => {
+      expect(getCaseBugs(tc({ bugId: 'SUN-1', bugTitle: 'Crash on login' }))).toEqual([
+        { id: 'SUN-1', title: 'Crash on login' },
+      ]);
+    });
+
+    it('includes linked bugs in order after the primary', () => {
+      const bugs = getCaseBugs(tc({
+        bugId: 'SUN-1', bugTitle: 'Primary',
+        linkedBugs: ['SUN-2', 'SUN-3'],
+        linkedBugDetails: [{ id: 'SUN-2', title: 'Second' }, { id: 'SUN-3', title: 'Third' }],
+      }));
+      expect(bugs).toEqual([
+        { id: 'SUN-1', title: 'Primary' },
+        { id: 'SUN-2', title: 'Second' },
+        { id: 'SUN-3', title: 'Third' },
+      ]);
+    });
+
+    it('resolves a missing primary title from linkedBugDetails', () => {
+      expect(getCaseBugs(tc({ bugId: 'SUN-9', linkedBugDetails: [{ id: 'SUN-9', title: 'Fetched' }] })))
+        .toEqual([{ id: 'SUN-9', title: 'Fetched' }]);
+    });
+
+    it('de-duplicates a linked bug that repeats the primary', () => {
+      expect(getCaseBugs(tc({ bugId: 'SUN-1', bugTitle: 'A', linkedBugs: ['SUN-1', 'SUN-2'] })))
+        .toEqual([{ id: 'SUN-1', title: 'A' }, { id: 'SUN-2', title: null }]);
+    });
+
+    it('renders linked bugs with a null title when none is stored', () => {
+      expect(getCaseBugs(tc({ linkedBugs: ['SUN-2'] }))).toEqual([{ id: 'SUN-2', title: null }]);
+    });
+
+    it('returns an empty list when there are no bugs', () => {
+      expect(getCaseBugs(tc())).toEqual([]);
+      expect(getCaseBugs(null)).toEqual([]);
     });
   });
 

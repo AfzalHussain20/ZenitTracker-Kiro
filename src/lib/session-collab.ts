@@ -81,6 +81,40 @@ export function parseSessionDoc(id: string, data: any): TestSession {
   } as TestSession;
 }
 
+export interface CaseBug {
+  id: string;
+  title: string | null;
+}
+
+/**
+ * Every Jira bug attached to a case (primary `bugId` + `linkedBugs`), each with
+ * its summary, de-duplicated and in display order. Resolves titles from the
+ * case's own `bugTitle` and from `linkedBugDetails` so legacy cases that only
+ * persisted ids (or linked ids) still render as "ID — summary" wherever the
+ * summary is known, and never as an id-only entry.
+ */
+export function getCaseBugs(
+  tc: Pick<TestCase, 'bugId' | 'bugTitle' | 'linkedBugs' | 'linkedBugDetails'> | null | undefined,
+): CaseBug[] {
+  if (!tc) return [];
+  const details = new Map<string, string | null>();
+  for (const d of tc.linkedBugDetails || []) {
+    if (d?.id) details.set(d.id, d.title ?? null);
+  }
+  const out: CaseBug[] = [];
+  const seen = new Set<string>();
+  const add = (id: string, title: string | null) => {
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push({ id, title });
+  };
+  if (tc.bugId) add(tc.bugId, tc.bugTitle ?? details.get(tc.bugId) ?? null);
+  for (const id of tc.linkedBugs || []) {
+    if (id && !seen.has(id)) add(id, details.get(id) ?? null);
+  }
+  return out;
+}
+
 /** Recompute the denormalised summary from a list of cases. */
 export function computeSummary(cases: TestCase[]): SessionSummary {
   let pass = 0;

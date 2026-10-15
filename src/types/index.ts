@@ -39,6 +39,7 @@ export interface TestCase {
   naReason?: string; // If status is "N/A"
   attachments?: string[]; // URLs to attachments if any
   linkedBugs?: string[]; // Multiple Jira bug IDs mapped to this test case
+  linkedBugDetails?: { id: string; title: string | null }[]; // Linked bug IDs with their Jira summaries
   lastModified: Date | Timestamp;
   priority?: "High" | "Medium" | "Low";
   platform?: string;

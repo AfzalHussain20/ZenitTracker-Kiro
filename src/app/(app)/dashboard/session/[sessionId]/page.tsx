@@ -536,6 +536,7 @@ export default function TestSessionPage() {
       bugId: details?.bugId || null,
       bugTitle: details?.bugTitle || null,
       linkedBugs: details?.linkedBugs || [],
+      linkedBugDetails: details?.linkedBugDetails || [],
       naReason: details?.naReason || null,
       notes: details?.bugDesc ? (currentTc.notes || '') + `\nBug: ${details.bugDesc}` : currentTc.notes,
       actualResult: base === 'Pass' ? currentTc.expectedResult : (currentTc.actualResult || ''),
@@ -1276,7 +1277,10 @@ export default function TestSessionPage() {
               </Button>
             ) : (
               <Button size="sm"
-                onClick={() => markStatus('Fail', { bugId: bugId || linkedBugs[0]?.id || undefined, bugDesc: bugDesc || undefined, bugTitle: bugTitle || undefined, linkedBugs: linkedBugs.map(b => b.id) })}
+                onClick={() => markStatus('Fail', { bugId: bugId || linkedBugs[0]?.id || undefined, bugDesc: bugDesc || undefined, bugTitle: bugTitle || undefined, linkedBugs: linkedBugs.map(b => b.id), linkedBugDetails: [
+                  ...(bugId && !linkedBugs.some(b => b.id === bugId) ? [{ id: bugId, title: bugTitle || null }] : []),
+                  ...linkedBugs.map(b => ({ id: b.id, title: b.title || null })),
+                ] })}
                 className="h-8 text-xs bg-red-600 hover:bg-red-700 text-white border-0 rounded-lg px-4">
                 Confirm Fail
               </Button>
