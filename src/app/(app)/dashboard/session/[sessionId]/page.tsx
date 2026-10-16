@@ -68,6 +68,41 @@ const SessionClock = memo(function SessionClock({ resetKey }: { resetKey: number
   );
 });
 
+// Numbered jump grid — memoised so typing in the "go to case" box does not
+// re-render 500+ buttons on every keystroke.
+const JumpGrid = memo(function JumpGrid({ cases, currentIndex, returnIndex, onJump }: {
+  cases: TestCase[];
+  currentIndex: number;
+  returnIndex: number | null;
+  onJump: (idx: number) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto pr-1">
+      {cases.map((t, i) => {
+        const active = i === currentIndex;
+        const isReturn = i === returnIndex;
+        return (
+          <button
+            key={t.id ? `${t.id}-${i}` : i}
+            onClick={() => onJump(i)}
+            title={t.testCaseTitle}
+            className={cn(
+              'w-8 h-7 rounded-md text-[10px] font-semibold tabular-nums border transition-colors',
+              active ? 'bg-primary text-white border-primary' :
+              t.status === 'Pass' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20 hover:border-emerald-400' :
+              t.status?.includes('Fail') ? 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20 hover:border-red-400' :
+              t.status === 'N/A' ? 'bg-muted text-muted-foreground border-border hover:border-muted-foreground/40' :
+              'bg-card text-muted-foreground/70 border-border hover:border-primary/40 hover:text-foreground',
+              isReturn && !active && 'ring-2 ring-primary/40',
+            )}>
+            {i + 1}
+          </button>
+        );
+      })}
+    </div>
+  );
+});
+
 function useJiraFetch(bugId: string) {
   const [bugTitle, setBugTitle] = useState<string | null>(null);
   const [fetching, setFetching] = useState(false);
@@ -567,10 +602,16 @@ export default function TestSessionPage() {
       executedByUid: myUid || null,
       executedByName: myName,
     };
-    await writeCasePatch(currentIndex, patch);
+    const markedIndex = currentIndex;
+    await writeCasePatch(markedIndex, patch);
     setTimeout(() => {
-      if (currentIndex < session.testCases.length - 1) setCurrentIndex(i => i + 1);
-      else setCompleteOpen(true);
+      // Advance only if the tester is still on the case they just marked.
+      // Otherwise a jump made during this short delay would be overridden.
+      setCurrentIndex(prev => {
+        if (prev !== markedIndex) return prev;
+        return markedIndex < session.testCases.length - 1 ? markedIndex + 1 : prev;
+      });
+      if (markedIndex >= session.testCases.length - 1) setCompleteOpen(true);
       setIsMarking(false);
     }, 300);
     setFailOpen(false); setNaOpen(false);
@@ -616,6 +657,24 @@ export default function TestSessionPage() {
     if (!session) return;
     writeCasePatch(currentIndex, { actualResult: value });
   }, [session, currentIndex, writeCasePatch]);
+
+  // Add a Jira bug to the case. Guarantees its summary is fetched even when the
+  // tester adds the id before the debounced input lookup resolves (clearing the
+  // input cancels that lookup, which used to leave the linked bug title-less).
+  const addLinkedBug = useCallback(async (rawId: string, knownTitle?: string | null) => {
+    const id = rawId.trim().toUpperCase();
+    if (!id || !/^[A-Z]{2,10}-\d+$/.test(id)) return;
+    setBugId('');
+    setLinkedBugs(prev => (prev.some(b => b.id === id) ? prev : [...prev, { id, title: knownTitle || null }]));
+    if (knownTitle) return;
+    try {
+      const res = await fetch(`/api/jira/issue/${encodeURIComponent(id)}`);
+      if (!res.ok) return;
+      const d = await res.json();
+      const title: string | null = d.summary || null;
+      if (title) setLinkedBugs(prev => prev.map(b => (b.id === id && !b.title ? { ...b, title } : b)));
+    } catch { /* ignore — the id is still linked, title can be backfilled later */ }
+  }, []);
 
   // Loading state
   if (isLoading || authLoading) return (
@@ -789,29 +848,11 @@ export default function TestSessionPage() {
                   </Button>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto pr-1">
-                {session.testCases.map((t, i) => {
-                  const active = i === currentIndex;
-                  const isReturn = i === returnIndex;
-                  return (
-                    <button
-                      key={t.id || i}
-                      onClick={() => jumpTo(i)}
-                      title={t.testCaseTitle}
-                      className={cn(
-                        'w-8 h-7 rounded-md text-[10px] font-semibold tabular-nums border transition-colors',
-                        active ? 'bg-primary text-white border-primary' :
-                        t.status === 'Pass' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20 hover:border-emerald-400' :
-                        t.status?.includes('Fail') ? 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20 hover:border-red-400' :
-                        t.status === 'N/A' ? 'bg-muted text-muted-foreground border-border hover:border-muted-foreground/40' :
-                        'bg-card text-muted-foreground/70 border-border hover:border-primary/40 hover:text-foreground',
-                        isReturn && !active && 'ring-2 ring-primary/40',
-                      )}>
-                      {i + 1}
-                    </button>
-                  );
-                })}
-              </div>
+              <JumpGrid
+                cases={session.testCases}
+                currentIndex={currentIndex}
+                returnIndex={returnIndex}
+                onJump={jumpTo} />
             </div>
           </motion.div>
         )}
@@ -819,7 +860,7 @@ export default function TestSessionPage() {
 
       {/* Shortcuts tooltip */}
       <AnimatePresence>
-        {showShortcuts && (
+        {showShortcuts && !jumpOpen && (
           <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}
             className="absolute top-16 right-4 z-40 bg-card border border-border rounded-xl p-3 shadow-lg">
             <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px]">
@@ -1110,20 +1151,12 @@ export default function TestSessionPage() {
                       onKeyDown={e => {
                         if (e.key === 'Enter' && bugId.trim() && /^[A-Z]{2,10}-\d+$/.test(bugId.trim())) {
                           e.preventDefault();
-                          if (!linkedBugs.find(b => b.id === bugId.trim())) {
-                            setLinkedBugs(prev => [...prev, { id: bugId.trim(), title: bugTitle || null }]);
-                          }
-                          setBugId('');
+                          addLinkedBug(bugId, bugTitle);
                         }
                       }}
                       className="h-9 text-sm font-mono bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50 focus:border-primary/40 rounded-lg" />
                     <Button variant="outline" size="sm" disabled={!bugId.trim() || !/^[A-Z]{2,10}-\d+$/.test(bugId.trim())}
-                      onClick={() => {
-                        if (bugId.trim() && !linkedBugs.find(b => b.id === bugId.trim())) {
-                          setLinkedBugs(prev => [...prev, { id: bugId.trim(), title: bugTitle || null }]);
-                        }
-                        setBugId('');
-                      }}
+                      onClick={() => addLinkedBug(bugId, bugTitle)}
                       className="h-9 px-3 shrink-0">
                       <Plus className="w-3.5 h-3.5" />
                     </Button>

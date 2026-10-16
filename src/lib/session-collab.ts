@@ -112,6 +112,9 @@ export function getCaseBugs(
   for (const id of tc.linkedBugs || []) {
     if (id && !seen.has(id)) add(id, details.get(id) ?? null);
   }
+  for (const d of tc.linkedBugDetails || []) {
+    if (d?.id && !seen.has(d.id)) add(d.id, d.title ?? null);
+  }
   return out;
 }
 

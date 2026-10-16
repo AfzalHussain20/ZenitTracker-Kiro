@@ -234,6 +234,13 @@ describe('session-collab', () => {
       expect(getCaseBugs(tc({ linkedBugs: ['SUN-2'] }))).toEqual([{ id: 'SUN-2', title: null }]);
     });
 
+    it('includes bugs that exist only in linkedBugDetails', () => {
+      expect(getCaseBugs(tc({
+        bugId: 'SUN-1', bugTitle: 'One',
+        linkedBugDetails: [{ id: 'SUN-1', title: 'One' }, { id: 'SUN-9', title: 'Nine' }],
+      }))).toEqual([{ id: 'SUN-1', title: 'One' }, { id: 'SUN-9', title: 'Nine' }]);
+    });
+
     it('returns an empty list when there are no bugs', () => {
       expect(getCaseBugs(tc())).toEqual([]);
       expect(getCaseBugs(null)).toEqual([]);
