@@ -19,8 +19,8 @@ test('lead can open the results report and the fail/skip editors', async ({ page
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
   await page.getByLabel('Email', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
   await page.waitForTimeout(2500);
-  await page.getByLabel('Email', { exact: true }).fill(EMAIL);
-  await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
+  await page.getByLabel('Email', { exact: true }).fill(EMAIL!);
+  await page.getByLabel('Password', { exact: true }).fill(PASSWORD!);
   await page.getByRole('button', { name: /Sign In/i }).click();
   await page.waitForURL(/\/dashboard/, { timeout: 30000 });
 
