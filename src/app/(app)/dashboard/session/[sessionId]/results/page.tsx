@@ -165,7 +165,9 @@ export default function TestSessionResultPage() {
     };
   });
 
-  const failedCases = session.testCases.filter(tc => tc.status?.includes('Fail'));
+  const failedCases = session.testCases
+    .map((tc, index) => ({ tc, index }))
+    .filter(({ tc }) => tc.status?.includes('Fail'));
 
   // ── Lead editing ──────────────────────────────────────────────────────────
   const isValidBug = (id: string) => isValidBugKey(id);
@@ -454,13 +456,16 @@ export default function TestSessionResultPage() {
               <Badge className="bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400 text-[10px] ml-1">{failedCases.length}</Badge>
             </h3>
             <div className="space-y-2">
-              {failedCases.map((tc, i) => (
+              {failedCases.map(({ tc, index }) => (
                 <div key={tc.id} className="flex items-start gap-3 px-4 py-3 rounded-xl bg-card border border-border">
                   <div className="w-6 h-6 rounded-lg bg-red-100 dark:bg-red-500/15 flex items-center justify-center shrink-0 mt-0.5">
                     <XCircle className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">{tc.testCaseTitle}</p>
+                    <p className="text-sm font-medium text-foreground">
+                      <span className="font-mono text-xs text-muted-foreground mr-1.5">#{index + 1}</span>
+                      {tc.testCaseTitle}
+                    </p>
                     {/* Show all linked bugs as a clean list */}
                     {getCaseBugs(tc).length > 0 && (
                       <div className="flex flex-wrap gap-1.5 mt-1.5">

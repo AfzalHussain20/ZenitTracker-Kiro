@@ -118,7 +118,9 @@ export default function PublicReportPage() {
     { name: 'Failed', value: failed, color: '#ef4444' },
     { name: 'N/A', value: na, color: '#94a3b8' },
   ].filter(x => x.value > 0);
-  const failedCases = session.testCases.filter(tc => tc.status?.includes('Fail'));
+  const failedCases = session.testCases
+    .map((tc, index) => ({ tc, index }))
+    .filter(({ tc }) => tc.status?.includes('Fail'));
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -191,11 +193,14 @@ export default function PublicReportPage() {
               <Bug className="w-4 h-4 text-red-600" />Defects ({failedCases.length})
             </h3>
             <div className="space-y-2">
-              {failedCases.map(tc => (
+              {failedCases.map(({ tc, index }) => (
                 <div key={tc.id} className="flex items-start gap-3 px-3 py-2 rounded-lg bg-card border border-border">
                   <XCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">{tc.testCaseTitle}</p>
+                    <p className="text-sm font-medium">
+                      <span className="font-mono text-xs text-muted-foreground mr-1.5">#{index + 1}</span>
+                      {tc.testCaseTitle}
+                    </p>
                     {getCaseBugs(tc).map(bug => (
                       <a key={bug.id} href={`${JIRA_BASE}/browse/${bug.id}`} target="_blank" rel="noopener noreferrer"
                         className="text-xs text-primary hover:underline flex items-center gap-1 mt-0.5">
