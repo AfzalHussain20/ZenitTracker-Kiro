@@ -19,6 +19,8 @@ import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { normalizeCases, getCaseBugs, applyCasePatch, computeSummary } from '@/lib/session-collab';
 import { naReasonOptions, resolveSkipReason, OTHER_REASON } from '@/lib/skip-reasons';
+import { useJiraFetch, isValidBugKey } from '@/lib/use-jira-fetch';
+import { Plus, X } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { JIRA_BASE_URL as JIRA_BASE } from '@/lib/jira/config';
 
@@ -83,10 +85,13 @@ export default function TestSessionResultPage() {
   const [failEdit, setFailEdit] = useState<{ index: number } | null>(null);
   const [skipEdit, setSkipEdit] = useState<{ index: number } | null>(null);
   const [editBugId, setEditBugId] = useState('');
-  const [editBugTitle, setEditBugTitle] = useState<string | null>(null);
+  const [editLinkedBugs, setEditLinkedBugs] = useState<{ id: string; title: string | null }[]>([]);
   const [editNotes, setEditNotes] = useState('');
   const [editReason, setEditReason] = useState('');
   const [editOther, setEditOther] = useState('');
+
+  // Live Jira lookup as the lead types a bug id (same behaviour as the runner).
+  const { bugTitle: editBugTitle, fetching: editBugFetching, fetchError: editBugError } = useJiraFetch(editBugId);
 
   useEffect(() => {
     if (authLoading) return;
@@ -163,7 +168,7 @@ export default function TestSessionResultPage() {
   const failedCases = session.testCases.filter(tc => tc.status?.includes('Fail'));
 
   // ── Lead editing ──────────────────────────────────────────────────────────
-  const isValidBug = (id: string) => /^[A-Z]{2,10}-\d+$/.test(id.trim());
+  const isValidBug = (id: string) => isValidBugKey(id);
 
   const applyEdit = async (index: number, patch: Partial<TestCase>) => {
     if (!session || !colName || !user) return;
@@ -213,43 +218,43 @@ export default function TestSessionResultPage() {
 
   const openFail = (index: number) => {
     const tc = session?.testCases[index];
-    setEditBugId(tc?.bugId || '');
-    setEditBugTitle(tc?.bugTitle || null);
+    setEditBugId('');
+    setEditLinkedBugs(tc ? getCaseBugs(tc).map(b => ({ id: b.id, title: b.title ?? null })) : []);
     setEditNotes(tc?.notes || '');
     setFailEdit({ index });
   };
 
-  const lookupEditBug = async () => {
+  const addEditLinkedBug = () => {
     const id = editBugId.trim().toUpperCase();
-    if (!isValidBug(id)) return;
-    try {
-      const res = await fetch(`/api/jira/issue/${encodeURIComponent(id)}`);
-      if (res.ok) {
-        const d = await res.json();
-        setEditBugTitle(d.summary || null);
-      }
-    } catch { /* ignore */ }
+    if (!isValidBugKey(id)) return;
+    setEditLinkedBugs(prev => (prev.some(b => b.id === id) ? prev : [...prev, { id, title: editBugTitle || null }]));
+    setEditBugId('');
+  };
+
+  const removeEditLinkedBug = (id: string) => {
+    setEditLinkedBugs(prev => prev.filter(b => b.id !== id));
   };
 
   const confirmFail = async () => {
     if (!failEdit || !session) return;
     const index = failEdit.index;
-    const id = editBugId.trim().toUpperCase();
-    if (!isValidBug(id)) return;
     const tc = session.testCases[index];
-    let title = editBugTitle;
-    if (!title) {
-      try {
-        const res = await fetch(`/api/jira/issue/${encodeURIComponent(id)}`);
-        if (res.ok) title = (await res.json()).summary || null;
-      } catch { /* ignore */ }
+    const typed = editBugId.trim().toUpperCase();
+    const typedValid = isValidBugKey(typed);
+
+    const details: { id: string; title: string | null }[] = [...editLinkedBugs];
+    if (typedValid && !details.some(d => d.id === typed)) {
+      details.push({ id: typed, title: editBugTitle || null });
     }
+    const primary = typedValid ? typed : details[0]?.id || '';
+    const primaryTitle = details.find(d => d.id === primary)?.title ?? null;
+
     await applyEdit(index, {
       status: 'Fail',
-      bugId: id,
-      bugTitle: title,
-      linkedBugs: [id],
-      linkedBugDetails: [{ id, title }],
+      bugId: primary || null,
+      bugTitle: primaryTitle,
+      linkedBugs: details.map(d => d.id),
+      linkedBugDetails: details,
       naReason: null,
       notes: editNotes.trim() || tc?.notes || '',
       actualResult: tc?.actualResult || '',
@@ -625,16 +630,57 @@ export default function TestSessionResultPage() {
               </p>
             </div>
             <div className="space-y-1.5">
-              <label className="text-[11px] font-medium text-muted-foreground">Bug ID</label>
-              <input
-                value={editBugId}
-                onChange={e => { setEditBugId(e.target.value.toUpperCase()); setEditBugTitle(null); }}
-                onBlur={lookupEditBug}
-                placeholder="e.g. SUN-1234"
-                className="w-full text-sm font-mono bg-muted/50 border border-border rounded-lg px-3 py-2 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40"
-              />
-              {editBugTitle && (
-                <p className="text-[11px] text-emerald-600 dark:text-emerald-400 truncate">{editBugId} — {editBugTitle}</p>
+              <label className="text-[11px] font-medium text-muted-foreground">Link Bug (type ID and press Enter)</label>
+              <div className="flex gap-2">
+                <input
+                  value={editBugId}
+                  onChange={e => setEditBugId(e.target.value.toUpperCase())}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && isValidBug(editBugId)) {
+                      e.preventDefault();
+                      addEditLinkedBug();
+                    }
+                  }}
+                  placeholder="e.g. SUN-1234"
+                  className="flex-1 text-sm font-mono bg-muted/50 border border-border rounded-lg px-3 py-2 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40"
+                />
+                <button
+                  type="button"
+                  onClick={addEditLinkedBug}
+                  disabled={!isValidBug(editBugId)}
+                  title="Add bug"
+                  className="px-3 rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-40 flex items-center justify-center"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+              {editBugFetching && (
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" />Fetching...</p>
+              )}
+              {editBugTitle && !editBugFetching && editBugId && (
+                <p className="text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/[0.06] border border-emerald-200 dark:border-emerald-500/20 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5 truncate">
+                  <Check className="w-3 h-3 shrink-0" /><span className="truncate">{editBugId} — {editBugTitle}</span>
+                </p>
+              )}
+              {editBugError && !editBugFetching && (
+                <p className="text-[10px] text-amber-600 flex items-center gap-1.5"><XCircle className="w-3 h-3" />{editBugError}</p>
+              )}
+              {editLinkedBugs.length > 0 && (
+                <div className="space-y-1 pt-1">
+                  <label className="text-[11px] font-medium text-muted-foreground">Linked Bugs ({editLinkedBugs.length})</label>
+                  {editLinkedBugs.map(bug => (
+                    <div key={bug.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-red-50 dark:bg-red-500/[0.06] border border-red-200 dark:border-red-500/20">
+                      <Bug className="w-3 h-3 text-red-500 shrink-0" />
+                      <span className="text-[11px] font-mono text-foreground flex-1 truncate">
+                        {bug.id}{bug.title ? ` — ${bug.title}` : ''}
+                      </span>
+                      <button type="button" onClick={() => removeEditLinkedBug(bug.id)}
+                        className="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-500/20">
+                        <X className="w-3 h-3 text-red-500" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
             <div className="space-y-1.5">
@@ -649,7 +695,7 @@ export default function TestSessionResultPage() {
             </div>
             <div className="flex gap-2 pt-1">
               <Button variant="ghost" size="sm" className="flex-1 text-xs" onClick={() => setFailEdit(null)}>Cancel</Button>
-              <Button size="sm" className="flex-1 text-xs" disabled={!isValidBug(editBugId) || saving !== null} onClick={confirmFail}>
+              <Button size="sm" className="flex-1 text-xs" disabled={saving !== null || (!isValidBug(editBugId) && editLinkedBugs.length === 0)} onClick={confirmFail}>
                 {saving !== null ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
                 Save Fail
               </Button>
