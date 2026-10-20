@@ -38,11 +38,12 @@ class TeamCacheService {
    * Set teams in cache with TTL
    */
   set(teams: JiraTeam[], key: string = 'default'): void {
+    const timestamp = Date.now();
     const entry: TeamCacheEntry = {
       data: teams,
-      timestamp: Date.now(),
+      timestamp,
       ttl: CACHE_TTL,
-      lastRefresh: new Date(),
+      lastRefresh: new Date(timestamp),
     };
 
     this.cache.set(key, entry);

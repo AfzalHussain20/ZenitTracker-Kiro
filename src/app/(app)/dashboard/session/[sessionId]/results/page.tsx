@@ -3,21 +3,22 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import type { TestSession } from '@/types';
+import type { TestSession, TestCase } from '@/types';
 import { db } from '@/lib/firebaseConfig';
-import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, runTransaction, Timestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import {
   Loader2, ArrowLeft, CheckCircle2, XCircle, AlertTriangle,
   Printer, Download, Clock, Calendar, ExternalLink, ArrowRight,
-  TrendingUp, Target, Bug, BarChart3, Layers
+  TrendingUp, Target, Bug, BarChart3, Layers, Check, SkipForward
 } from 'lucide-react';
 import { format, formatDistanceStrict } from 'date-fns';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { normalizeCases, getCaseBugs } from '@/lib/session-collab';
+import { normalizeCases, getCaseBugs, applyCasePatch, computeSummary } from '@/lib/session-collab';
+import { naReasonOptions, resolveSkipReason, OTHER_REASON } from '@/lib/skip-reasons';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { JIRA_BASE_URL as JIRA_BASE } from '@/lib/jira/config';
 
@@ -69,11 +70,23 @@ export default function TestSessionResultPage() {
   const params = useParams();
   const router = useRouter();
   const sessionId = params.sessionId as string;
-  const { user, loading: authLoading } = useAuth();
+  const { user, displayName, userRole, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const [session, setSession] = useState<TestSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [shareOpen, setShareOpen] = useState(false);
+  const [colName, setColName] = useState<'sessions' | 'testSessions' | null>(null);
+  const isLead = userRole === 'lead';
+
+  // Lead inline editing
+  const [saving, setSaving] = useState<number | null>(null);
+  const [failEdit, setFailEdit] = useState<{ index: number } | null>(null);
+  const [skipEdit, setSkipEdit] = useState<{ index: number } | null>(null);
+  const [editBugId, setEditBugId] = useState('');
+  const [editBugTitle, setEditBugTitle] = useState<string | null>(null);
+  const [editNotes, setEditNotes] = useState('');
+  const [editReason, setEditReason] = useState('');
+  const [editOther, setEditOther] = useState('');
 
   useEffect(() => {
     if (authLoading) return;
@@ -88,7 +101,7 @@ export default function TestSessionResultPage() {
         for (const col of ['sessions', 'testSessions'] as const) {
           try {
             const snap = await getDoc(doc(db, col, sessionId));
-            if (snap.exists()) { data = snap.data(); id = snap.id; break; }
+            if (snap.exists()) { data = snap.data(); id = snap.id; setColName(col); break; }
           } catch { /* denied / missing — try the next collection */ }
         }
         if (data) {
@@ -148,6 +161,124 @@ export default function TestSessionResultPage() {
   });
 
   const failedCases = session.testCases.filter(tc => tc.status?.includes('Fail'));
+
+  // ── Lead editing ──────────────────────────────────────────────────────────
+  const isValidBug = (id: string) => /^[A-Z]{2,10}-\d+$/.test(id.trim());
+
+  const applyEdit = async (index: number, patch: Partial<TestCase>) => {
+    if (!session || !colName || !user) return;
+    setSaving(index);
+    try {
+      let nextCases: TestCase[] = session.testCases;
+      await runTransaction(db, async (tx) => {
+        const ref = doc(db, colName, session.id);
+        const snap = await tx.get(ref);
+        if (!snap.exists()) throw new Error('Session not found');
+        const raw = snap.data().testCases;
+        const base = Array.isArray(raw) ? normalizeCases(raw) : session.testCases;
+        const patched = applyCasePatch(base, index, {
+          ...patch,
+          lastModified: Timestamp.now(),
+          executedByUid: user.uid,
+          executedByName: displayName || user.email?.split('@')[0] || '',
+        });
+        nextCases = patched;
+        tx.update(ref, {
+          testCases: patched,
+          summary: computeSummary(patched),
+          updatedAt: new Date(),
+        });
+      });
+      setSession((s) => (s ? { ...s, testCases: nextCases, summary: computeSummary(nextCases), updatedAt: new Date() } : s));
+      toast({ title: 'Updated', description: `Case ${index + 1} saved.` });
+    } catch (e: any) {
+      toast({ title: 'Update failed', description: e.message, variant: 'destructive' });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const markPass = async (index: number) => {
+    const tc = session?.testCases[index];
+    await applyEdit(index, {
+      status: 'Pass',
+      bugId: null,
+      bugTitle: null,
+      linkedBugs: [],
+      linkedBugDetails: [],
+      naReason: null,
+      actualResult: tc?.expectedResult || '',
+    } as any);
+  };
+
+  const openFail = (index: number) => {
+    const tc = session?.testCases[index];
+    setEditBugId(tc?.bugId || '');
+    setEditBugTitle(tc?.bugTitle || null);
+    setEditNotes(tc?.notes || '');
+    setFailEdit({ index });
+  };
+
+  const lookupEditBug = async () => {
+    const id = editBugId.trim().toUpperCase();
+    if (!isValidBug(id)) return;
+    try {
+      const res = await fetch(`/api/jira/issue/${encodeURIComponent(id)}`);
+      if (res.ok) {
+        const d = await res.json();
+        setEditBugTitle(d.summary || null);
+      }
+    } catch { /* ignore */ }
+  };
+
+  const confirmFail = async () => {
+    if (!failEdit || !session) return;
+    const index = failEdit.index;
+    const id = editBugId.trim().toUpperCase();
+    if (!isValidBug(id)) return;
+    const tc = session.testCases[index];
+    let title = editBugTitle;
+    if (!title) {
+      try {
+        const res = await fetch(`/api/jira/issue/${encodeURIComponent(id)}`);
+        if (res.ok) title = (await res.json()).summary || null;
+      } catch { /* ignore */ }
+    }
+    await applyEdit(index, {
+      status: 'Fail',
+      bugId: id,
+      bugTitle: title,
+      linkedBugs: [id],
+      linkedBugDetails: [{ id, title }],
+      naReason: null,
+      notes: editNotes.trim() || tc?.notes || '',
+      actualResult: tc?.actualResult || '',
+    } as any);
+    setFailEdit(null);
+  };
+
+  const openSkip = (index: number) => {
+    setEditReason('');
+    setEditOther('');
+    setSkipEdit({ index });
+  };
+
+  const confirmSkip = async () => {
+    if (!skipEdit) return;
+    const reason = resolveSkipReason(editReason, editOther);
+    if (!reason) return;
+    await applyEdit(skipEdit.index, {
+      status: 'N/A',
+      naReason: reason,
+      bugId: null,
+      bugTitle: null,
+      linkedBugs: [],
+      linkedBugDetails: [],
+      actualResult: '',
+    } as any);
+    setSkipEdit(null);
+  };
+
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -372,6 +503,9 @@ export default function TestSessionResultPage() {
                   <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Test Case</th>
                   <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider w-20">Status</th>
                   <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">Bug / Notes</th>
+                  {isLead && (
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider w-28">Actions</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -414,6 +548,27 @@ export default function TestSessionResultPage() {
                         <span className="truncate block">{tc.naReason || tc.notes || tc.actualResult || '—'}</span>
                       )}
                     </td>
+                    {isLead && (
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          <button type="button" title="Mark Pass" onClick={() => markPass(i)}
+                            disabled={saving !== null}
+                            className="w-7 h-7 rounded-md border border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 disabled:opacity-40 flex items-center justify-center">
+                            {saving === i ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                          </button>
+                          <button type="button" title="Mark Fail" onClick={() => openFail(i)}
+                            disabled={saving !== null}
+                            className="w-7 h-7 rounded-md border border-red-200 dark:border-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 disabled:opacity-40 flex items-center justify-center">
+                            <XCircle className="w-3.5 h-3.5" />
+                          </button>
+                          <button type="button" title="Skip" onClick={() => openSkip(i)}
+                            disabled={saving !== null}
+                            className="w-7 h-7 rounded-md border border-border text-muted-foreground hover:bg-muted disabled:opacity-40 flex items-center justify-center">
+                            <SkipForward className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -455,6 +610,92 @@ export default function TestSessionResultPage() {
               )}
             </div>
             <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground" onClick={() => setShareOpen(false)}>Close</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Fail edit dialog (lead) */}
+      {isLead && failEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setFailEdit(null)}>
+          <div className="bg-card border border-border rounded-2xl p-6 w-[420px] max-w-[92vw] space-y-4 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Mark as Failed</h3>
+              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                Case {failEdit.index + 1}: {session.testCases[failEdit.index]?.testCaseTitle}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-muted-foreground">Bug ID</label>
+              <input
+                value={editBugId}
+                onChange={e => { setEditBugId(e.target.value.toUpperCase()); setEditBugTitle(null); }}
+                onBlur={lookupEditBug}
+                placeholder="e.g. SUN-1234"
+                className="w-full text-sm font-mono bg-muted/50 border border-border rounded-lg px-3 py-2 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40"
+              />
+              {editBugTitle && (
+                <p className="text-[11px] text-emerald-600 dark:text-emerald-400 truncate">{editBugId} — {editBugTitle}</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-muted-foreground">Notes (optional)</label>
+              <textarea
+                value={editNotes}
+                onChange={e => setEditNotes(e.target.value)}
+                rows={3}
+                placeholder="What went wrong?"
+                className="w-full text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 resize-none text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40"
+              />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button variant="ghost" size="sm" className="flex-1 text-xs" onClick={() => setFailEdit(null)}>Cancel</Button>
+              <Button size="sm" className="flex-1 text-xs" disabled={!isValidBug(editBugId) || saving !== null} onClick={confirmFail}>
+                {saving !== null ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+                Save Fail
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Skip edit dialog (lead) */}
+      {isLead && skipEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setSkipEdit(null)}>
+          <div className="bg-card border border-border rounded-2xl p-6 w-[420px] max-w-[92vw] space-y-4 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Skip Test Case</h3>
+              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                Case {skipEdit.index + 1}: {session.testCases[skipEdit.index]?.testCaseTitle}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-muted-foreground">Reason</label>
+              <select
+                value={editReason}
+                onChange={e => { setEditReason(e.target.value); if (e.target.value !== OTHER_REASON) setEditOther(''); }}
+                className="w-full text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary/40"
+              >
+                <option value="">Select reason...</option>
+                {naReasonOptions.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+              {editReason === OTHER_REASON && (
+                <textarea
+                  value={editOther}
+                  onChange={e => setEditOther(e.target.value)}
+                  rows={3}
+                  autoFocus
+                  placeholder="Write the reason (required)..."
+                  className="w-full text-sm bg-muted/50 border border-border rounded-lg px-3 py-2 resize-none text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40"
+                />
+              )}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button variant="ghost" size="sm" className="flex-1 text-xs" onClick={() => setSkipEdit(null)}>Cancel</Button>
+              <Button size="sm" className="flex-1 text-xs" disabled={!resolveSkipReason(editReason, editOther) || saving !== null} onClick={confirmSkip}>
+                {saving !== null ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+                Save Skip
+              </Button>
+            </div>
           </div>
         </div>
       )}

@@ -33,19 +33,7 @@ import {
   isSessionOwner, mergeTesters, normalizeCases, parseSessionDoc, removeTester,
   type SessionTester,
 } from '@/lib/session-collab';
-
-const naReasonOptions = [
-  "Content not available in this region/language",
-  "Subscription plan not applicable to this device",
-  "Feature not yet released on this platform",
-  "Device/OS version incompatibility",
-  "Content geo-restricted or DRM-blocked",
-  "Backend/API dependency unavailable",
-  "Test environment not configured for this scenario",
-  "Blocked by another critical bug",
-  "Third-party integration unavailable (payment gateway, CDN, etc.)",
-  "Other",
-];
+import { naReasonOptions, resolveSkipReason, isOtherReason } from '@/lib/skip-reasons';
 
 const incompleteReasonOptions = [
   "Session paused", "Blocked by bug", "Time constraints", "Environment unavailable", "Other",
@@ -213,6 +201,7 @@ export default function TestSessionPage() {
   const [bugDesc, setBugDesc] = useState('');
   const [incompleteReason, setIncompleteReason] = useState('');
   const [naReason, setNaReason] = useState('');
+  const [naOther, setNaOther] = useState('');
   const [jiraPushing, setJiraPushing] = useState(false);
   const [jiraIssueKey, setJiraIssueKey] = useState<string | null>(null);
   const [jiraIssueLink, setJiraIssueLink] = useState<string | null>(null);
@@ -1423,29 +1412,41 @@ export default function TestSessionPage() {
       </Dialog>
 
       {/* ─── N/A Dialog ─── */}
-      <Dialog open={naOpen} onOpenChange={v => { setNaOpen(v); if (!v) setNaReason(''); }}>
+      <Dialog open={naOpen} onOpenChange={v => { setNaOpen(v); if (!v) { setNaReason(''); setNaOther(''); } }}>
         <DialogContent className="sm:max-w-sm bg-card border-border text-foreground max-h-[85vh] overflow-y-auto rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-foreground">Skip Test Case</DialogTitle>
             <DialogDescription className="text-muted-foreground">Why is this not applicable?</DialogDescription>
           </DialogHeader>
           {naOpen && (
-            <Select value={naReason} onValueChange={setNaReason}>
-              <SelectTrigger className="bg-muted/50 border-border text-foreground rounded-xl">
-                <SelectValue placeholder="Select reason..." />
-              </SelectTrigger>
-              <SelectContent className="bg-card border-border">
-                {naReasonOptions.map(r => (
-                  <SelectItem key={r} value={r} className="text-foreground/70 focus:text-foreground focus:bg-muted">{r}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="space-y-2">
+              <Select value={naReason} onValueChange={v => { setNaReason(v); if (!isOtherReason(v)) setNaOther(''); }}>
+                <SelectTrigger className="bg-muted/50 border-border text-foreground rounded-xl">
+                  <SelectValue placeholder="Select reason..." />
+                </SelectTrigger>
+                <SelectContent className="bg-card border-border">
+                  {naReasonOptions.map(r => (
+                    <SelectItem key={r} value={r} className="text-foreground/70 focus:text-foreground focus:bg-muted">{r}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {isOtherReason(naReason) && (
+                <textarea
+                  value={naOther}
+                  onChange={e => setNaOther(e.target.value)}
+                  placeholder="Write the reason (required)..."
+                  rows={3}
+                  autoFocus
+                  className="w-full text-sm bg-muted/50 border border-border rounded-xl px-3 py-2 resize-none focus:outline-none focus:border-primary/40 text-foreground placeholder:text-muted-foreground/50"
+                />
+              )}
+            </div>
           )}
           <DialogFooter className="mt-2 gap-2">
             <Button variant="ghost" size="sm" onClick={() => setNaOpen(false)}
               className="text-muted-foreground hover:text-foreground hover:bg-muted">Cancel</Button>
-            <Button size="sm" disabled={!naReason}
-              onClick={() => markStatus('N/A', { naReason })}
+            <Button size="sm" disabled={!resolveSkipReason(naReason, naOther)}
+              onClick={() => markStatus('N/A', { naReason: resolveSkipReason(naReason, naOther) as string })}
               className="bg-muted hover:bg-muted/80 text-foreground border border-border rounded-lg disabled:opacity-30">
               Confirm Skip
             </Button>

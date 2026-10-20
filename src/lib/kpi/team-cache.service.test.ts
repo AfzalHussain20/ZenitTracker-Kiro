@@ -32,9 +32,16 @@ describe('TeamCacheService', () => {
     },
   ];
 
+  const realNow = Date.now;
+
   beforeEach(() => {
     // Clear cache before each test
     teamCacheService.clear();
+  });
+
+  afterEach(() => {
+    // Always restore the clock, even if an assertion above threw.
+    Date.now = realNow;
   });
 
   describe('Cache Hit/Miss Scenarios', () => {
@@ -84,93 +91,76 @@ describe('TeamCacheService', () => {
   });
 
   describe('TTL Expiration Logic', () => {
+    // Fixed base clock so TTL boundary behaviour is deterministic: mocking
+    // Date.now with a *relative* offset after set() is racy because real time
+    // elapses between set() and get().
+    const BASE = 1_700_000_000_000;
+
     it('should return null when cache has expired', () => {
-      // Set cache with current timestamp
+      Date.now = () => BASE;
       teamCacheService.set(mockTeams, 'default');
-      
-      // Mock Date.now to simulate time passing (31 minutes = 1860000ms)
-      const originalNow = Date.now;
-      Date.now = jest.fn(() => originalNow() + 31 * 60 * 1000);
+
+      // 31 minutes later
+      Date.now = () => BASE + 31 * 60 * 1000;
 
       const result = teamCacheService.get('default');
       expect(result).toBeNull();
-
-      // Restore Date.now
-      Date.now = originalNow;
     });
 
     it('should return data when cache has not expired', () => {
+      Date.now = () => BASE;
       teamCacheService.set(mockTeams, 'default');
-      
-      // Mock Date.now to simulate time passing (29 minutes = 1740000ms)
-      const originalNow = Date.now;
-      Date.now = jest.fn(() => originalNow() + 29 * 60 * 1000);
+
+      // 29 minutes later
+      Date.now = () => BASE + 29 * 60 * 1000;
 
       const result = teamCacheService.get('default');
       expect(result).toEqual(mockTeams);
-
-      // Restore Date.now
-      Date.now = originalNow;
     });
 
     it('should return false for has() when cache has expired', () => {
+      Date.now = () => BASE;
       teamCacheService.set(mockTeams, 'default');
-      
-      // Mock Date.now to simulate time passing (31 minutes)
-      const originalNow = Date.now;
-      Date.now = jest.fn(() => originalNow() + 31 * 60 * 1000);
+
+      // 31 minutes later
+      Date.now = () => BASE + 31 * 60 * 1000;
 
       expect(teamCacheService.has('default')).toBe(false);
-
-      // Restore Date.now
-      Date.now = originalNow;
     });
 
     it('should automatically remove expired cache on get()', () => {
+      Date.now = () => BASE;
       teamCacheService.set(mockTeams, 'default');
-      
-      // Mock Date.now to simulate expiration
-      const originalNow = Date.now;
-      Date.now = jest.fn(() => originalNow() + 31 * 60 * 1000);
 
-      // First get should return null and remove the entry
+      // 31 minutes later — first get expires and removes the entry
+      Date.now = () => BASE + 31 * 60 * 1000;
       expect(teamCacheService.get('default')).toBeNull();
-      
-      // Restore Date.now
-      Date.now = originalNow;
-      
-      // Second get should still return null (entry was removed)
+
+      // Second get still null (entry was removed)
+      Date.now = () => BASE + 32 * 60 * 1000;
       expect(teamCacheService.get('default')).toBeNull();
     });
 
     it('should handle cache at exact TTL boundary (30 minutes)', () => {
+      Date.now = () => BASE;
       teamCacheService.set(mockTeams, 'default');
-      
-      // Mock Date.now to simulate exactly 30 minutes
-      const originalNow = Date.now;
-      Date.now = jest.fn(() => originalNow() + 30 * 60 * 1000);
 
       // At exactly 30 minutes, cache should still be valid (not expired)
+      Date.now = () => BASE + 30 * 60 * 1000;
+
       const result = teamCacheService.get('default');
       expect(result).toEqual(mockTeams);
-
-      // Restore Date.now
-      Date.now = originalNow;
     });
 
     it('should handle cache just after TTL boundary', () => {
+      Date.now = () => BASE;
       teamCacheService.set(mockTeams, 'default');
-      
-      // Mock Date.now to simulate 30 minutes + 1ms
-      const originalNow = Date.now;
-      Date.now = jest.fn(() => originalNow() + 30 * 60 * 1000 + 1);
 
-      // Just after 30 minutes, cache should be expired
+      // 30 minutes + 1ms later, cache should be expired
+      Date.now = () => BASE + 30 * 60 * 1000 + 1;
+
       const result = teamCacheService.get('default');
       expect(result).toBeNull();
-
-      // Restore Date.now
-      Date.now = originalNow;
     });
   });
 
