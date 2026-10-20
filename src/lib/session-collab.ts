@@ -188,6 +188,60 @@ export function applyCasePatch(cases: TestCase[], index: number, patch: Partial<
   return next;
 }
 
+/**
+ * Build a blank, execution-ready test case. `id` must be unique within the
+ * session; callers seed it from the session id plus a unique suffix.
+ */
+export function makeBlankCase(id: string, orderIndex: number, seed: Partial<TestCase> = {}): TestCase {
+  return {
+    id,
+    orderIndex,
+    testBed: seed.testBed ?? '',
+    testCaseTitle: seed.testCaseTitle ?? 'New test case',
+    testSteps: seed.testSteps ?? '',
+    expectedResult: seed.expectedResult ?? '',
+    actualResult: seed.actualResult ?? '',
+    notes: seed.notes ?? '',
+    status: seed.status ?? 'Untested',
+    priority: seed.priority ?? 'Medium',
+    lastModified: seed.lastModified ?? new Date(),
+    ...seed,
+  } as TestCase;
+}
+
+/**
+ * Re-number `orderIndex` sequentially from the array position. Inserts and
+ * deletes shift positions, so every case's `orderIndex` is resynced after a
+ * structural change (the UI already numbers cases by array index, but exports
+ * and sorts rely on `orderIndex`). Positions are preserved as dates/objects.
+ */
+export function reindexCases(cases: TestCase[]): TestCase[] {
+  return cases.map((tc, i) => (tc.orderIndex === i ? tc : ({ ...tc, orderIndex: i } as TestCase)));
+}
+
+/**
+ * Insert `newCase` at `atIndex` (clamped to `[0, length]`) and re-number the
+ * following cases. Returns a new array; the caller persists it inside a
+ * transaction.
+ */
+export function applyInsertCase(cases: TestCase[], atIndex: number, newCase: TestCase): TestCase[] {
+  const next = [...cases];
+  const pos = Math.max(0, Math.min(atIndex, next.length));
+  next.splice(pos, 0, newCase);
+  return reindexCases(next);
+}
+
+/**
+ * Remove the case at `index` and re-number the remaining cases. No-ops on an
+ * out-of-range index so concurrent writers can't blow up.
+ */
+export function applyDeleteCase(cases: TestCase[], index: number): TestCase[] {
+  if (index < 0 || index >= cases.length) return cases;
+  const next = [...cases];
+  next.splice(index, 1);
+  return reindexCases(next);
+}
+
 /** Assign an inclusive index range to a tester, clamped to the array bounds. */
 export function applyAssignRange(
   cases: TestCase[],

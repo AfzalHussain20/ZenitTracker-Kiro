@@ -15,7 +15,7 @@ import {
   CheckCircle2, XCircle, ChevronLeft, ChevronRight, CornerUpLeft,
   Menu, X, Loader2, Search, Bug, ExternalLink,
   ArrowRight, Zap, ListChecks, Target, Keyboard,
-  SkipForward, Clock, Plus, Users, Hash
+  SkipForward, Clock, Plus, Users, Hash, Pencil, FilePlus, Trash2
 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
@@ -28,7 +28,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { SessionTeamDialog } from '@/components/session/SessionTeamDialog';
 import {
-  applyAssignRange, applyCasePatch, applyEvenSplit, applyUnassignRange, stripUndefined,
+  applyAssignRange, applyCasePatch, applyDeleteCase, applyEvenSplit, applyInsertCase,
+  applyUnassignRange, makeBlankCase, stripUndefined,
   canAccessSession, computeSummary, findNextUnassigned, findResumeIndex,
   isSessionOwner, mergeTesters, normalizeCases, parseSessionDoc, removeTester,
   type SessionTester,
@@ -207,6 +208,14 @@ export default function TestSessionPage() {
   const [jiraIssueLink, setJiraIssueLink] = useState<string | null>(null);
   const [verdict, setVerdict] = useState<'Pass' | 'Fail' | 'N/A' | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  // In-execution case editor (title / steps / expected / test bed)
+  const [editOpen, setEditOpen] = useState(false);
+  const [editIndex, setEditIndex] = useState<number | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editSteps, setEditSteps] = useState('');
+  const [editExpected, setEditExpected] = useState('');
+  const [editBed, setEditBed] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
   const [showJiraForm, setShowJiraForm] = useState(false);
   const [jiraSummary, setJiraSummary] = useState('');
   const [jiraSeverity, setJiraSeverity] = useState('High');
@@ -225,7 +234,7 @@ export default function TestSessionPage() {
   const [jiraPriorities, setJiraPriorities] = useState<{id: string; name: string}[]>([]);
 
   const { bugTitle, fetching: bugFetching, fetchError: bugFetchError } = useJiraFetch(bugId);
-  const anyDialogOpen = failOpen || naOpen || completeOpen || drawerOpen;
+  const anyDialogOpen = failOpen || naOpen || completeOpen || drawerOpen || editOpen;
 
   // ─── Memoized derived data (avoids rescanning 500+ cases on every render) ───
   const stats = useMemo(() => {
@@ -473,6 +482,94 @@ export default function TestSessionPage() {
       });
     } catch { toast({ title: 'Sync Error', description: 'Cloud save failed.', variant: 'destructive' }); }
   }, [session, sessionCollection, sessionId, toast]);
+
+  // Structural writes (insert / delete / bulk edit) reuse the same
+  // transaction + full-array pattern so concurrent testers never clobber each
+  // other and the array is never converted to a map by dotted paths.
+  const runStructuralWrite = useCallback(async (
+    transform: (cases: TestCase[]) => TestCase[],
+    opts?: { successMessage?: string },
+  ) => {
+    const ref = doc(db, sessionCollection, sessionId);
+    try {
+      let next: TestCase[] = [];
+      await runTransaction(db, async tx => {
+        const snap = await tx.get(ref);
+        const cases = normalizeCases(snap.data()?.testCases);
+        next = transform(cases);
+        tx.update(ref, { testCases: next, summary: computeSummary(next), updatedAt: new Date() });
+      });
+      setSession(prev => (prev ? { ...prev, testCases: next, summary: computeSummary(next), updatedAt: new Date() } : prev));
+      if (opts?.successMessage) toast({ title: opts.successMessage });
+      return next;
+    } catch {
+      toast({ title: 'Sync Error', description: 'Cloud save failed.', variant: 'destructive' });
+      return null;
+    }
+  }, [sessionCollection, sessionId, toast]);
+
+  // ─── In-execution case editor (title / steps / expected / test bed) ─────────
+  const openEditor = useCallback((index: number) => {
+    const c = session?.testCases[index];
+    if (!c) return;
+    setEditIndex(index);
+    setEditTitle(c.testCaseTitle || '');
+    setEditSteps(c.testSteps || '');
+    setEditExpected(c.expectedResult || '');
+    setEditBed(c.testBed || '');
+    setEditOpen(true);
+  }, [session]);
+
+  const saveEditor = useCallback(async () => {
+    if (editIndex === null || !session) return;
+    const index = editIndex;
+    setEditSaving(true);
+    try {
+      await writeCasePatch(index, {
+        testCaseTitle: editTitle.trim() || 'Untitled test case',
+        testSteps: editSteps,
+        expectedResult: editExpected,
+        testBed: editBed,
+        lastModified: new Date(),
+      });
+      setEditOpen(false);
+      setEditIndex(null);
+      toast({ title: 'Saved', description: 'Test case updated.' });
+    } finally {
+      setEditSaving(false);
+    }
+  }, [editIndex, session, editTitle, editSteps, editExpected, editBed, writeCasePatch, toast]);
+
+  // Insert a blank case AFTER the given index (defaults to after the current
+  // case), open it in the editor, and jump to it.
+  const insertCase = useCallback(async (afterIndex: number) => {
+    if (!session) return;
+    const at = afterIndex + 1;
+    const newCase = makeBlankCase(`${sessionId}-tc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, at, {
+      testBed: session.testCases[afterIndex]?.testBed || '',
+    });
+    const next = await runStructuralWrite(cases => applyInsertCase(cases, at, newCase), { successMessage: 'Test case inserted' });
+    if (next) {
+      setDrawerOpen(false);
+      setCurrentIndex(at);
+      setEditIndex(at);
+      setEditTitle(newCase.testCaseTitle);
+      setEditSteps(newCase.testSteps);
+      setEditExpected(newCase.expectedResult);
+      setEditBed(newCase.testBed);
+      setEditOpen(true);
+    }
+  }, [session, sessionId, runStructuralWrite]);
+
+  const deleteCase = useCallback(async (index: number) => {
+    if (!session || session.testCases.length <= 1) return;
+    const next = await runStructuralWrite(cases => applyDeleteCase(cases, index), { successMessage: 'Test case deleted' });
+    if (next) {
+      setEditOpen(false);
+      setEditIndex(null);
+      setCurrentIndex(prev => Math.min(prev, next.length - 1));
+    }
+  }, [session, runStructuralWrite]);
 
   // Claim a case inside a transaction so two testers can't grab the same one.
   const claimCase = useCallback(async (index: number) => {
@@ -906,7 +1003,15 @@ export default function TestSessionPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 text-muted-foreground">
-                  <Clock className="w-3 h-3" />
+                  <button onClick={() => openEditor(currentIndex)} title="Edit test case"
+                    className="p-1.5 rounded-md hover:bg-muted hover:text-foreground transition-colors">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => insertCase(currentIndex)} title="Insert test case after this one"
+                    className="p-1.5 rounded-md hover:bg-muted hover:text-foreground transition-colors">
+                    <FilePlus className="w-3.5 h-3.5" />
+                  </button>
+                  <Clock className="w-3 h-3 ml-1" />
                   <SessionClock resetKey={currentIndex} />
                 </div>
               </div>
@@ -1090,16 +1195,26 @@ export default function TestSessionPage() {
                         const active = idx === currentIndex;
                         const dot = t.status === 'Pass' ? 'bg-emerald-500' : t.status?.includes('Fail') ? 'bg-red-500' : t.status === 'N/A' ? 'bg-muted-foreground/40' : 'bg-muted-foreground/15';
                         return (
-                          <button key={t.id} onClick={() => { jumpTo(idx); setDrawerOpen(false); }}
-                            className={cn('w-full flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-all',
-                              active ? 'bg-primary/5 border border-primary/20' : 'hover:bg-muted/50 border border-transparent')}>
-                            <div className={cn('mt-1.5 w-2 h-2 rounded-full shrink-0', dot)} />
-                            <div className="min-w-0 flex-1">
-                              <p className={cn('text-[11px] leading-snug line-clamp-2',
-                                active ? 'text-foreground font-medium' : 'text-muted-foreground')}>{t.testCaseTitle}</p>
-                            </div>
-                            {active && <ArrowRight className="w-3 h-3 text-primary shrink-0 mt-1" />}
-                          </button>
+                          <div key={t.id} className="flex items-center gap-1">
+                            <button onClick={() => { jumpTo(idx); setDrawerOpen(false); }}
+                              className={cn('flex-1 min-w-0 flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-all',
+                                active ? 'bg-primary/5 border border-primary/20' : 'hover:bg-muted/50 border border-transparent')}>
+                              <div className={cn('mt-1.5 w-2 h-2 rounded-full shrink-0', dot)} />
+                              <div className="min-w-0 flex-1">
+                                <p className={cn('text-[11px] leading-snug line-clamp-2',
+                                  active ? 'text-foreground font-medium' : 'text-muted-foreground')}>{t.testCaseTitle}</p>
+                              </div>
+                              {active && <ArrowRight className="w-3 h-3 text-primary shrink-0 mt-1" />}
+                            </button>
+                            <button onClick={() => { setDrawerOpen(false); openEditor(idx); }} title="Edit case"
+                              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted shrink-0">
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                            <button onClick={() => { insertCase(idx); }} title="Insert case after"
+                              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted shrink-0">
+                              <FilePlus className="w-3 h-3" />
+                            </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -1487,6 +1602,78 @@ export default function TestSessionPage() {
               className="bg-emerald-600 hover:bg-emerald-700 text-white border-0 rounded-lg">
               Generate Report
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Case Editor (title / steps / expected) ─── */}
+      <Dialog open={editOpen} onOpenChange={(o) => { setEditOpen(o); if (!o) setEditIndex(null); }}>
+        <DialogContent className="sm:max-w-[600px] bg-card border-border text-foreground rounded-2xl gap-0 max-h-[90vh] flex flex-col p-0">
+          <DialogHeader className="px-5 py-4 border-b border-border shrink-0">
+            <DialogTitle className="text-foreground flex items-center gap-2">
+              <Pencil className="w-4 h-4 text-primary" />
+              {editIndex !== null ? `Edit Case ${editIndex + 1}` : 'Edit Test Case'}
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Changes apply to this session for everyone executing it.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0">
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-muted-foreground">Test Case Title</label>
+              <Input value={editTitle} onChange={e => setEditTitle(e.target.value)}
+                placeholder="Test case title"
+                className="bg-muted/50 border-border text-foreground" />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-muted-foreground">Test Bed / Module</label>
+              <Input value={editBed} onChange={e => setEditBed(e.target.value)}
+                placeholder="e.g. Search, Login"
+                className="bg-muted/50 border-border text-foreground" />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                <ListChecks className="w-3.5 h-3.5 text-primary" />Test Steps (one per line)
+              </label>
+              <Textarea value={editSteps} onChange={e => setEditSteps(e.target.value)}
+                rows={8} placeholder={"1. Open the app\n2. Tap search\n3. Enter a query"}
+                className="bg-muted/50 border-border text-foreground font-mono text-[13px] leading-relaxed resize-y" />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                <Target className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />Expected Result
+              </label>
+              <Textarea value={editExpected} onChange={e => setEditExpected(e.target.value)}
+                rows={5} placeholder="What should happen..."
+                className="bg-muted/50 border border-border rounded-lg text-foreground text-[13px] leading-relaxed resize-y" />
+            </div>
+          </div>
+
+          <DialogFooter className="px-5 py-3 border-t border-border shrink-0 flex-row items-center justify-between sm:justify-between gap-2">
+            <Button variant="ghost" size="sm" onClick={() => deleteCase(editIndex ?? currentIndex)}
+              disabled={editSaving || (session?.testCases.length ?? 0) <= 1}
+              className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10">
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" />Delete
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm"
+                onClick={() => { insertCase(editIndex ?? currentIndex); }}
+                disabled={editSaving}
+                className="text-muted-foreground hover:text-foreground hover:bg-muted">
+                <FilePlus className="w-3.5 h-3.5 mr-1.5" />Insert below
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => { setEditOpen(false); setEditIndex(null); }}
+                className="text-muted-foreground hover:text-foreground hover:bg-muted">Cancel</Button>
+              <Button size="sm" onClick={saveEditor} disabled={editSaving}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg">
+                {editSaving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+                Save
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

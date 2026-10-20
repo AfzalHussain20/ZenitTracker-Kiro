@@ -1,5 +1,6 @@
 import {
-  applyAssignRange, applyCasePatch, applyEvenSplit, applyUnassignRange, stripUndefined,
+  applyAssignRange, applyCasePatch, applyDeleteCase, applyEvenSplit, applyInsertCase,
+  applyUnassignRange, makeBlankCase, reindexCases, stripUndefined,
   canAccessSession, computeSummary, countAssigned, findNextUnassigned,
   findResumeIndex, getCaseBugs, isSessionOwner, mergeTesters, normalizeCases, parseSessionDoc, removeTester, splitEvenRanges,
 } from '../session-collab';
