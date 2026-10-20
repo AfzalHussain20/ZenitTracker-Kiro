@@ -68,5 +68,44 @@ service cloud.firestore {
         allow read, write: if request.auth != null;
       }
     }
+
+    // Test Repository (shared suite library). Missing rules previously caused
+    // "No test suites" and failures to add/update/delete suites.
+    match /testSuites/{suiteId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Test-suite plans and their cases.
+    match /test_plans/{planId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /test_cases/{caseId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Worklogs and cached team metrics used by the KPI/analytics screens.
+    match /worklogs/{worklogId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /team_metrics_cache/{cacheId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Keepr device registry and audit log.
+    match /keepr_devices/{deviceId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /keepr_audit_logs/{logId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Certificates back the public /verify/{id} page, so reads must be public.
+    match /certificates/{certId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
   }
 }
