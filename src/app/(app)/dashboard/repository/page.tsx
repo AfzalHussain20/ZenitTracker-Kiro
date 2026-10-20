@@ -13,12 +13,13 @@ import { Card } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import {
   Loader2, Upload, Play, Trash2, Search, FileSpreadsheet,
-  Layers, Calendar, Users, ArrowRight, ArrowLeft
+  Layers, Calendar, Users, ArrowRight, ArrowLeft, FileDown, FileText
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import * as XLSX from 'xlsx';
+import { downloadCasesAsCsv, downloadCasesAsXlsx } from '@/lib/export/test-cases';
 
 interface TestSuite {
   id: string;
@@ -279,6 +280,12 @@ export default function RepositoryPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  <Button size="sm" variant="outline" onClick={() => downloadCasesAsXlsx(suite.testCases, suite.name)} className="gap-1 text-xs h-8" title="Export this suite as Excel (.xlsx)">
+                    <FileDown className="w-3 h-3" />XLSX
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => downloadCasesAsCsv(suite.testCases, suite.name)} className="gap-1 text-xs h-8" title="Export this suite as CSV (.csv)">
+                    <FileText className="w-3 h-3" />CSV
+                  </Button>
                   <Button size="sm" variant="outline" onClick={() => setExpandedSuite(expandedSuite === suite.id ? null : suite.id)} className="gap-1 text-xs h-8">
                     {expandedSuite === suite.id ? 'Hide' : 'View'}
                   </Button>
