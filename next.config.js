@@ -4,14 +4,18 @@ const path = require('path');
 const nextConfig = {
   // Do not set output: 'standalone' — OpenNext/Cloudflare Workers requires no output mode.
   output: undefined,
+  // Fail the production build on type errors — CI runs `npm run typecheck` first,
+  // so a broken build means a genuine regression we must not ship.
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   eslint: {
+    // Lint is not yet enforced repo-wide; keep it out of the build until the
+    // backlog is cleared (tracked separately).
     ignoreDuringBuilds: true,
   },
-  // Show full error details in production for debugging
-  productionBrowserSourceMaps: true,
+  // Do not ship full source maps to clients in production.
+  productionBrowserSourceMaps: false,
   images: {
     unoptimized: true,
     remotePatterns: [
@@ -22,7 +26,8 @@ const nextConfig = {
     ],
   },
   compiler: {
-    removeConsole: false,
+    // Strip console.log/debug in production bundles; keep warn/error for diagnostics.
+    removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false,
   },
   webpack: (config, { isServer }) => {
     // Externalize modules that can't run in Cloudflare Workers environment

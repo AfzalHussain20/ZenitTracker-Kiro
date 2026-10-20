@@ -12,11 +12,18 @@ export async function middleware(request: NextRequest) {
   // Define routes that are considered "public" and do not require authentication.
   const publicRoutes = ['/login', '/signup', '/forgot-password'];
 
-  // Routes that start with these prefixes are always public (no auth needed)
-  const publicPrefixes = ['/scan/', '/report/', '/verify/', '/api/public/', '/api/keepr/', '/api/jira/', '/api/confluence/', '/api/ai/', '/api/org/', '/api/geo', '/api/billing/', '/landing'];
-  const isPublicPrefix = publicPrefixes.some(prefix => pathname.startsWith(prefix));
+  // Public page prefixes: marketing + shared/public pages that must work without a session.
+  const publicPagePrefixes = ['/scan/', '/report/', '/verify/', '/landing'];
 
-  const isPublicRoute = publicRoutes.includes(pathname) || isPublicPrefix;
+  // Public API prefixes: endpoints that legitimately serve unauthenticated callers
+  // (the shared report, the QR device-scan page and geo lookup on the landing page).
+  // Everything else under /api/* requires a session.
+  const publicApiPrefixes = ['/api/public/', '/api/keepr/', '/api/jira/', '/api/geo'];
+
+  const isApiRoute = pathname.startsWith('/api/');
+  const isPublicApi = publicApiPrefixes.some(prefix => pathname.startsWith(prefix));
+  const isPublicPage = publicPagePrefixes.some(prefix => pathname.startsWith(prefix));
+  const isPublicRoute = publicRoutes.includes(pathname) || isPublicPage || isPublicApi;
 
   // The root path '/' should now redirect based on auth status.
   if (pathname === '/') {
@@ -29,8 +36,14 @@ export async function middleware(request: NextRequest) {
 
   // If the user has a session token and is trying to access a public auth page (like login/signup),
   // redirect them to the dashboard — but NOT for scan/api routes which should always be accessible.
-  if (sessionToken && isPublicRoute && !isPublicPrefix) {
+  if (sessionToken && isPublicRoute && !isPublicPage && !isPublicApi) {
     return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+
+  // Unauthenticated requests to a protected API route get a JSON 401 (never an HTML
+  // login redirect — fetch callers would otherwise receive the login page markup).
+  if (!sessionToken && isApiRoute && !isPublicApi) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   // If the user does NOT have a session token and is trying to access any page
