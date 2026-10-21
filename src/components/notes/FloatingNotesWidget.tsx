@@ -108,20 +108,21 @@ export default function FloatingNotesWidget() {
 
   return (
     <>
-      {/* Floating Button with spin animation */}
+      {/* Floating Button */}
       <motion.button
         onClick={() => setOpen(prev => !prev)}
         className={cn(
-          'fixed bottom-6 right-6 z-[80] w-12 h-12 rounded-full shadow-lg',
+          'fixed bottom-6 right-6 z-[88] w-12 h-12 rounded-full shadow-lg',
           'flex items-center justify-center transition-colors',
-          'bg-primary text-primary-foreground hover:bg-primary/90',
-          'border border-primary/20'
+          'bg-gradient-to-br from-primary to-purple-600 text-white hover:opacity-90',
+          'ring-1 ring-inset ring-white/10'
         )}
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
         animate={{ rotate: open ? 180 : 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 20 }}
         aria-label="Quick Note"
+        title="Quick Note (Ctrl+Shift+N)"
       >
         <motion.div
           animate={{ rotate: open ? 180 : 0 }}
@@ -139,7 +140,7 @@ export default function FloatingNotesWidget() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.9 }}
             transition={{ type: 'spring', damping: 22, stiffness: 280 }}
-            className="fixed bottom-20 right-6 z-[80] w-80 sm:w-96 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+            className="fixed bottom-20 right-6 z-[95] w-80 sm:w-96 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
           >
             {/* Header */}
             <div className="px-4 py-3 border-b border-border flex items-center justify-between">

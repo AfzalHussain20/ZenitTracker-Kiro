@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
 
 const getValidDate = (d: unknown): Date | null => {
   if (!d) return null;
@@ -39,13 +40,6 @@ const getValidDate = (d: unknown): Date | null => {
     return isNaN(date.getTime()) ? null : date;
   }
   return null;
-};
-
-const STATUS_STYLES: Record<string, string> = {
-  Pass: 'text-emerald-600 dark:text-emerald-400',
-  Fail: 'text-red-600 dark:text-red-400',
-  Known: 'text-orange-600 dark:text-orange-400',
-  'N/A': 'text-muted-foreground',
 };
 
 const chartConfig = {
@@ -62,32 +56,40 @@ const QUICK_LINKS = [
   { title: 'Leads Portal', href: '/team', icon: Target, desc: 'Team oversight' },
 ];
 
+const STAT_TILES = {
+  sessions: { chip: 'bg-blue-500/10 text-blue-600 dark:text-blue-400', value: 'text-blue-600 dark:text-blue-400' },
+  tests: { chip: 'bg-violet-500/10 text-violet-600 dark:text-violet-400', value: 'text-violet-600 dark:text-violet-400' },
+  passed: { chip: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', value: 'text-emerald-600 dark:text-emerald-400' },
+  failed: { chip: 'bg-red-500/10 text-red-600 dark:text-red-400', value: 'text-red-600 dark:text-red-400' },
+} as const;
+
 function StatTile({
   label,
   value,
   hint,
   icon: Icon,
-  accent,
+  tone,
   delay,
 }: {
   label: string;
   value: string | number;
   hint: string;
   icon: React.ComponentType<{ className?: string }>;
-  accent: string;
+  tone: keyof typeof STAT_TILES;
   delay: number;
 }) {
+  const styles = STAT_TILES[tone];
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay, duration: 0.3 }}>
       <Card className="h-full">
         <CardContent className="flex items-start justify-between p-6">
           <div className="min-w-0">
             <p className="text-sm font-medium text-muted-foreground">{label}</p>
-            <p className={`mt-2 text-3xl font-bold tabular-nums ${accent}`}>{value}</p>
+            <p className={`mt-2 text-3xl font-bold tabular-nums ${styles.value}`}>{value}</p>
             <p className="mt-1 truncate text-xs text-muted-foreground">{hint}</p>
           </div>
-          <div className={`shrink-0 rounded-xl p-3 ${accent.replace('text-', 'bg-')}/10`}>
-            <Icon className={`h-6 w-6 ${accent}`} />
+          <div className={`shrink-0 rounded-xl p-3 ${styles.chip}`}>
+            <Icon className="h-6 w-6" />
           </div>
         </CardContent>
       </Card>
@@ -101,52 +103,90 @@ function SessionCard({ session }: { session: TestSession }) {
   const completion = summary.total > 0 ? Math.round((completedCount / summary.total) * 100) : 0;
   const createdAt = getValidDate(session.createdAt);
   const canContinue = session.status === 'In Progress' || session.status === 'Aborted';
+  const isActive = canContinue;
+
+  const badge = isActive
+    ? { label: session.status === 'Aborted' ? 'Aborted' : 'In Progress', cls: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' }
+    : { label: 'Completed', cls: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' };
+
+  const ring =
+    completion >= 100 ? 'stroke-emerald-500' : isActive ? 'stroke-primary' : 'stroke-muted-foreground';
 
   return (
-    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -4 }} transition={{ duration: 0.2 }}>
-      <Card className="flex h-full flex-col transition-shadow hover:shadow-lg">
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -4 }}
+      transition={{ duration: 0.2 }}
+      className="h-full"
+    >
+      <Card className="group flex h-full flex-col overflow-hidden transition-all hover:border-primary/30 hover:shadow-lg">
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium ${badge.cls}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'animate-pulse bg-amber-500' : 'bg-emerald-500'}`} />
+                {badge.label}
+              </span>
               <CardTitle className="truncate text-base font-semibold">
                 {session.platformDetails?.platformName ?? 'Untitled session'}
               </CardTitle>
-              <CardDescription className="mt-1 text-xs">
+              <CardDescription className="text-xs">
                 {createdAt ? format(createdAt, 'MMM dd, yyyy') : 'No date'}
               </CardDescription>
             </div>
-            <div className="text-right">
-              <div className="text-lg font-bold tabular-nums text-primary">{completion}%</div>
-              <div className="text-xs text-muted-foreground">complete</div>
+
+            {/* Completion ring */}
+            <div className="relative h-14 w-14 shrink-0">
+              <svg viewBox="0 0 36 36" className="h-14 w-14 -rotate-90">
+                <circle cx="18" cy="18" r="15.9" fill="none" className="stroke-muted" strokeWidth="3" />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="15.9"
+                  fill="none"
+                  className={cn('transition-all duration-700', ring)}
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeDasharray={`${completion} ${100 - completion}`}
+                />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-xs font-bold tabular-nums">{completion}%</span>
+              </div>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-3">
-          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${completion}%` }} />
-          </div>
-          <div className="grid grid-cols-4 gap-2 text-center">
-            <div>
-              <div className={`text-sm font-bold tabular-nums ${STATUS_STYLES.Pass}`}>{summary.pass}</div>
-              <div className="text-xs text-muted-foreground">Pass</div>
+
+        <CardContent className="flex flex-1 flex-col gap-4">
+          <div className="grid grid-cols-4 gap-2">
+            <div className="rounded-lg bg-emerald-500/5 py-2 text-center">
+              <div className="text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{summary.pass}</div>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Pass</div>
             </div>
-            <div>
-              <div className={`text-sm font-bold tabular-nums ${STATUS_STYLES.Fail}`}>{summary.fail}</div>
-              <div className="text-xs text-muted-foreground">Fail</div>
+            <div className="rounded-lg bg-red-500/5 py-2 text-center">
+              <div className="text-sm font-bold tabular-nums text-red-600 dark:text-red-400">{summary.fail}</div>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Fail</div>
             </div>
-            <div>
-              <div className={`text-sm font-bold tabular-nums ${STATUS_STYLES.Known}`}>{summary.failKnown}</div>
-              <div className="text-xs text-muted-foreground">Known</div>
+            <div className="rounded-lg bg-orange-500/5 py-2 text-center">
+              <div className="text-sm font-bold tabular-nums text-orange-600 dark:text-orange-400">{summary.failKnown}</div>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Known</div>
             </div>
-            <div>
-              <div className={`text-sm font-bold tabular-nums ${STATUS_STYLES['N/A']}`}>{summary.na}</div>
-              <div className="text-xs text-muted-foreground">N/A</div>
+            <div className="rounded-lg bg-muted/50 py-2 text-center">
+              <div className="text-sm font-bold tabular-nums text-muted-foreground">{summary.na}</div>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">N/A</div>
             </div>
           </div>
-          <Button asChild variant="outline" size="sm" className="mt-auto w-full">
+
+          <Button
+            asChild
+            size="sm"
+            variant={canContinue ? 'default' : 'outline'}
+            className="mt-auto w-full"
+          >
             <Link href={`/dashboard/session/${canContinue ? session.id : `${session.id}/results`}`}>
               {canContinue ? 'Continue' : 'View Results'}
-              <ArrowRight className="ml-2 h-4 w-4" />
+              <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
           </Button>
         </CardContent>
@@ -361,10 +401,10 @@ export default function DashboardPage() {
 
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile label="Sessions" value={stats.totalSessions} hint="All time" icon={Activity} accent="text-blue-600 dark:text-blue-400" delay={0.05} />
-        <StatTile label="Tests Executed" value={stats.totalTests} hint="Across all sessions" icon={Target} accent="text-purple-600 dark:text-purple-400" delay={0.1} />
-        <StatTile label="Passed" value={stats.totalPass} hint={`${passRate}% pass rate`} icon={CheckCircle2} accent="text-emerald-600 dark:text-emerald-400" delay={0.15} />
-        <StatTile label="Failed" value={stats.totalFail} hint="Needs attention" icon={XCircle} accent="text-red-600 dark:text-red-400" delay={0.2} />
+        <StatTile label="Sessions" value={stats.totalSessions} hint="All time" icon={Activity} tone="sessions" delay={0.05} />
+        <StatTile label="Tests Executed" value={stats.totalTests} hint="Across all sessions" icon={Target} tone="tests" delay={0.1} />
+        <StatTile label="Passed" value={stats.totalPass} hint={`${passRate}% pass rate`} icon={CheckCircle2} tone="passed" delay={0.15} />
+        <StatTile label="Failed" value={stats.totalFail} hint="Needs attention" icon={XCircle} tone="failed" delay={0.2} />
       </div>
 
       {/* Activity chart + quick links */}
@@ -471,11 +511,21 @@ export default function DashboardPage() {
         <>
           {activeSessions.length > 0 && (
             <section className="space-y-4">
-              <div className="flex items-center gap-2">
-                <div className="rounded-lg bg-orange-500/10 p-2">
-                  <Zap className="h-5 w-5 text-orange-500" />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="rounded-lg bg-orange-500/10 p-2">
+                    <Zap className="h-5 w-5 text-orange-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold leading-tight">Active Sessions</h2>
+                    <p className="text-xs text-muted-foreground">{activeSessions.length} in progress</p>
+                  </div>
                 </div>
-                <h2 className="text-xl font-semibold">Active Sessions</h2>
+                <Button asChild variant="ghost" size="sm">
+                  <Link href="/dashboard/sessions">
+                    View all <ArrowRight className="ml-1.5 h-4 w-4" />
+                  </Link>
+                </Button>
               </div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {activeSessions.slice(0, 4).map((session) => (
@@ -487,11 +537,21 @@ export default function DashboardPage() {
 
           {completedSessions.length > 0 && (
             <section className="space-y-4">
-              <div className="flex items-center gap-2">
-                <div className="rounded-lg bg-emerald-500/10 p-2">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="rounded-lg bg-emerald-500/10 p-2">
+                    <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold leading-tight">Recently Completed</h2>
+                    <p className="text-xs text-muted-foreground">{completedSessions.length} finished</p>
+                  </div>
                 </div>
-                <h2 className="text-xl font-semibold">Recently Completed</h2>
+                <Button asChild variant="ghost" size="sm">
+                  <Link href="/dashboard/sessions">
+                    View all <ArrowRight className="ml-1.5 h-4 w-4" />
+                  </Link>
+                </Button>
               </div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {completedSessions.slice(0, 4).map((session) => (
