@@ -2,9 +2,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-// This proxy function is the primary gatekeeper for authentication.
-// (Next.js 16 renamed the `middleware` file convention to `proxy`.)
-export async function proxy(request: NextRequest) {
+// This middleware function is the primary gatekeeper for authentication.
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Retrieve the session token from cookies.
@@ -57,7 +56,7 @@ export async function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-// The 'matcher' configuration specifies which paths this proxy will run on.
+// The 'matcher' configuration specifies which paths this middleware will run on.
 export const config = {
   matcher: [
     /*
