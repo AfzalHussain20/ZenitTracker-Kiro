@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import AppShell from '@/components/layout/AppShell';
+import PostLoginSplash from '@/components/layout/PostLoginSplash';
 import { Toaster } from '@/components/ui/toaster';
 import FloatingNotesWidget from '@/components/notes/FloatingNotesWidget';
 import GlobalAIChat from '@/components/GlobalAIChat';
@@ -16,6 +17,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     return (
       <div className="w-full h-screen">
         {children}
+        <PostLoginSplash />
         <Toaster />
         <FloatingNotesWidget />
         <GlobalAIChat />
@@ -26,6 +28,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <>
+      <PostLoginSplash />
       <AppShell>{children}</AppShell>
       <Toaster />
       <FloatingNotesWidget />

@@ -26,6 +26,7 @@ import {
   Grid3x3,
   TrendingUp,
   Clock,
+  ChevronDown,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { motion } from 'framer-motion';
@@ -94,6 +95,54 @@ function StatTile({
         </CardContent>
       </Card>
     </motion.div>
+  );
+}
+
+function CollapsibleSection({
+  title,
+  subtitle,
+  icon,
+  iconClass,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  iconClass: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border/60 bg-card/40">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 sm:px-5"
+      >
+        <div className="flex items-center gap-3">
+          <div className={`rounded-lg p-2 ${iconClass}`}>{icon}</div>
+          <div>
+            <h2 className="text-base font-semibold leading-tight tracking-tight">{title}</h2>
+            <p className="text-xs text-muted-foreground">{subtitle}</p>
+          </div>
+        </div>
+        <ChevronDown
+          className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-300', open && 'rotate-180')}
+        />
+      </button>
+
+      <motion.div
+        initial={false}
+        animate={{ height: open ? 'auto' : 0, opacity: open ? 1 : 0 }}
+        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+        className="overflow-hidden"
+      >
+        <div className="px-4 pb-5 pt-1 sm:px-5">{children}</div>
+      </motion.div>
+    </section>
   );
 }
 
@@ -508,59 +557,39 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       ) : (
-        <>
+        <div className="space-y-4">
           {activeSessions.length > 0 && (
-            <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="rounded-lg bg-orange-500/10 p-2">
-                    <Zap className="h-5 w-5 text-orange-500" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-semibold leading-tight">Active Sessions</h2>
-                    <p className="text-xs text-muted-foreground">{activeSessions.length} in progress</p>
-                  </div>
-                </div>
-                <Button asChild variant="ghost" size="sm">
-                  <Link href="/dashboard/sessions">
-                    View all <ArrowRight className="ml-1.5 h-4 w-4" />
-                  </Link>
-                </Button>
-              </div>
+            <CollapsibleSection
+              title="Active Sessions"
+              subtitle={`${activeSessions.length} in progress`}
+              icon={<Zap className="h-5 w-5 text-orange-500" />}
+              iconClass="bg-orange-500/10"
+              defaultOpen={activeSessions.length > 0}
+            >
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {activeSessions.slice(0, 4).map((session) => (
                   <SessionCard key={session.id} session={session} />
                 ))}
               </div>
-            </section>
+            </CollapsibleSection>
           )}
 
           {completedSessions.length > 0 && (
-            <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="rounded-lg bg-emerald-500/10 p-2">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-semibold leading-tight">Recently Completed</h2>
-                    <p className="text-xs text-muted-foreground">{completedSessions.length} finished</p>
-                  </div>
-                </div>
-                <Button asChild variant="ghost" size="sm">
-                  <Link href="/dashboard/sessions">
-                    View all <ArrowRight className="ml-1.5 h-4 w-4" />
-                  </Link>
-                </Button>
-              </div>
+            <CollapsibleSection
+              title="Recently Completed"
+              subtitle={`${completedSessions.length} finished`}
+              icon={<CheckCircle2 className="h-5 w-5 text-emerald-500" />}
+              iconClass="bg-emerald-500/10"
+              defaultOpen={false}
+            >
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {completedSessions.slice(0, 4).map((session) => (
                   <SessionCard key={session.id} session={session} />
                 ))}
               </div>
-            </section>
+            </CollapsibleSection>
           )}
-        </>
+        </div>
       )}
     </div>
   );

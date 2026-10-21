@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   X, Send, Copy, Check, RotateCcw, Sparkles,
-  Brain, Loader2, Eye, EyeOff,
+  Bot, Loader2, Eye, EyeOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -111,7 +111,7 @@ export default function AgentChat() {
           aria-label="Open AI Agent"
           className="fixed bottom-24 right-6 z-[88] flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/30 transition-all hover:scale-105 hover:shadow-indigo-500/50"
         >
-          <Brain className="h-5 w-5" />
+          <Bot className="h-5 w-5" />
         </button>
       )}
 
@@ -125,7 +125,7 @@ export default function AgentChat() {
           <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-indigo-500/10 to-violet-500/10 px-4 py-3">
             <div className="flex items-center gap-2.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/15 ring-1 ring-inset ring-indigo-500/25">
-                <Brain className="h-4 w-4 text-indigo-500" />
+                <Bot className="h-4 w-4 text-indigo-500" />
               </div>
               <div>
                 <p className="text-sm font-semibold leading-tight">Zenit Agent</p>

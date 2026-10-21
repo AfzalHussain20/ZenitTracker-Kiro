@@ -512,7 +512,19 @@ const SidebarMenuItem = React.forwardRef<
 SidebarMenuItem.displayName = "SidebarMenuItem"
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
+  [
+    "peer/menu-button group/menu-btn relative flex w-full items-center gap-2.5 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring",
+    "transition-[background-color,color,width,height,padding] duration-200 ease-out",
+    "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground",
+    "disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50",
+    "data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground",
+    "group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2",
+    // Left accent indicator: grows on hover, stays lit on the active item.
+    "before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-0.5 before:rounded-full before:bg-sidebar-ring before:opacity-0 before:transition-all before:duration-200 hover:before:h-4 hover:before:opacity-60 data-[active=true]:before:h-5 data-[active=true]:before:opacity-100",
+    // Icons nudge right subtly on hover for a tactile feel.
+    "[&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:transition-transform [&>svg]:duration-200 [&>svg]:group-hover/menu-btn:translate-x-0.5",
+    "[&>span:last-child]:truncate [&>span:last-child]:transition-transform [&>span:last-child]:duration-200 [&>span:last-child]:group-hover/menu-btn:translate-x-0.5",
+  ].join(" "),
   {
     variants: {
       variant: {

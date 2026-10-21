@@ -121,13 +121,30 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-feature-settings: "rlig" 1, "calt" 1, "kern" 1;
+    /* Inter OpenType: contextual alternates, kerning, case-sensitive forms,
+       stylistic sets for a cleaner, more professional default. */
+    font-feature-settings: "rlig" 1, "calt" 1, "kern" 1, "case" 1, "ss01" 1, "cv11" 1;
+    font-variation-settings: "opsz" 28;
+    letter-spacing: -0.006em;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-headline tracking-tight;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  /* Numerals in data contexts line up column-to-column. */
+  .tabular-nums,
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  p {
+    text-wrap: pretty;
   }
 
   /* Focus styles for accessibility */
