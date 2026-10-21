@@ -34,8 +34,12 @@ function polyline(p: number, pts: [number, number][]): [number, number] {
     return pts[3];
 }
 
-const ZenitSplashAnimation = () => {
+const ZenitSplashAnimation = ({ onComplete }: { onComplete?: () => void } = {}) => {
     const [show, setShow] = useState(true);
+    const dismiss = useCallback(() => {
+        setShow(false);
+        onComplete?.();
+    }, [onComplete]);
 
     const containerRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
@@ -108,7 +112,7 @@ const ZenitSplashAnimation = () => {
         const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
         let cancelled = false;
         // hard safety net: never stay stuck on the splash
-        const failSafe = setTimeout(() => { if (!cancelled) setShow(false); }, 9000);
+        const failSafe = setTimeout(() => { if (!cancelled) dismiss(); }, 9000);
 
         const seq = async () => {
             const g0 = geomRef.current!;
@@ -117,7 +121,7 @@ const ZenitSplashAnimation = () => {
                 x.set(g0.tx); y.set(g0.ty); dash.set(1); flyingRef.current = true;
                 await new Promise((r) => setTimeout(r, 1400));
                 clearTimeout(failSafe);
-                if (!cancelled) setShow(false);
+                if (!cancelled) dismiss();
                 return;
             }
             // 1) DRAW — one continuous ease-out; the dot is the pen tip
@@ -151,11 +155,11 @@ const ZenitSplashAnimation = () => {
             setShowTag(true);
             await new Promise((r) => setTimeout(r, 1300));
             clearTimeout(failSafe);
-            if (!cancelled) setShow(false);
+            if (!cancelled) dismiss();
         };
         seq();
         return () => { cancelled = true; clearTimeout(failSafe); };
-    }, [ready, progress, x, y, scale, dash, glow]);
+    }, [ready, progress, x, y, scale, dash, glow, dismiss]);
 
     const letterParent = { hide: {}, show: { transition: { staggerChildren: 0.09 } } };
     const letterChild = {
@@ -170,7 +174,7 @@ const ZenitSplashAnimation = () => {
                     key="zenit-splash"
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.6 }}
-                    onClick={() => setShow(false)}
+                    onClick={() => dismiss()}
                     className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#05070f] cursor-pointer"
                 >
                     <div ref={containerRef} className="relative flex flex-col items-center justify-center" style={{ width: 'min(92vw, 680px)', height: 320 }}>
