@@ -346,3 +346,18 @@ export function findNextUnassigned(cases: TestCase[], fromIndex = 0): number {
 export function countAssigned(cases: TestCase[], uid: string | null): number {
   return cases.filter(c => (c.assignedToUid || null) === uid).length;
 }
+
+/**
+ * Index of the next untested case after `fromIndex`, wrapping around once so the
+ * last remaining case is still reachable. Returns -1 when every case is done.
+ */
+export function findNextUntested(cases: TestCase[], fromIndex = -1): number {
+  const n = cases.length;
+  if (n === 0) return -1;
+  const isUntested = (tc: TestCase | undefined) => !tc || !tc.status || tc.status === 'Untested';
+  for (let step = 1; step <= n; step++) {
+    const i = (fromIndex + step) % n;
+    if (isUntested(cases[i])) return i;
+  }
+  return -1;
+}

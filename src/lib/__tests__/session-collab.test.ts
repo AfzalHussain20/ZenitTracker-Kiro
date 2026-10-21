@@ -1,7 +1,7 @@
 import {
   applyAssignRange, applyCasePatch, applyDeleteCase, applyEvenSplit, applyInsertCase,
   applyUnassignRange, makeBlankCase, reindexCases, stripUndefined,
-  canAccessSession, computeSummary, countAssigned, findNextUnassigned,
+  canAccessSession, computeSummary, countAssigned, findNextUnassigned, findNextUntested,
   findResumeIndex, getCaseBugs, isSessionOwner, mergeTesters, normalizeCases, parseSessionDoc, removeTester, splitEvenRanges,
 } from '../session-collab';
 import type { TestCase } from '@/types';
@@ -163,6 +163,24 @@ describe('session-collab', () => {
     });
     it('returns -1 when all assigned', () => {
       expect(findNextUnassigned([tc({ assignedToUid: 'a' })], 0)).toBe(-1);
+    });
+  });
+
+  describe('findNextUntested', () => {
+    it('finds the next untested case after the current one', () => {
+      const cases = [tc({ status: 'Pass' }), tc({ status: 'Pass' }), tc({ status: 'Untested' }), tc({ status: 'Untested' })];
+      expect(findNextUntested(cases, 0)).toBe(2);
+    });
+    it('wraps around to reach earlier untested cases', () => {
+      const cases = [tc({ status: 'Untested' }), tc({ status: 'Pass' }), tc({ status: 'Pass' })];
+      expect(findNextUntested(cases, 2)).toBe(0);
+    });
+    it('returns -1 when every case is executed', () => {
+      expect(findNextUntested([tc({ status: 'Pass' }), tc({ status: 'Fail' })], 0)).toBe(-1);
+    });
+    it('treats a missing status as untested and handles empty input', () => {
+      expect(findNextUntested([tc({ status: undefined as any })], -1)).toBe(0);
+      expect(findNextUntested([], 0)).toBe(-1);
     });
   });
 

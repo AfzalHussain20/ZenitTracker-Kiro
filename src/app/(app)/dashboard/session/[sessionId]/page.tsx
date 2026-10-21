@@ -30,7 +30,7 @@ import { SessionTeamDialog } from '@/components/session/SessionTeamDialog';
 import {
   applyAssignRange, applyCasePatch, applyDeleteCase, applyEvenSplit, applyInsertCase,
   applyUnassignRange, makeBlankCase, stripUndefined,
-  canAccessSession, computeSummary, findNextUnassigned, findResumeIndex,
+  canAccessSession, computeSummary, findNextUnassigned, findNextUntested, findResumeIndex,
   isSessionOwner, mergeTesters, normalizeCases, parseSessionDoc, removeTester,
   type SessionTester,
 } from '@/lib/session-collab';
@@ -343,6 +343,20 @@ export default function TestSessionPage() {
   const goPrev = useCallback(() => {
     if (currentIndex > 0) setCurrentIndex(i => i - 1);
   }, [currentIndex]);
+
+  // Jump to the next case still needing a verdict (wraps once). No-op with a
+  // toast when everything is already executed.
+  const goNextUntested = useCallback(() => {
+    if (!session) return;
+    const idx = findNextUntested(session.testCases, currentIndex);
+    if (idx === -1) {
+      toast({ title: 'All cases executed', description: 'Nothing left untested.' });
+      return;
+    }
+    if (idx === currentIndex) return;
+    setReturnIndex(prev => (prev === null ? currentIndex : prev));
+    setCurrentIndex(idx);
+  }, [session, currentIndex, toast]);
 
   // Jump directly to any case. Remembers where you were (once) so you can
   // return after editing an earlier case without stepping back one-by-one.
@@ -725,6 +739,10 @@ export default function TestSessionPage() {
           e.preventDefault();
           setNaOpen(true);
           break;
+        case 'u':
+          e.preventDefault();
+          goNextUntested();
+          break;
         case 'arrowleft':
           e.preventDefault();
           goPrev();
@@ -737,7 +755,7 @@ export default function TestSessionPage() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [anyDialogOpen, markStatus, goPrev, goNext]);
+  }, [anyDialogOpen, markStatus, goPrev, goNext, goNextUntested]);
 
   const commitActual = useCallback((value: string) => {
     if (!session) return;
@@ -950,7 +968,7 @@ export default function TestSessionPage() {
           <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}
             className="absolute top-16 right-4 z-40 bg-card border border-border rounded-xl p-3 shadow-lg">
             <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px]">
-              {[['P', 'Pass'], ['F', 'Fail'], ['N', 'N/A'], ['←', 'Prev'], ['→', 'Next']].map(([k, v]) => (
+              {[['P', 'Pass'], ['F', 'Fail'], ['N', 'N/A'], ['U', 'Next untested'], ['←', 'Prev'], ['→', 'Next']].map(([k, v]) => (
                 <div key={k} className="flex items-center gap-2">
                   <kbd className="px-1.5 py-0.5 rounded bg-muted border border-border font-mono text-muted-foreground">{k}</kbd>
                   <span className="text-muted-foreground">{v}</span>
@@ -1119,6 +1137,14 @@ export default function TestSessionPage() {
                   <Button variant="outline" size="sm" onClick={resumeReturn}
                     className="rounded-lg text-xs gap-1 h-7 border-primary/30 text-primary hover:bg-primary/5">
                     <CornerUpLeft className="w-3.5 h-3.5" /> Back to {returnIndex + 1}
+                  </Button>
+                )}
+                {untestedCount > 0 && (
+                  <Button variant="outline" size="sm" onClick={goNextUntested}
+                    title="Jump to next untested case (U)"
+                    className="rounded-lg text-xs gap-1 h-7 border-border text-muted-foreground hover:text-primary hover:border-primary/40">
+                    <SkipForward className="w-3.5 h-3.5" /> Next untested
+                    <span className="tabular-nums text-primary font-semibold">{untestedCount}</span>
                   </Button>
                 )}
                 <button onClick={() => setJumpOpen(o => !o)}
