@@ -9,11 +9,6 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
-  eslint: {
-    // Lint is not yet enforced repo-wide; keep it out of the build until the
-    // backlog is cleared (tracked separately).
-    ignoreDuringBuilds: true,
-  },
   // Do not ship full source maps to clients in production.
   productionBrowserSourceMaps: false,
   images: {
