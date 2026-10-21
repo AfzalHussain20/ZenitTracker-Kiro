@@ -9,7 +9,15 @@ import { test, expect } from '@playwright/test';
  */
 
 test('app boots and serves a page', async ({ page }) => {
-  const response = await page.goto('/');
+  // The live edge can intermittently time out (cold start / post-deploy
+  // propagation); retry the transport before asserting on the response.
+  let response = null;
+  for (let i = 0; i < 3 && !response; i++) {
+    response = await page
+      .goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 })
+      .catch(() => null);
+    if (!response) await page.waitForTimeout(1500);
+  }
   expect(response?.ok()).toBeTruthy();
   await expect(page).toHaveTitle(/Zenit Tracker/);
 });

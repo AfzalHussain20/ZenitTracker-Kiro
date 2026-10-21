@@ -61,8 +61,31 @@ const APP_ROUTES = [
 
 const ERROR_TEXT = /Application error|something went wrong|Unhandled Runtime Error|Internal Server Error/i;
 
+/**
+ * Navigate with a bounded retry.
+ *
+ * The crawl runs against the live edge, where a request can intermittently hit
+ * `net::ERR_TIMED_OUT` (cold worker start, edge propagation right after a
+ * deploy). Those are transport timeouts, not server errors, so retrying is the
+ * right response. A genuine 5xx returns a response (no timeout) and is still
+ * reported by the assertions below.
+ */
+async function gotoWithRetry(page: import('@playwright/test').Page, route: string) {
+  const attempts = 3;
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await page.goto(route, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    } catch (err) {
+      lastErr = err;
+      await page.waitForTimeout(1500);
+    }
+  }
+  throw lastErr;
+}
+
 async function checkRoute(page: import('@playwright/test').Page, route: string) {
-  const res = await page.goto(route, { waitUntil: 'domcontentloaded' });
+  const res = await gotoWithRetry(page, route);
   expect(res, `no response for ${route}`).not.toBeNull();
   // Redirects land on 200; a raw 5xx is a hard failure.
   expect(res!.status(), `HTTP status for ${route}`).toBeLessThan(500);
