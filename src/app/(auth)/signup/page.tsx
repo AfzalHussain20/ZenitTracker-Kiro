@@ -58,6 +58,7 @@ export default function SignupPage() {
       });
 
       document.cookie = "firebase-auth-session=true; path=/; max-age=86400";
+      try { sessionStorage.setItem('zenit:play-splash', '1'); } catch { /* ignore */ }
       toast({ title: "Account created!", description: "Welcome to Zenit Tracker" });
 
       // Internal users skip onboarding (full access); external users set up their org + plan

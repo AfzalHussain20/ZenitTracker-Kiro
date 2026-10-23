@@ -47,6 +47,7 @@ export default function LoginPage() {
     try {
       await signInWithEmailAndPassword(auth, data.email, data.password);
       document.cookie = "firebase-auth-session=true; path=/; max-age=86400";
+      try { sessionStorage.setItem('zenit:play-splash', '1'); } catch { /* ignore */ }
       toast({ title: "Welcome back!", description: "Login successful" });
       router.replace('/dashboard');
     } catch (err: any) {
@@ -84,6 +85,7 @@ export default function LoginPage() {
         throw new Error("Only @sunnetwork.in accounts are allowed");
       }
       document.cookie = "firebase-auth-session=true; path=/; max-age=86400";
+      try { sessionStorage.setItem('zenit:play-splash', '1'); } catch { /* ignore */ }
       toast({ title: "Welcome!", description: `Logged in as ${user.displayName}` });
       router.replace('/dashboard');
     } catch (err: any) {

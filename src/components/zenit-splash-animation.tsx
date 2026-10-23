@@ -41,6 +41,12 @@ const ZenitSplashAnimation = ({ onComplete }: { onComplete?: () => void } = {}) 
         onComplete?.();
     }, [onComplete]);
 
+    // absolute safety net — never leave the overlay stuck, even if measurement never completes
+    useEffect(() => {
+        const t = setTimeout(() => dismiss(), 12000);
+        return () => clearTimeout(t);
+    }, [dismiss]);
+
     const containerRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
     const iRef = useRef<HTMLSpanElement>(null);
