@@ -1,78 +1,78 @@
 {
-  "App Launched": {
-    "platform": "yes",
-    "app_version": "yes",
-    "user_id": "yes",
-    "session_id": "yes",
-    "environment": "yes",
-    "device_model": "yes",
-    "os_version": "yes",
-    "network_type": "yes",
-    "launch_type": "yes",
-    "referrer": "no"
+  "notes": "Zenit Tracker — CleverTap 2.0 analytics schema. Event names are SNAKE_CASE; properties are camelCase. Timestamps are epoch ms ($D_<epoch>). `source` = B2B <partner> | D2C <plan>. No CleverTap API key required — events persist to Firestore `analytics_events` and forward to CleverTap when credentials are configured.",
+  "App_Launched": {
+    "triggered": "When the app loads / first paint",
+    "properties": { "platform": "web", "app_version": "yes", "user_id": "yes", "session_id": "yes", "environment": "yes", "referrer": "no" }
   },
-  "Content Clicked": {
-    "content_id": "yes",
-    "content_type": "yes",
-    "title": "yes",
-    "platform": "yes",
-    "user_id": "yes",
-    "position": "yes",
-    "source": "yes",
-    "genre": "no",
-    "language": "yes",
-    "is_premium": "yes",
-    "thumbnail_url": "no"
+  "Login": {
+    "triggered": "When the user clicks sign-in AND when they successfully log in (email + Google)",
+    "properties": { "source": "B2B/D2C", "isNewUser": "yes", "otpCalls": "no", "loginStatus": "yes", "contentLanguage": "yes", "appName": "Zenit Tracker" }
   },
-  "Content Attempted": {
-    "content_id": "yes",
-    "content_type": "yes",
-    "title": "yes",
-    "platform": "yes",
-    "user_id": "yes",
-    "drm_type": "yes",
-    "stream_url": "no",
-    "quality": "yes",
-    "language": "yes",
-    "is_premium": "yes",
-    "attempt_source": "yes"
+  "Logout": {
+    "triggered": "When the user is logged out",
+    "properties": { "appName": "Zenit Tracker" }
   },
-  "Content Played": {
-    "content_id": "yes",
-    "content_type": "yes",
-    "title": "yes",
-    "platform": "yes",
-    "user_id": "yes",
-    "duration": "yes",
-    "quality": "yes",
-    "language": "yes",
-    "is_premium": "yes",
-    "ads_played": "no",
-    "buffering_count": "yes",
-    "completion_percent": "yes",
-    "drm_type": "yes"
+  "Page_View": {
+    "triggered": "On every page / route opened",
+    "properties": { "previousPage": "yes", "currentPage": "yes", "contentLanguage": "yes", "source": "yes", "appName": "Zenit Tracker" }
   },
-  "Content Started": {
-    "content_id": "yes",
-    "content_type": "yes",
-    "title": "yes",
-    "platform": "yes",
-    "user_id": "yes",
-    "quality": "yes",
-    "language": "yes",
-    "drm_type": "yes",
-    "stream_type": "yes",
-    "ads_enabled": "no"
+  "Searched": {
+    "triggered": "When a keyword is entered and searched (global AI / bug search)",
+    "properties": { "searchString": "yes", "isFound": "yes", "contentLanguage": "yes", "appName": "Zenit Tracker" }
   },
-  "Ads Played": {
-    "ad_id": "yes",
-    "ad_type": "yes",
-    "content_id": "yes",
-    "platform": "yes",
-    "user_id": "yes",
-    "ad_duration": "yes",
-    "ad_position": "yes",
-    "ad_skipped": "no",
-    "ad_provider": "yes"
+  "Content_Clicked": {
+    "triggered": "When the user clicks a test case, bug, or session",
+    "properties": { "source": "yes", "contentTitle": "yes", "contentID": "yes", "contentType": "yes", "appName": "Zenit Tracker" }
+  },
+  "Test_Case_Executed": {
+    "triggered": "When a tester marks a test case Pass / Fail / N/A / Untested / Fail (Known)",
+    "properties": { "contentID": "yes", "contentTitle": "yes", "testCaseStatus": "yes", "suiteName": "yes", "executedBy": "yes", "appName": "Zenit Tracker" }
+  },
+  "Test_Case_Created": {
+    "triggered": "When a new test case is authored",
+    "properties": { "contentID": "yes", "contentTitle": "yes", "testBed": "yes", "priority": "yes", "appName": "Zenit Tracker" }
+  },
+  "Test_Case_Edited": {
+    "triggered": "When an existing test case is modified",
+    "properties": { "contentID": "yes", "contentTitle": "yes", "fieldsChanged": "yes", "appName": "Zenit Tracker" }
+  },
+  "Session_Started": {
+    "triggered": "When a test session / run begins",
+    "properties": { "sessionId": "yes", "suiteName": "yes", "totalCases": "yes", "appName": "Zenit Tracker" }
+  },
+  "Session_Completed": {
+    "triggered": "When a test session / run finishes",
+    "properties": { "sessionId": "yes", "passed": "yes", "failed": "yes", "untested": "yes", "passRate": "yes", "durationMs": "yes", "appName": "Zenit Tracker" }
+  },
+  "Bug_Reported": {
+    "triggered": "When a new bug is filed",
+    "properties": { "contentID": "yes", "contentTitle": "yes", "bugSeverity": "yes", "bugType": "yes", "reportedBy": "yes", "appName": "Zenit Tracker" }
+  },
+  "Bug_Resolved": {
+    "triggered": "When a bug is resolved / closed",
+    "properties": { "contentID": "yes", "contentTitle": "yes", "resolutionStatus": "yes", "resolvedBy": "yes", "resolutionTimeHours": "yes", "appName": "Zenit Tracker" }
+  },
+  "PRD_Uploaded": {
+    "triggered": "When a PRD document is imported",
+    "properties": { "contentID": "yes", "contentTitle": "yes", "fileName": "yes", "casesExtracted": "yes", "appName": "Zenit Tracker" }
+  },
+  "Test_Case_Generated": {
+    "triggered": "When AI generates test cases from a PRD",
+    "properties": { "contentID": "yes", "contentTitle": "yes", "casesGenerated": "yes", "model": "yes", "appName": "Zenit Tracker" }
+  },
+  "Export_Downloaded": {
+    "triggered": "When a CSV / XLSX export is downloaded",
+    "properties": { "format": "yes", "recordCount": "yes", "exportedBy": "yes", "appName": "Zenit Tracker" }
+  },
+  "Media_Error": {
+    "triggered": "When a client error occurs (captured with error message)",
+    "properties": { "errorMessage": "yes", "errorSource": "yes", "userId": "yes", "appName": "Zenit Tracker" }
+  },
+  "conventions": {
+    "eventNames": "SNAKE_CASE",
+    "properties": "camelCase",
+    "source": "B2B <partner name> | D2C <plan name>",
+    "dateFormat": "$D_<Epoch value>",
+    "contentType": "test_case | bug | session | suite | prd | report | dashboard"
   }
 }
