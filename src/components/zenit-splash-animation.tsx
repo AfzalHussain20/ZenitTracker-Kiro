@@ -1,38 +1,46 @@
 'use client';
 
 /**
- * ZenitSplashAnimation — cinematic title-card splash, ONE animation engine.
+ * ZenitSplashAnimation — cinematic title-card splash, elevated v2.
  *
- * A single Framer Motion timeline (useMotionValue + animate, sequenced with
- * async/await) drives everything. No SMIL, no CSS keyframes, no hardcoded
- * setTimeout races, no key-based remounting.
+ * One Framer Motion timeline drives everything end-to-end:
+ *   1) The dot is the pen tip that draws the Z (one shared eased value, never stalls)
+ *   2) It pauses, compresses, then launches on a Bezier arc while the Z un-draws
+ *   3) "Zenit" writes itself letter-by-letter (hand-built "i" dot target)
+ *   4) The dot lands exactly as the dot of the "i" (measured live via getBoundingClientRect)
+ *   5) "Tracker" writes in with a violet→cyan gradient
+ *   6) Tagline fades in, hold, then fade out
  *
- * Story:  the dot is the pen tip that draws the Z (stroke + dot share ONE eased
- * value, so the draw never stalls) → it pauses, compresses, then launches on a
- * Bezier arc → the Z un-draws in its wake → "Zenit" writes itself → the same dot
- * lands as the dot of the hand-built "i" → "Tracker" writes in → hold → fade out.
+ * Theme-fitted: blue-only palette (royal blue + cyan) that feels native to Zenit.
  *
- * The landing point is measured live with getBoundingClientRect(), so the dot
- * lands exactly on the "i" at any size or font scale.
+ * Reduced-motion safe + 12s absolute failsafe so it can never trap the user.
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'framer-motion';
 
 const ZENIT = ['Z', 'e', 'n', 'i', 't'];
+// The Z as a polyline with cumulative arc-length fractions at each vertex.
 const ZPTS: [number, number][] = [[15, 25], [80, 25], [30, 80], [65, 80]];
-const SEG = [0, 0.373, 0.799, 1]; // cumulative arc-length fraction at each Z point
+const SEG = [0, 0.373, 0.799, 1];
 
 function polyline(p: number, pts: [number, number][]): [number, number] {
     const q = Math.max(0, Math.min(1, p));
     for (let i = 0; i < 3; i++) {
         if (q <= SEG[i + 1] || i === 2) {
             const t = Math.max(0, Math.min(1, (q - SEG[i]) / (SEG[i + 1] - SEG[i])));
-            return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t];
+            return [
+                pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t,
+                pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t,
+            ];
         }
     }
     return pts[3];
 }
+
+// Blue-only palette — no violet. Deep royal blue + cyan accent.
+const BLUE_BRIGHT = 'rgb(37 99 235)'; // blue-600
+const CYAN = 'rgb(6 182 212)';        // cyan-500 accent
 
 const ZenitSplashAnimation = ({ onComplete }: { onComplete?: () => void } = {}) => {
     const [show, setShow] = useState(true);
@@ -41,7 +49,7 @@ const ZenitSplashAnimation = ({ onComplete }: { onComplete?: () => void } = {}) 
         onComplete?.();
     }, [onComplete]);
 
-    // absolute safety net — never leave the overlay stuck, even if measurement never completes
+    // Absolute safety net — never leave the overlay stuck.
     useEffect(() => {
         const t = setTimeout(() => dismiss(), 12000);
         return () => clearTimeout(t);
@@ -61,14 +69,14 @@ const ZenitSplashAnimation = ({ onComplete }: { onComplete?: () => void } = {}) 
     const [showTracker, setShowTracker] = useState(false);
     const [showTag, setShowTag] = useState(false);
 
-    // single source of truth — no re-renders drive these
+    // Single source of truth — no re-renders drive these.
     const progress = useMotionValue(0);
     const x = useMotionValue(-9999);
     const y = useMotionValue(-9999);
     const scale = useMotionValue(1);
     const dash = useMotionValue(1); // pathLength-normalised: 1 → hidden, 0 → fully drawn
     const glow = useMotionValue(0);
-    const boxShadow = useTransform(glow, (g) => `0 0 ${16 + g * 16}px ${3 + g * 6}px rgba(0,198,255,${0.6 + g * 0.32})`);
+    const boxShadow = useTransform(glow, (g) => `0 0 ${16 + g * 24}px ${4 + g * 8}px ${CYAN}`);
 
     const measure = useCallback(() => {
         const cont = containerRef.current, svg = svgRef.current, t = targetRef.current;
@@ -79,7 +87,10 @@ const ZenitSplashAnimation = ({ onComplete }: { onComplete?: () => void } = {}) 
             sb.top - cb.top + (vy / 100) * sb.height,
         ] as [number, number]);
         let ds = 12;
-        if (iRef.current) { const fs = parseFloat(getComputedStyle(iRef.current).fontSize); if (fs) ds = Math.max(7, Math.round(fs * 0.2)); }
+        if (iRef.current) {
+            const fs = parseFloat(getComputedStyle(iRef.current).fontSize);
+            if (fs) ds = Math.max(8, Math.round(fs * 0.18));
+        }
         const geom = { pts, tx: tb.left + tb.width / 2 - cb.left, ty: tb.top + tb.height / 2 - cb.top, ds };
         geomRef.current = geom;
         setC(geom);
@@ -89,14 +100,14 @@ const ZenitSplashAnimation = ({ onComplete }: { onComplete?: () => void } = {}) 
     useEffect(() => {
         measure();
         let tries = 0;
-        const id = setInterval(() => { if (geomRef.current || tries++ > 20) clearInterval(id); else measure(); }, 60);
+        const id = setInterval(() => { if (geomRef.current || tries++ > 30) clearInterval(id); else measure(); }, 50);
         (document as any).fonts?.ready?.then?.(() => { if (!startedRef.current) measure(); });
         const onResize = () => { if (!startedRef.current) measure(); };
         window.addEventListener('resize', onResize);
         return () => { clearInterval(id); window.removeEventListener('resize', onResize); };
     }, [measure]);
 
-    // glue the stroke + dot together during the draw (one eased progress value)
+    // Glue stroke + dot together during the draw (one eased progress value).
     useEffect(() => {
         if (!c) return;
         const start = polyline(0, c.pts);
@@ -110,14 +121,13 @@ const ZenitSplashAnimation = ({ onComplete }: { onComplete?: () => void } = {}) 
         return unsub;
     }, [c, progress, x, y, dash]);
 
-    // the master timeline — runs ONCE when geometry is ready, dismisses when finished
+    // Master timeline — runs ONCE when geometry is ready.
     useEffect(() => {
         if (!ready || startedRef.current) return;
         startedRef.current = true;
 
         const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
         let cancelled = false;
-        // hard safety net: never stay stuck on the splash
         const failSafe = setTimeout(() => { if (!cancelled) dismiss(); }, 9000);
 
         const seq = async () => {
@@ -125,41 +135,41 @@ const ZenitSplashAnimation = ({ onComplete }: { onComplete?: () => void } = {}) 
             if (reduce) {
                 setWriteZenit(true); setShowTracker(true); setShowTag(true);
                 x.set(g0.tx); y.set(g0.ty); dash.set(1); flyingRef.current = true;
-                await new Promise((r) => setTimeout(r, 1400));
+                await new Promise((r) => setTimeout(r, 1200));
                 clearTimeout(failSafe);
                 if (!cancelled) dismiss();
                 return;
             }
-            // 1) DRAW — one continuous ease-out; the dot is the pen tip
-            await animate(progress, 1, { duration: 1.8, ease: [0.33, 1, 0.68, 1] });
+            // 1) DRAW — one continuous ease-out; dot is the pen tip.
+            await animate(progress, 1, { duration: 1.9, ease: [0.35, 1, 0.7, 1] });
             if (cancelled) return;
-            // 2) HOLD + ANTICIPATION
-            await new Promise((r) => setTimeout(r, 160));
+            // 2) Anticipation — tiny pause + compression before launch.
+            await new Promise((r) => setTimeout(r, 140));
             if (cancelled) return;
-            await animate(scale, 0.85, { duration: 0.18, ease: 'easeOut' });
+            await animate(scale, 0.72, { duration: 0.16, ease: 'easeOut' });
             if (cancelled) return;
-            // 3) BREAK AWAY — launch on a Bezier arc; Z un-draws; "Zenit" writes
+            // 3) BREAK AWAY — launch on Bezier arc; Z un-draws; "Zenit" writes.
             flyingRef.current = true;
             setWriteZenit(true);
             animate(scale, 1, { duration: 0.3, ease: 'easeOut' });
-            animate(dash, 1, { duration: 0.7, ease: [0.4, 0, 0.6, 1] });
+            animate(dash, 1, { duration: 0.75, ease: [0.4, 0, 0.6, 1] });
             const g = geomRef.current ?? g0;
             const P3 = g.pts[3];
-            const ctrlX = P3[0] + (g.tx - P3[0]) * 0.4;
-            const ctrlY = Math.min(P3[1], g.ty) - 70;
+            const ctrlX = P3[0] + (g.tx - P3[0]) * 0.45;
+            const ctrlY = Math.min(P3[1], g.ty) - 72;
             await Promise.all([
-                animate(x, [P3[0], ctrlX, g.tx], { duration: 1.15, times: [0, 0.45, 1], ease: [0.45, 0, 0.2, 1] }),
-                animate(y, [P3[1], ctrlY, g.ty], { duration: 1.15, times: [0, 0.45, 1], ease: [0.45, 0, 0.2, 1] }),
+                animate(x, [P3[0], ctrlX, g.tx], { duration: 1.2, times: [0, 0.45, 1], ease: [0.45, 0, 0.2, 1] }),
+                animate(y, [P3[1], ctrlY, g.ty], { duration: 1.2, times: [0, 0.45, 1], ease: [0.45, 0, 0.2, 1] }),
             ]);
             if (cancelled) return;
-            // 4) LAND — seat as the "i" dot: tiny compression + subtle glow pulse
+            // 4) LAND — seat as the dot of the "i": compression + glow pulse.
             setShowTracker(true);
             animate(glow, [0, 1, 0], { duration: 0.5, ease: 'easeOut' });
-            await animate(scale, [1, 0.8, 1], { duration: 0.42, ease: 'easeOut' });
+            await animate(scale, [1, 0.78, 1], { duration: 0.45, ease: 'easeOut' });
             if (cancelled) return;
-            // 5) tagline + hold, then exit (dismiss only AFTER the sequence finishes)
+            // 5) Tagline fades in, hold, then exit.
             setShowTag(true);
-            await new Promise((r) => setTimeout(r, 1300));
+            await new Promise((r) => setTimeout(r, 1400));
             clearTimeout(failSafe);
             if (!cancelled) dismiss();
         };
@@ -167,10 +177,10 @@ const ZenitSplashAnimation = ({ onComplete }: { onComplete?: () => void } = {}) 
         return () => { cancelled = true; clearTimeout(failSafe); };
     }, [ready, progress, x, y, scale, dash, glow, dismiss]);
 
-    const letterParent = { hide: {}, show: { transition: { staggerChildren: 0.09 } } };
+    const letterParent = { hide: {}, show: { transition: { staggerChildren: 0.105 } } };
     const letterChild = {
         hide: { clipPath: 'inset(0 100% 0 0)' },
-        show: { clipPath: 'inset(0 0% 0 0)', transition: { duration: 0.34, ease: [0.5, 0, 0.2, 1] as any } },
+        show: { clipPath: 'inset(0 0% 0 0)', transition: { duration: 0.36, ease: [0.5, 0, 0.2, 1] as any } },
     };
 
     return (
@@ -179,20 +189,23 @@ const ZenitSplashAnimation = ({ onComplete }: { onComplete?: () => void } = {}) 
                 <motion.div
                     key="zenit-splash"
                     exit={{ opacity: 0 }}
-                    transition={{ duration: 0.6 }}
+                    transition={{ duration: 0.55, ease: 'easeOut' }}
                     onClick={() => dismiss()}
-                    className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#05070f] cursor-pointer"
+                    className="fixed inset-0 z-[9999] flex items-center justify-center bg-[hsl(var(--background))] cursor-pointer"
                 >
-                    <div ref={containerRef} className="relative flex flex-col items-center justify-center" style={{ width: 'min(92vw, 680px)', height: 320 }}>
+                    <div ref={containerRef} className="relative flex flex-col items-center justify-center" style={{ width: 'min(92vw, 700px)', height: 340 }}>
+
+                        {/* Soft glass panel behind the animation for depth */}
+                        <div className="absolute inset-0 bg-gradient-to-b from-[hsl(var(--sidebar))/95] to-[hsl(var(--sidebar))/70] backdrop-blur-md border border-[hsl(var(--sidebar-border))/40] rounded-3xl shadow-2xl" />
 
                         {/* The Z — drawn by the dot, then un-drawn as the dot leaves */}
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <svg ref={svgRef} viewBox="0 0 100 100" className="w-36 h-36 md:w-44 md:h-44 overflow-visible"
-                                style={{ filter: 'drop-shadow(0 0 16px rgba(0,150,255,0.4))' }}>
+                        <div className="relative z-10 flex items-center justify-center w-full h-full">
+                            <svg ref={svgRef} viewBox="0 0 100 100" className="w-36 h-36 md:w-48 md:h-48 overflow-visible"
+                                 style={{ filter: `drop-shadow(0 0 20px ${CYAN}40)` }}>
                                 <defs>
                                     <linearGradient id="zenitSplashGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                                        <stop offset="0%" stopColor="#007BFF" />
-                                        <stop offset="100%" stopColor="#00C6FF" />
+                                        <stop offset="0%" stopColor={BLUE_BRIGHT} />
+                                        <stop offset="100%" stopColor={CYAN} />
                                     </linearGradient>
                                 </defs>
                                 <motion.path d="M 15 25 H 80 L 30 80 H 65" stroke="url(#zenitSplashGrad)" strokeWidth="12" fill="none"
@@ -202,8 +215,8 @@ const ZenitSplashAnimation = ({ onComplete }: { onComplete?: () => void } = {}) 
                         </div>
 
                         {/* Wordmark — each letter writes itself; the "i" is hand-built */}
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="text-4xl md:text-6xl font-black tracking-tight leading-none select-none flex items-baseline">
+                        <div className="relative z-10 flex items-center justify-center w-full h-full">
+                            <div className="text-5xl md:text-7xl font-black tracking-tight leading-none select-none flex items-baseline">
                                 <motion.div variants={letterParent} initial="hide" animate={writeZenit ? 'show' : 'hide'} className="flex items-baseline">
                                     {ZENIT.map((ch, i) => (
                                         ch === 'i' ? (
@@ -220,27 +233,33 @@ const ZenitSplashAnimation = ({ onComplete }: { onComplete?: () => void } = {}) 
                                 <motion.span
                                     initial={{ clipPath: 'inset(0 100% 0 0)' }}
                                     animate={{ clipPath: showTracker ? 'inset(0 0% 0 0)' : 'inset(0 100% 0 0)' }}
-                                    transition={{ duration: 0.5, ease: [0.5, 0, 0.2, 1] as any }}
-                                    className="inline-block align-baseline text-transparent bg-clip-text bg-gradient-to-r from-[#007BFF] to-[#00C6FF]"
+                                    transition={{ duration: 0.55, ease: [0.5, 0, 0.2, 1] as any }}
+                                    className="inline-block align-baseline text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-cyan-400"
                                 >&nbsp;Tracker</motion.span>
                             </div>
                         </div>
 
-                        {/* tagline — fades in only after the lockup settles */}
+                        {/* Tagline — fades in only after the lockup settles */}
                         <motion.p
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={showTag ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
-                            transition={{ duration: 0.6, ease: 'easeOut' }}
-                            className="absolute left-1/2 -translate-x-1/2 text-sm text-white/45 tracking-wide"
-                            style={{ top: 'calc(50% + 2.6rem)' }}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={showTag ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
+                            transition={{ duration: 0.7, ease: 'easeOut' }}
+                            className="absolute left-1/2 -translate-x-1/2 text-xs sm:text-sm text-[hsl(var(--muted-foreground))] tracking-widest font-medium"
+                            style={{ top: 'calc(50% + 2.9rem)' }}
                         >
                             Precision in Every Test.
                         </motion.p>
 
-                        {/* the single dot: pen tip → droplet → the dot of the "i" */}
+                        {/* The single dot: pen tip → droplet → the dot of the "i" */}
                         {c && (
-                            <motion.div className="absolute rounded-full"
-                                style={{ x, y, scale, boxShadow, width: c.ds, height: c.ds, marginLeft: -c.ds / 2, marginTop: -c.ds / 2, left: 0, top: 0, background: '#00C6FF', zIndex: 50 }} />
+                            <motion.div className="absolute rounded-full z-50"
+                                style={{
+                                    x, y, scale, boxShadow,
+                                    width: c.ds, height: c.ds,
+                                    marginLeft: -c.ds / 2, marginTop: -c.ds / 2,
+                                    left: 0, top: 0,
+                                    background: CYAN,
+                                }} />
                         )}
                     </div>
                 </motion.div>
