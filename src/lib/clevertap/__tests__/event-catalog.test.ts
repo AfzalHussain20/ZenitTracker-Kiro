@@ -1,0 +1,168 @@
+/**
+ * Tests for the CleverTap event catalog + gap-analysis engine.
+ * Pure functions — no DOM, no network, no CleverTap key required.
+ */
+
+import {
+  CLEVERTAP_CATALOG,
+  ZENIT_EXTRA_EVENTS,
+  CATEGORIES,
+  analyzeGaps,
+  parseCapturedEvents,
+  buildGapCsv,
+  buildCatalogCsv,
+  normalizeName,
+  SAMPLE_CAPTURE,
+} from '@/lib/clevertap/event-catalog';
+
+describe('CleverTap event catalog', () => {
+  it('embeds all 39 events from the CSV', () => {
+    expect(CLEVERTAP_CATALOG).toHaveLength(39);
+  });
+
+  it('has unique, normalised event names', () => {
+    const names = CLEVERTAP_CATALOG.map((e) => normalizeName(e.name));
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('assigns every event a known category and a trigger', () => {
+    for (const e of CLEVERTAP_CATALOG) {
+      expect(CATEGORIES).toContain(e.category);
+      expect(typeof e.trigger).toBe('string');
+      expect(e.trigger.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps the CSV core events present', () => {
+    const names = CLEVERTAP_CATALOG.map((e) => e.name);
+    for (const expected of ['Login', 'Logout', 'Page_View', 'Searched', 'Content_Clicked', 'Media_Error']) {
+      expect(names).toContain(expected);
+    }
+  });
+
+  it('lists 11 Zenit-specific events that are not in the CSV', () => {
+    expect(ZENIT_EXTRA_EVENTS).toHaveLength(11);
+    const csv = new Set(CLEVERTAP_CATALOG.map((e) => normalizeName(e.name)));
+    for (const e of ZENIT_EXTRA_EVENTS) {
+      expect(csv.has(normalizeName(e.name))).toBe(false);
+      expect(e.category).toBe('Zenit Specific');
+    }
+  });
+});
+
+describe('parseCapturedEvents', () => {
+  it('parses a JSON array with event + properties', () => {
+    const r = parseCapturedEvents('[{"event":"Login","properties":{"source":"D2C"}},{"event":"Logout"}]');
+    expect(r.format).toBe('json-array');
+    expect(r.events.map((e) => e.name).sort()).toEqual(['Login', 'Logout']);
+    expect(r.events.find((e) => e.name === 'Login')!.properties).toEqual(['source']);
+  });
+
+  it('parses a JSON map of event name → props', () => {
+    const r = parseCapturedEvents('{"Login":{"source":"D2C","isNewUser":true},"Page_View":["currentPage"]}');
+    expect(r.format).toBe('json-object');
+    expect(r.events).toHaveLength(2);
+    expect(r.events.find((e) => e.name === 'Page_View')!.properties).toEqual(['currentPage']);
+  });
+
+  it('parses NDJSON', () => {
+    const r = parseCapturedEvents('{"event":"Login"}\n{"event":"Searched","properties":{"searchString":"x"}}');
+    expect(r.format).toBe('ndjson');
+    expect(r.events.map((e) => e.name).sort()).toEqual(['Login', 'Searched']);
+  });
+
+  it('parses CSV rows and skips header rows', () => {
+    const r = parseCapturedEvents('Event Name,properties\nLogin,source,isNewUser\nPage_View,currentPage');
+    expect(r.format).toBe('csv');
+    expect(r.events.map((e) => e.name).sort()).toEqual(['Login', 'Page_View']);
+    expect(r.events.find((e) => e.name === 'Login')!.properties).toEqual(['source', 'isNewUser']);
+  });
+
+  it('parses plain event-name lists', () => {
+    const r = parseCapturedEvents('Login\nLogout\nPage_View');
+    expect(r.format).toBe('names');
+    expect(r.events).toHaveLength(3);
+  });
+
+  it('rolls up duplicates and unions their properties', () => {
+    const r = parseCapturedEvents('[{"event":"Login","properties":{"a":1}},{"event":"Login","properties":{"b":2}}]');
+    expect(r.events).toHaveLength(1);
+    expect(r.events[0].count).toBe(2);
+    expect(r.events[0].properties.sort()).toEqual(['a', 'b']);
+  });
+
+  it('returns empty for blank input', () => {
+    const r = parseCapturedEvents('   \n  ');
+    expect(r.format).toBe('empty');
+    expect(r.events).toHaveLength(0);
+  });
+});
+
+describe('analyzeGaps', () => {
+  it('reports zero missing when the whole catalog is captured', () => {
+    const payload = CLEVERTAP_CATALOG.map((e) => ({
+      event: e.name,
+      properties: Object.fromEntries(e.properties.map((p) => [p, 'x'])),
+    }));
+    const result = analyzeGaps(parseCapturedEvents(JSON.stringify(payload)));
+    expect(result.summary.matched).toBe(39);
+    expect(result.summary.missing).toBe(0);
+    expect(result.summary.propertyCoverage).toBe(100);
+  });
+
+  it('reports the correct number of missing events for a partial paste', () => {
+    const result = analyzeGaps(parseCapturedEvents('[{"event":"Login","properties":{"source":"D2C"}}]'));
+    expect(result.summary.capturedTotal).toBe(1);
+    expect(result.summary.matched).toBe(1);
+    expect(result.summary.missing).toBe(38);
+  });
+
+  it('flags captured events that are not in the CSV as extra', () => {
+    const result = analyzeGaps(
+      parseCapturedEvents('[{"event":"Login"},{"event":"Some_New_Event","properties":{"foo":1}}]'),
+    );
+    expect(result.summary.extra).toBe(1);
+    const extra = result.rows.find((r) => r.name === 'Some_New_Event')!;
+    expect(extra.status).toBe('extra');
+    expect(extra.extraProps).toEqual(['foo']);
+  });
+
+  it('computes per-event property coverage', () => {
+    const result = analyzeGaps(
+      parseCapturedEvents('[{"event":"Login","properties":{"source":"D2C","loginStatus":"success"}}]'),
+    );
+    const login = result.rows.find((r) => r.name === 'Login')!;
+    // Login expects 5 props, we supplied 2
+    expect(login.propertyCoverage).toBe(40);
+    expect(login.missingProps).toEqual(['isNewUser', 'otpCalls', 'contentLanguage']);
+  });
+
+  it('works on the built-in sample payload', () => {
+    const result = analyzeGaps(parseCapturedEvents(SAMPLE_CAPTURE));
+    expect(result.summary.capturedTotal).toBeGreaterThan(0);
+    expect(result.summary.extra).toBeGreaterThan(0); // Test_Case_Executed is Zenit-specific
+  });
+});
+
+describe('exports', () => {
+  it('builds a gap CSV with a header and one row per event', () => {
+    const result = analyzeGaps(parseCapturedEvents('[{"event":"Login"}]'));
+    const csv = buildGapCsv(result);
+    const lines = csv.split('\n');
+    expect(lines[0]).toContain('Event Name');
+    expect(lines[0]).toContain('Missing Properties');
+    expect(lines.length).toBe(result.rows.length + 1);
+  });
+
+  it('builds a catalog CSV covering CSV + Zenit events', () => {
+    const lines = buildCatalogCsv().split('\n');
+    expect(lines.length).toBe(CLEVERTAP_CATALOG.length + ZENIT_EXTRA_EVENTS.length + 1);
+  });
+
+  it('escapes commas in CSV cells', () => {
+    const result = analyzeGaps(parseCapturedEvents('[{"event":"Login"}]'));
+    const csv = buildGapCsv(result);
+    // The "Watched" trigger contains commas and must be quoted.
+    expect(csv).toContain('"Triggers when a stream starts, and at 25% / 50% / 80% / 100% completion"');
+  });
+});

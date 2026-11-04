@@ -19,7 +19,7 @@ import {
     Rocket, ArrowLeft, CheckCircle2, PlusCircle, FileJson, FileDown,
     Database, AlertCircle, XCircle, FileSpreadsheet, UploadCloud,
     Zap, Shield, ChevronRight, Tv, Film, Music, Laugh, Radio, Smartphone,
-    Globe, Monitor, Apple, Play, BarChart3, ChevronLeft, Layers, BookOpen, Wand2,
+    Globe, Monitor, Apple, Play, BarChart3, ChevronLeft, Layers, BookOpen, Wand2, ScanSearch,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
@@ -28,6 +28,7 @@ import { format } from 'date-fns';
 import { buildPhase1Tabs, buildPhase2Tabs } from '@/lib/export-to-sheets';
 import EventCoverageMatrix from '@/components/clevertap/EventCoverageMatrix';
 import EventComposer from '@/components/clevertap/EventComposer';
+import EventGapAnalysis from '@/components/clevertap/EventGapAnalysis';
 import { useAuth } from '@/context/AuthContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1269,8 +1270,9 @@ export default function CleverTapTrackerPage() {
     const onStep1Submit = (data: ConfigForm) => { setConfig(data); setStep(2); };
     const onStep2Submit = () => setStep(3);
 
-    // ─── Mode: 'composer' = original HTML→Excel flow | 'validator' = In-House schema validation ───
-    const [mode, setMode] = useState<'composer' | 'validator'>('composer');
+    // ─── Mode: 'composer' = HTML→Excel flow | 'validator' = In-House schema validation
+    //            | 'catalog' = CSV event catalog + gap analysis ───
+    const [mode, setMode] = useState<'composer' | 'validator' | 'catalog'>('composer');
 
     return (
         <div className="space-y-6 animate-fade-in relative max-w-7xl mx-auto">
@@ -1289,7 +1291,7 @@ export default function CleverTapTrackerPage() {
                         <p className="text-muted-foreground text-lg mt-1">Capture • Validate • Export analytics events</p>
                     </div>
                     {/* ── Mode Switcher ── */}
-                    <div className="flex items-center gap-1 p-1 bg-black/20 rounded-xl backdrop-blur-sm border border-white/10">
+                    <div className="flex items-center gap-1 p-1 bg-black/20 rounded-xl backdrop-blur-sm border border-white/10 flex-wrap">
                         <button
                             onClick={() => setMode('composer')}
                             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${mode === 'composer' ? 'bg-orange-500 text-white shadow-lg' : 'text-muted-foreground hover:text-foreground'}`}
@@ -1301,6 +1303,12 @@ export default function CleverTapTrackerPage() {
                             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${mode === 'validator' ? 'bg-purple-600 text-white shadow-lg' : 'text-muted-foreground hover:text-foreground'}`}
                         >
                             <Shield className="w-4 h-4" /> In-House Validator
+                        </button>
+                        <button
+                            onClick={() => setMode('catalog')}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${mode === 'catalog' ? 'bg-blue-600 text-white shadow-lg' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                            <ScanSearch className="w-4 h-4" /> Catalog &amp; Gaps
                         </button>
                     </div>
                 </div>
@@ -1323,6 +1331,13 @@ export default function CleverTapTrackerPage() {
             ══════════════════════════════════════════════════════ */}
             {mode === 'composer' && (
                 <EventComposer platforms={PLATFORMS} contentTypes={CONTENT_TYPES} />
+            )}
+
+            {/* ══════════════════════════════════════════════════════
+                EVENT CATALOG & GAP ANALYSIS MODE
+            ══════════════════════════════════════════════════════ */}
+            {mode === 'catalog' && (
+                <EventGapAnalysis />
             )}
 
             {/* ══════════════════════════════════════════════════════
