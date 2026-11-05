@@ -84,7 +84,7 @@ describe('EventGapAnalysis', () => {
     render(<EventGapAnalysis />);
     fireEvent.click(screen.getByRole('button', { name: /load sample/i }));
 
-    const missingButton = screen.getByRole('button', { name: /^Missing \d+/i });
+    const missingButton = screen.getByRole('button', { name: /^Not in paste \d+/i });
     fireEvent.click(missingButton);
 
     // A catalog event absent from the sample must remain visible.

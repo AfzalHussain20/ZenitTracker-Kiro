@@ -19,6 +19,7 @@ import {
 import {
     analyzeGaps, buildGapCsv, buildCatalogCsv, parseCapturedEvents,
     CLEVERTAP_CATALOG, ZENIT_EXTRA_EVENTS, CATEGORIES, SAMPLE_CAPTURE,
+    GAP_STATUS_LABEL, ZENIT_STATUS_LABEL,
     type GapAnalysisResult, type GapRow, type GapStatus, type CatalogCategory,
     type ZenitStatus,
 } from '@/lib/clevertap/event-catalog';
@@ -30,17 +31,17 @@ import {
 // ─── Style maps ───────────────────────────────────────────────────────────────
 
 const STATUS_STYLE: Record<GapStatus, { label: string; cls: string; icon: typeof CheckCircle2 }> = {
-    captured: { label: 'Captured', cls: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30', icon: CheckCircle2 },
-    missing: { label: 'Missing', cls: 'bg-rose-500/15 text-rose-600 border-rose-500/30', icon: XCircle },
-    extra: { label: 'Extra', cls: 'bg-sky-500/15 text-sky-600 border-sky-500/30', icon: PlusCircle },
+    captured: { label: GAP_STATUS_LABEL.captured, cls: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30', icon: CheckCircle2 },
+    missing: { label: GAP_STATUS_LABEL.missing, cls: 'bg-rose-500/15 text-rose-600 border-rose-500/30', icon: XCircle },
+    extra: { label: GAP_STATUS_LABEL.extra, cls: 'bg-sky-500/15 text-sky-600 border-sky-500/30', icon: PlusCircle },
 };
 
 const ZENIT_STYLE: Record<ZenitStatus | 'unknown', { label: string; cls: string }> = {
-    wired: { label: 'Wired in Zenit', cls: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30' },
-    available: { label: 'Helper ready', cls: 'bg-sky-500/15 text-sky-600 border-sky-500/30' },
-    'schema-only': { label: 'Schema only', cls: 'bg-amber-500/15 text-amber-600 border-amber-500/30' },
-    'not-implemented': { label: 'Not in Zenit', cls: 'bg-muted text-muted-foreground border-border' },
-    unknown: { label: 'Unknown', cls: 'bg-violet-500/15 text-violet-600 border-violet-500/30' },
+    wired: { label: ZENIT_STATUS_LABEL.wired, cls: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30' },
+    available: { label: ZENIT_STATUS_LABEL.available, cls: 'bg-sky-500/15 text-sky-600 border-sky-500/30' },
+    'schema-only': { label: ZENIT_STATUS_LABEL['schema-only'], cls: 'bg-amber-500/15 text-amber-600 border-amber-500/30' },
+    'not-implemented': { label: ZENIT_STATUS_LABEL['not-implemented'], cls: 'bg-muted text-muted-foreground border-border' },
+    unknown: { label: ZENIT_STATUS_LABEL.unknown, cls: 'bg-violet-500/15 text-violet-600 border-violet-500/30' },
 };
 
 const CATEGORY_CLS: Record<CatalogCategory | 'Uncategorized', string> = {
@@ -295,20 +296,27 @@ function EventNamePicker({ value, onChange }: { value: string; onChange: (value:
     );
 }
 
-/** Plain-language explanation of the four Zenit coverage states. */
+/** Plain-language explanation of the two independent status axes. */
 function ZenitStatusLegend() {
     const entries: Array<[ZenitStatus | 'unknown', string]> = [
-        ['wired', 'Tracked automatically or called from Zenit app code today.'],
+        ['wired', 'Zenit sends this event today.'],
         ['available', 'Helper exists in clevertap-analytics.ts, but nothing calls it yet.'],
         ['schema-only', 'Defined in analytics-schema.json — no code path yet.'],
         ['not-implemented', 'No Zenit equivalent (usually a video/streaming-only event).'],
-        ['unknown', 'Captured event that is not in the CleverTap CSV.'],
+        ['unknown', 'Captured event that is not in the CleverTap CSV, so it has no Zenit mapping.'],
     ];
     return (
-        <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
-                <Info className="w-3.5 h-3.5" /> What the Zenit column means
-            </p>
+        <div className="rounded-xl border border-border/60 bg-muted/20 p-3 space-y-2">
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5" /> Two separate checks
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                    <b className="text-foreground">In paste</b> = did it appear in what you pasted?
+                    <span className="mx-1.5 opacity-40">•</span>
+                    <b className="text-foreground">Zenit</b> = does the Zenit app itself send it?
+                </p>
+            </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-2">
                 {entries.map(([key, description]) => (
                     <div key={key} className="space-y-1">
@@ -671,10 +679,10 @@ export default function EventGapAnalysis() {
                                 {/* Summary tiles */}
                                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                                     <StatTile label="CSV Catalog" value={result.summary.catalogTotal} sub="expected events" tone="blue" icon={Layers} />
-                                    <StatTile label="Captured" value={result.summary.capturedTotal} sub="in your paste" tone="sky" icon={ClipboardPaste} />
-                                    <StatTile label="Matched" value={result.summary.matched} sub="catalog events found" tone="emerald" icon={CheckCircle2} />
-                                    <StatTile label="Missing" value={result.summary.missing} sub="in CSV, not captured" tone="rose" icon={XCircle} />
-                                    <StatTile label="Extra" value={result.summary.extra} sub={systemExtras > 0 ? `not in CSV · ${systemExtras} system` : 'not in CSV'} tone="violet" icon={PlusCircle} />
+                                    <StatTile label="In your paste" value={result.summary.capturedTotal} sub="unique events seen" tone="sky" icon={ClipboardPaste} />
+                                    <StatTile label="Found" value={result.summary.matched} sub="CSV events in paste" tone="emerald" icon={CheckCircle2} />
+                                    <StatTile label="Not in paste" value={result.summary.missing} sub="CSV events absent" tone="rose" icon={XCircle} />
+                                    <StatTile label="Beyond CSV" value={result.summary.extra} sub={systemExtras > 0 ? `in paste, not in CSV · ${systemExtras} system` : 'in paste, not in CSV'} tone="violet" icon={PlusCircle} />
                                     <StatTile label="Prop coverage" value={`${result.summary.propertyCoverage}%`} sub="matched properties" tone="emerald" icon={ListChecks} />
                                 </div>
 
@@ -683,9 +691,9 @@ export default function EventGapAnalysis() {
                                     <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-lg border border-border/60">
                                         {([
                                             ['all', `All ${counts.all}`],
-                                            ['missing', `Missing ${counts.missing}`],
-                                            ['captured', `Captured ${counts.captured}`],
-                                            ['extra', `Extra ${counts.extra}`],
+                                            ['missing', `Not in paste ${counts.missing}`],
+                                            ['captured', `Found in paste ${counts.captured}`],
+                                            ['extra', `Beyond CSV ${counts.extra}`],
                                         ] as const).map(([id, label]) => (
                                             <button
                                                 key={id}
@@ -729,7 +737,7 @@ export default function EventGapAnalysis() {
                                                 <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground">
                                                     <th className="px-4 py-2.5 font-semibold">Event</th>
                                                     <th className="px-3 py-2.5 font-semibold">Category</th>
-                                                    <th className="px-3 py-2.5 font-semibold">Status</th>
+                                                    <th className="px-3 py-2.5 font-semibold">In paste</th>
                                                     <th className="px-3 py-2.5 font-semibold">Zenit</th>
                                                     <th className="px-3 py-2.5 font-semibold">Coverage</th>
                                                     <th className="px-3 py-2.5 font-semibold text-right">Props</th>

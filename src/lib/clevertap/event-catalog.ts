@@ -55,7 +55,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
     name: 'Login',
     category: 'Lifecycle',
     trigger: 'When the user clicks sign-in and again when the user successfully logs in',
-    properties: ['source', 'isNewUser', 'otpCalls', 'loginStatus', 'contentLanguage'],
+    properties: ['source', 'isNewUser', 'otpCalls', 'loginStatus', 'contentLanguage', 'contentLanguageShorts'],
     zenitStatus: 'available',
     zenitEquivalent: 'Email / Google sign-in',
   },
@@ -71,7 +71,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
     name: 'Page_View',
     category: 'Lifecycle',
     trigger: 'Triggered on every page opened',
-    properties: ['previousPage', 'currentPage', 'contentLanguage', 'source', 'appName'],
+    properties: ['previousPage', 'currentPage', 'contentLanguage', 'source', 'appName', 'contentLanguageShorts'],
     zenitStatus: 'wired',
     zenitEquivalent: 'Route change (auto-tracked)',
   },
@@ -88,7 +88,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
     name: 'Searched',
     category: 'Discovery',
     trigger: 'When a keyword is entered and searched',
-    properties: ['searchString', 'isFound', 'contentLanguage', 'appName'],
+    properties: ['searchString', 'isFound', 'contentLanguage', 'appName', 'contentLanguageShorts'],
     zenitStatus: 'schema-only',
     zenitEquivalent: 'Global AI / bug search',
   },
@@ -100,7 +100,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
       'source', 'contentTitle', 'contentGenre', 'actorName', 'contentDuration',
       'showName', 'seasonNumber', 'trayName', 'positionInTray', 'directorName',
       'episodeNumber', 'contentID', 'trayType', 'appName', 'contentType',
-      'isFree', 'contentLanguage',
+      'isFree', 'contentLanguage', 'vodType', 'contentLanguageShorts',
     ],
     zenitStatus: 'schema-only',
     zenitEquivalent: 'Click a test case / bug / session',
@@ -109,14 +109,14 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
     name: 'See_All_Clicked',
     category: 'Discovery',
     trigger: 'When the user clicks "See All" on a tray',
-    properties: ['source', 'trayName', 'trayType', 'contentLanguage', 'appName', 'contentType'],
+    properties: ['source', 'trayName', 'trayType', 'contentLanguage', 'appName'],
     zenitStatus: 'not-implemented',
   },
   {
     name: 'View_Plans',
     category: 'Discovery',
     trigger: 'When a user lands on the View Plans page',
-    properties: ['source', 'contentLanguage', 'appName'],
+    properties: ['source', 'contentLanguage', 'appName', 'contentLanguageShorts'],
     zenitStatus: 'not-implemented',
     zenitEquivalent: 'Pricing / plan page view',
   },
@@ -124,7 +124,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
     name: 'Retention_Prompt_Clicked',
     category: 'Discovery',
     trigger: 'When the user clicks the retention prompt shown on the home page',
-    properties: ['contentLanguage', 'userType'],
+    properties: ['contentLanguage', 'userType', 'appName'],
     zenitStatus: 'not-implemented',
   },
   {
@@ -152,7 +152,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
     name: 'Referral',
     category: 'Discovery',
     trigger: 'When a user attempts to send a referral link',
-    properties: ['invitationSent', 'mediumOfReferral'],
+    properties: ['invitationSent', 'mediumOfReferral', 'appName'],
     zenitStatus: 'not-implemented',
   },
 
@@ -167,7 +167,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
       'bitrate', 'timeToFirstByte', 'watchedTime', 'directorName', 'bufferTime',
       'bufferCount', 'ccEnabled', 'contentID', 'contentType', 'isFree',
       'playbackType', 'seekStartTime', 'seekEndTime', 'streamPercentage',
-      'contentLanguage', 'contentLanguageShorts', 'playbackMode',
+      'contentLanguage', 'contentLanguageShorts', 'playbackMode', 'vodType',
     ],
     zenitStatus: 'not-implemented',
     zenitEquivalent: 'Test-case execution progress (25/50/80/100%)',
@@ -176,7 +176,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
     name: 'Media_Error',
     category: 'Playback',
     trigger: 'Captured when an error appears while playing a video, along with the error message',
-    properties: ['playErrorEventData', 'errorMessage', 'contentTitle', 'isFree', 'contentLanguage', 'source', 'contentType'],
+    properties: ['playErrorEventData', 'errorMessage', 'contentTitle', 'isFree', 'contentLanguage', 'source', 'contentType', 'contentLanguageShorts', 'appName'],
     zenitStatus: 'schema-only',
     zenitEquivalent: 'Client / playback error capture',
   },
@@ -184,7 +184,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
     name: 'Skip_Intro',
     category: 'Playback',
     trigger: 'When a user clicks Skip Intro',
-    properties: ['contentID', 'contentTitle', 'showName', 'networkType', 'bitrate', 'contentLanguage', 'source', 'appName'],
+    properties: ['contentID', 'contentTitle', 'showName', 'networkType', 'bitrate', 'contentLanguage', 'source', 'appName', 'vodType'],
     zenitStatus: 'not-implemented',
   },
   {
@@ -216,7 +216,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
       'adType', 'contentTitle', 'contentGenre', 'source', 'contentDuration',
       'showName', 'seasonNumber', 'adClickURL', 'adskipOffset', 'directorName',
       'episodeNumber', 'contentID', 'trayType', 'adDuration', 'isFree',
-      'contentLanguage', 'appName', 'playbackMode',
+      'contentLanguage', 'appName', 'playbackMode', 'vodType',
     ],
     zenitStatus: 'not-implemented',
   },
@@ -228,7 +228,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
       'adType', 'contentTitle', 'contentGenre', 'source', 'contentDuration',
       'showName', 'seasonNumber', 'adClickURL', 'adskipOffset', 'directorName',
       'episodeNumber', 'contentID', 'trayType', 'adDuration', 'isFree',
-      'contentLanguage', 'appName', 'playbackMode',
+      'contentLanguage', 'appName', 'playbackMode', 'vodType',
     ],
     zenitStatus: 'not-implemented',
   },
@@ -240,7 +240,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
       'adType', 'contentTitle', 'contentGenre', 'source', 'contentDuration',
       'showName', 'seasonNumber', 'adClickURL', 'adskipOffset', 'directorName',
       'episodeNumber', 'contentID', 'trayType', 'adDuration', 'isFree',
-      'contentLanguage', 'appName', 'playbackMode',
+      'contentLanguage', 'appName', 'playbackMode', 'vodType',
     ],
     zenitStatus: 'not-implemented',
   },
@@ -252,7 +252,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
       'adType', 'contentTitle', 'contentGenre', 'source', 'contentDuration',
       'showName', 'seasonNumber', 'adClickURL', 'adskipOffset', 'directorName',
       'episodeNumber', 'contentID', 'trayType', 'adDuration', 'isFree',
-      'contentLanguage', 'appName', 'playbackMode', 'contentType',
+      'contentLanguage', 'appName', 'playbackMode', 'contentType', 'vodType',
     ],
     zenitStatus: 'not-implemented',
   },
@@ -265,6 +265,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
     properties: [
       'offerCodeSelected', 'paymentPlan', 'planID', 'currency', 'actualPrice',
       'discountedPrice', 'isConfirmed', 'contentLanguage', 'source', 'appName',
+      'contentLanguageShorts',
     ],
     zenitStatus: 'not-implemented',
     zenitEquivalent: 'Plan upgrade / checkout start',
@@ -276,7 +277,8 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
     properties: [
       'offerApplied', 'paymentPlan', 'planID', 'currency', 'actualPrice',
       'discountedPrice', 'transactionAmount', 'appName', 'trnasactionAmount',
-      'paymentMode', 'paymentSubMode', 'paymentSubModeOffer',
+      'paymentMode', 'paymentSubMode', 'paymentSubModeOffer', 'vodType',
+      'contentTitle', 'contentGenre', 'contentID',
     ],
     zenitStatus: 'not-implemented',
   },
@@ -291,7 +293,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
       'isAutoRenewal', 'planStartDate', 'planEndDate', 'transactionId',
       'deviceGroup', 'isReferred', 'orderId', 'isAutoRenewalReSubscription',
       'failureReason', 'subscriptionStatus', 'isUpgrade', 'deviceManufacturer',
-      'upgradeType',
+      'upgradeType', 'contentTitle', 'contentGenre', 'contentID', 'source',
     ],
     zenitStatus: 'not-implemented',
   },
@@ -348,14 +350,14 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
     name: 'Parental_Control',
     category: 'Profile & Account',
     trigger: 'When a user attempts to enable parental control from account settings',
-    properties: ['isEnabled', 'viewingRestriction', 'isPinSet'],
+    properties: ['isEnabled', 'viewingRestriction', 'isPinSet', 'appName'],
     zenitStatus: 'not-implemented',
   },
   {
     name: 'Change_App_Settings',
     category: 'Profile & Account',
     trigger: 'When a user attempts to change app settings',
-    properties: ['downloadSettings', 'autoplaySettings'],
+    properties: ['downloadSettings', 'autoplaySettings', 'appName'],
     zenitStatus: 'not-implemented',
   },
   {
@@ -389,7 +391,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
       'contentID', 'contentTitle', 'contentGenre', 'actorName', 'directorName',
       'showName', 'contentLanguage', 'source', 'appName', 'episodeNumber',
       'contentType', 'isFree', 'seasonNumber', 'contentDuration', 'trayName',
-      'trayType', 'positionInTray',
+      'trayType', 'positionInTray', 'vodType', 'contentLanguageShorts',
     ],
     zenitStatus: 'not-implemented',
     zenitEquivalent: 'Save / pin a test case or suite',
@@ -402,7 +404,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
       'contentID', 'contentTitle', 'contentGenre', 'actorName', 'directorName',
       'showName', 'contentLanguage', 'appName', 'episodeNumber', 'contentType',
       'isFree', 'seasonNumber', 'contentDuration', 'itemPosition', 'removeAll',
-      'contentLanguageShorts',
+      'contentLanguageShorts', 'episodeName', 'source', 'vodType',
     ],
     zenitStatus: 'not-implemented',
   },
@@ -413,7 +415,7 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
     properties: [
       'contentID', 'contentTitle', 'contentGenre', 'actorName', 'directorName',
       'showName', 'contentLanguage', 'appName', 'episodeNumber', 'contentType',
-      'isFree', 'seasonNumber', 'contentDuration', 'source',
+      'isFree', 'seasonNumber', 'contentDuration', 'source', 'contentLanguageShorts',
     ],
     zenitStatus: 'not-implemented',
     zenitEquivalent: 'Share a report / test run',
@@ -992,6 +994,27 @@ function rollUp(events: CapturedEvent[]): CapturedEvent[] {
 
 export type GapStatus = 'captured' | 'missing' | 'extra';
 
+/**
+ * Human labels for the two independent status axes. The UI and the CSV exports
+ * both use these so the screen and the download never disagree.
+ *
+ *   Axis 1 — "In paste": did the event appear in what the analyst pasted?
+ *   Axis 2 — "Zenit":    does the Zenit app itself send this event?
+ */
+export const GAP_STATUS_LABEL: Record<GapStatus, string> = {
+  captured: 'Found in paste',
+  missing: 'Not in paste',
+  extra: 'Beyond CSV',
+};
+
+export const ZENIT_STATUS_LABEL: Record<ZenitStatus | 'unknown', string> = {
+  wired: 'Live in Zenit',
+  available: 'Code ready',
+  'schema-only': 'Schema only',
+  'not-implemented': 'Not tracked',
+  unknown: 'Unknown',
+};
+
 export interface GapRow {
   name: string;
   status: GapStatus;
@@ -1115,14 +1138,15 @@ function csvCell(v: string | number): string {
 /** CSV report of the gap analysis — opens cleanly in Excel / Sheets. */
 export function buildGapCsv(result: GapAnalysisResult): string {
   const header = [
-    'Event Name', 'Status', 'Category', 'Zenit Status', 'Records Captured',
+    'Event Name', 'In Paste', 'Category', 'Zenit', 'Records Captured',
     'Property Coverage %', 'Expected Properties', 'Captured Properties',
     'Missing Properties', 'Extra Properties', 'Trigger',
   ];
   const lines = [header.join(',')];
   for (const r of result.rows) {
     lines.push([
-      r.name, r.status, r.category, r.zenitStatus, r.records, r.propertyCoverage,
+      r.name, GAP_STATUS_LABEL[r.status], r.category, ZENIT_STATUS_LABEL[r.zenitStatus],
+      r.records, r.propertyCoverage,
       r.expectedProps.join('|'), r.capturedProps.join('|'),
       r.missingProps.join('|'), r.extraProps.join('|'), r.trigger,
     ].map(csvCell).join(','));
@@ -1132,11 +1156,11 @@ export function buildGapCsv(result: GapAnalysisResult): string {
 
 /** CSV of the full catalog (for sharing / auditing). */
 export function buildCatalogCsv(): string {
-  const header = ['Event Name', 'Category', 'Zenit Status', 'Property Count', 'Properties', 'Trigger'];
+  const header = ['Event Name', 'Category', 'Zenit', 'Property Count', 'Properties', 'Trigger'];
   const lines = [header.join(',')];
   for (const e of [...CLEVERTAP_CATALOG, ...ZENIT_EXTRA_EVENTS]) {
     lines.push([
-      e.name, e.category, e.zenitStatus, e.properties.length, e.properties.join('|'), e.trigger,
+      e.name, e.category, ZENIT_STATUS_LABEL[e.zenitStatus], e.properties.length, e.properties.join('|'), e.trigger,
     ].map(csvCell).join(','));
   }
   return lines.join('\n');

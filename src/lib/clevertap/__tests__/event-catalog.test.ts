@@ -43,6 +43,47 @@ describe('CleverTap event catalog', () => {
     }
   });
 
+  it('covers every property the CSV lists for these events', () => {
+    // Regression guard for the CSV reconciliation: these properties were
+    // previously missing from the catalog even though the CSV declares them.
+    const byName = new Map(CLEVERTAP_CATALOG.map((e) => [e.name, new Set(e.properties)]));
+    const expected: Record<string, string[]> = {
+      Subscription_Initiated: ['contentLanguageShorts'],
+      Watched: ['vodType', 'contentLanguageShorts'],
+      View_Plans: ['contentLanguageShorts'],
+      Login: ['contentLanguageShorts'],
+      Searched: ['contentLanguageShorts'],
+      Added_to_Watchlist: ['vodType', 'contentLanguageShorts'],
+      Removed_From_Watchlist: ['episodeName', 'source', 'vodType', 'contentLanguageShorts'],
+      Media_Error: ['contentLanguageShorts', 'appName'],
+      Shared: ['contentLanguageShorts'],
+      Subscription: ['source', 'contentTitle', 'contentGenre', 'contentID'],
+      Page_View: ['contentLanguageShorts'],
+      Content_Clicked: ['vodType', 'contentLanguageShorts'],
+      Payment_Initiated: ['vodType', 'contentTitle', 'contentGenre', 'contentID'],
+      Parental_Control: ['appName'],
+      Change_App_Settings: ['appName'],
+      Referral: ['appName'],
+      Skip_Intro: ['vodType'],
+      Ad_Break_Start: ['vodType'],
+      Ad_Start: ['vodType'],
+      Ad_Break_Complete: ['vodType'],
+      Ad_End: ['vodType'],
+      Retention_Prompt_Clicked: ['appName'],
+    };
+
+    for (const [event, props] of Object.entries(expected)) {
+      const actual = byName.get(event);
+      expect(actual).toBeDefined();
+      for (const prop of props) {
+        expect(actual!.has(prop)).toBe(true);
+      }
+    }
+
+    // The CSV does not declare contentType for See_All_Clicked.
+    expect(byName.get('See_All_Clicked')!.has('contentType')).toBe(false);
+  });
+
   it('lists 11 Zenit-specific events that are not in the CSV', () => {
     expect(ZENIT_EXTRA_EVENTS).toHaveLength(11);
     const csv = new Set(CLEVERTAP_CATALOG.map((e) => normalizeName(e.name)));
@@ -153,7 +194,9 @@ describe('parseCapturedEvents', () => {
       expect(row.missingProps).not.toContain('contentLanguage');
       expect(row.missingProps).not.toContain('previousPage');
       expect(row.missingProps).not.toContain('currentPage');
-      expect(row.extraProps).toContain('contentLanguageShorts');
+      // contentLanguageShorts is part of the CSV catalog now, so it is not an extra.
+      expect(row.missingProps).not.toContain('contentLanguageShorts');
+      expect(row.extraProps).not.toContain('contentLanguageShorts');
     });
   });
 
@@ -326,9 +369,11 @@ describe('analyzeGaps', () => {
       parseCapturedEvents('[{"event":"Login","properties":{"source":"D2C","loginStatus":"success"}}]'),
     );
     const login = result.rows.find((r) => r.name === 'Login')!;
-    // Login expects 5 props, we supplied 2
-    expect(login.propertyCoverage).toBe(40);
-    expect(login.missingProps).toEqual(['isNewUser', 'otpCalls', 'contentLanguage']);
+    // Login expects 6 props, we supplied 2
+    expect(login.propertyCoverage).toBe(33);
+    expect(login.missingProps).toEqual([
+      'isNewUser', 'otpCalls', 'contentLanguage', 'contentLanguageShorts',
+    ]);
   });
 
   it('works on the built-in sample payload', () => {
