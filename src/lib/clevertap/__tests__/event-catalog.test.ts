@@ -12,9 +12,11 @@ import {
   parseHtmlTooltipProperties,
   parseActivityHtmlEvents,
   isCleverTapSystemEvent,
+  isCleverTapSystemProperty,
   buildGapCsv,
   buildCatalogCsv,
   normalizeName,
+  normalizeProperty,
   SAMPLE_CAPTURE,
 } from '@/lib/clevertap/event-catalog';
 
@@ -197,6 +199,11 @@ describe('parseCapturedEvents', () => {
       // contentLanguageShorts is part of the CSV catalog now, so it is not an extra.
       expect(row.missingProps).not.toContain('contentLanguageShorts');
       expect(row.extraProps).not.toContain('contentLanguageShorts');
+      // CleverTap SDK properties are filtered out of gap analysis.
+      expect(row.capturedProps).not.toContain('CT App Version');
+      expect(row.capturedProps).not.toContain('CT Source');
+      expect(row.extraProps).not.toContain('CT App Version');
+      expect(row.extraProps).not.toContain('CT Source');
     });
   });
 
@@ -376,6 +383,43 @@ describe('analyzeGaps', () => {
     ]);
   });
 
+  it('matches spaced display labels against camelCase CSV property names (Watched)', () => {
+    expect(normalizeProperty('content genre')).toBe(normalizeProperty('contentGenre'));
+    expect(normalizeProperty('content duration')).toBe(normalizeProperty('contentDuration'));
+    expect(normalizeProperty('content type')).toBe(normalizeProperty('contentType'));
+    expect(normalizeProperty('watchStatus (Values -> Yes, No)')).toBe(normalizeProperty('watchStatus'));
+
+    const result = analyzeGaps(
+      parseCapturedEvents(
+        JSON.stringify([
+          {
+            event: 'Watched',
+            properties: {
+              'content genre': 'Action',
+              'content duration': 120,
+              'content type': 'Movie',
+              'CT App Version': '4.2.57',
+              'CT Source': 'Mobile',
+            },
+          },
+        ]),
+      ),
+    );
+    const watched = result.rows.find((r) => r.name === 'Watched')!;
+    expect(watched.missingProps).not.toContain('contentGenre');
+    expect(watched.missingProps).not.toContain('contentDuration');
+    expect(watched.missingProps).not.toContain('contentType');
+    expect(watched.extraProps).toEqual([]);
+  });
+
+  it('excludes CleverTap SDK system properties from capturedProps and extraProps', () => {
+    expect(isCleverTapSystemProperty('CT App Version')).toBe(true);
+    expect(isCleverTapSystemProperty('ct_app_version')).toBe(true);
+    expect(isCleverTapSystemProperty('CT Source')).toBe(true);
+    expect(isCleverTapSystemProperty('Clevertap ID')).toBe(true);
+    expect(isCleverTapSystemProperty('source')).toBe(false);
+  });
+
   it('works on the built-in sample payload', () => {
     const result = analyzeGaps(parseCapturedEvents(SAMPLE_CAPTURE));
     expect(result.summary.capturedTotal).toBeGreaterThan(0);
@@ -390,6 +434,15 @@ describe('exports', () => {
     const lines = csv.split('\n');
     expect(lines[0]).toContain('Event Name');
     expect(lines[0]).toContain('Missing Properties');
+    expect(lines.length).toBe(result.rows.length + 1);
+  });
+
+  it('builds an event-only gap CSV when includeProperties is false', () => {
+    const result = analyzeGaps(parseCapturedEvents('[{"event":"Login"}]'));
+    const csv = buildGapCsv(result, { includeProperties: false });
+    const lines = csv.split('\n');
+    expect(lines[0]).toBe('Event Name,In Paste,Category,Zenit,Records Captured,Trigger');
+    expect(lines[0]).not.toContain('Missing Properties');
     expect(lines.length).toBe(result.rows.length + 1);
   });
 

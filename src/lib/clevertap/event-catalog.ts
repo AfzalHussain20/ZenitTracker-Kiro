@@ -560,9 +560,54 @@ export function isCleverTapSystemEvent(name: string): boolean {
   return CLEVERTAP_SYSTEM_EVENTS.has(normalizeName(name));
 }
 
+/**
+ * Properties CleverTap's SDK attaches automatically (app version, SDK version,
+ * source, device/network details, …). They are not part of the CSV contract,
+ * so they must not be reported as extra app properties.
+ */
+export const CLEVERTAP_SYSTEM_PROPERTIES = new Set(
+  [
+    'CT App Version',
+    'CT SDK Version',
+    'CT OS Version',
+    'CT Source',
+    'CT Connected To WiFi',
+    'CT Bluetooth Version',
+    'CT Bluetooth Enabled',
+    'CT Network Type',
+    'CT Device ID',
+    'CT Carrier',
+    'CT Country',
+    'CT Region',
+    'CT City',
+    'CT Timezone',
+    'CT Latitude',
+    'CT Longitude',
+    'Clevertap ID',
+    'ct_app_version',
+  ].map(normalizeProperty),
+);
+
+export function isCleverTapSystemProperty(name: string): boolean {
+  return CLEVERTAP_SYSTEM_PROPERTIES.has(normalizeProperty(name));
+}
+
 /** Normalise for comparison: trim, collapse spaces, case-insensitive. */
 export function normalizeName(name: string): string {
   return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
+ * Normalise a property key for comparison. CleverTap payloads sometimes use
+ * display labels ("content genre", "content type") while the CSV uses
+ * camelCase ("contentGenre", "contentType"). Strip everything except letters
+ * and digits so both forms match. Also drops the CSV's "(Values -> …)" note.
+ */
+export function normalizeProperty(key: string): string {
+  return String(key || '')
+    .replace(/\s*\(Values?\s*->[^)]*\)/gi, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1058,11 +1103,14 @@ export function analyzeGaps(parse: ParseResult): GapAnalysisResult {
   for (const ev of CLEVERTAP_CATALOG) {
     const key = normalizeName(ev.name);
     const captured = capturedByName.get(key);
-    const capturedProps = captured?.properties ?? [];
-    const capturedNorm = new Set(capturedProps.map(normalizeName));
-    const missingProps = ev.properties.filter((p) => !capturedNorm.has(normalizeName(p)));
-    const expectedNorm = new Set(ev.properties.map(normalizeName));
-    const extraProps = capturedProps.filter((p) => !expectedNorm.has(normalizeName(p)));
+    // SDK-injected properties are noise here; keep only app-defined keys.
+    const capturedProps = (captured?.properties ?? []).filter(
+      (p) => !isCleverTapSystemProperty(p),
+    );
+    const capturedNorm = new Set(capturedProps.map(normalizeProperty));
+    const missingProps = ev.properties.filter((p) => !capturedNorm.has(normalizeProperty(p)));
+    const expectedNorm = new Set(ev.properties.map(normalizeProperty));
+    const extraProps = capturedProps.filter((p) => !expectedNorm.has(normalizeProperty(p)));
     const found = ev.properties.length === 0
       ? (captured ? 100 : 0)
       : Math.round(((ev.properties.length - missingProps.length) / ev.properties.length) * 100);
@@ -1087,6 +1135,7 @@ export function analyzeGaps(parse: ParseResult): GapAnalysisResult {
   for (const ev of parse.events) {
     if (CATALOG_NAMES.has(normalizeName(ev.name))) continue;
     const known = CATALOG_BY_NAME.get(normalizeName(ev.name));
+    const capturedProps = ev.properties.filter((p) => !isCleverTapSystemProperty(p));
     rows.push({
       name: ev.name,
       status: 'extra',
@@ -1096,11 +1145,13 @@ export function analyzeGaps(parse: ParseResult): GapAnalysisResult {
       zenitEquivalent: known?.zenitEquivalent,
       isSystem: isCleverTapSystemEvent(ev.name),
       expectedProps: known?.properties ?? [],
-      capturedProps: ev.properties,
+      capturedProps,
       missingProps: [],
       extraProps: known
-        ? ev.properties.filter((p) => !known.properties.map(normalizeName).includes(normalizeName(p)))
-        : ev.properties,
+        ? capturedProps.filter(
+            (p) => !known.properties.map(normalizeProperty).includes(normalizeProperty(p)),
+          )
+        : capturedProps,
       propertyCoverage: 100,
       records: ev.count,
     });
@@ -1135,21 +1186,41 @@ function csvCell(v: string | number): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+export interface GapCsvOptions {
+  /**
+   * Include the 5 property-level columns (coverage + expected/captured/missing/extra).
+   * Defaults to true. Pass false for an event-only report when multi-fire events
+   * make property-key unions noisy.
+   */
+  includeProperties?: boolean;
+}
+
 /** CSV report of the gap analysis — opens cleanly in Excel / Sheets. */
-export function buildGapCsv(result: GapAnalysisResult): string {
-  const header = [
-    'Event Name', 'In Paste', 'Category', 'Zenit', 'Records Captured',
-    'Property Coverage %', 'Expected Properties', 'Captured Properties',
-    'Missing Properties', 'Extra Properties', 'Trigger',
-  ];
+export function buildGapCsv(result: GapAnalysisResult, options: GapCsvOptions = {}): string {
+  const includeProps = options.includeProperties ?? true;
+  const header = includeProps
+    ? [
+        'Event Name', 'In Paste', 'Category', 'Zenit', 'Records Captured',
+        'Property Coverage %', 'Expected Properties', 'Captured Properties',
+        'Missing Properties', 'Extra Properties', 'Trigger',
+      ]
+    : [
+        'Event Name', 'In Paste', 'Category', 'Zenit', 'Records Captured', 'Trigger',
+      ];
   const lines = [header.join(',')];
   for (const r of result.rows) {
-    lines.push([
-      r.name, GAP_STATUS_LABEL[r.status], r.category, ZENIT_STATUS_LABEL[r.zenitStatus],
-      r.records, r.propertyCoverage,
-      r.expectedProps.join('|'), r.capturedProps.join('|'),
-      r.missingProps.join('|'), r.extraProps.join('|'), r.trigger,
-    ].map(csvCell).join(','));
+    const cells = includeProps
+      ? [
+          r.name, GAP_STATUS_LABEL[r.status], r.category, ZENIT_STATUS_LABEL[r.zenitStatus],
+          r.records, r.propertyCoverage,
+          r.expectedProps.join('|'), r.capturedProps.join('|'),
+          r.missingProps.join('|'), r.extraProps.join('|'), r.trigger,
+        ]
+      : [
+          r.name, GAP_STATUS_LABEL[r.status], r.category, ZENIT_STATUS_LABEL[r.zenitStatus],
+          r.records, r.trigger,
+        ];
+    lines.push(cells.map(csvCell).join(','));
   }
   return lines.join('\n');
 }
