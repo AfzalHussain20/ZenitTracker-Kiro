@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -53,6 +53,18 @@ const CATEGORY_CLS: Record<CatalogCategory | 'Uncategorized', string> = {
     Library: 'bg-lime-500/15 text-lime-600 border-lime-500/30',
     'Zenit Specific': 'bg-violet-500/15 text-violet-600 border-violet-500/30',
     Uncategorized: 'bg-muted text-muted-foreground border-border',
+};
+
+const CATEGORY_DOT: Record<CatalogCategory | 'Uncategorized', string> = {
+    Lifecycle: 'bg-blue-500',
+    Discovery: 'bg-cyan-500',
+    Playback: 'bg-indigo-500',
+    Ads: 'bg-orange-500',
+    Subscription: 'bg-fuchsia-500',
+    'Profile & Account': 'bg-teal-500',
+    Library: 'bg-lime-500',
+    'Zenit Specific': 'bg-violet-500',
+    Uncategorized: 'bg-muted-foreground',
 };
 
 function download(filename: string, content: string) {
@@ -127,6 +139,184 @@ function PropList({ label, props, tone }: { label: string; props: string[]; tone
             {props.map((p) => (
                 <span key={p} className={cn('rounded border px-1.5 py-0.5 text-[11px] font-mono', tones[tone])}>{p}</span>
             ))}
+        </div>
+    );
+}
+
+/**
+ * Searchable event-name combobox. Replaces the native <datalist> so the
+ * catalog can be browsed by category and filtered by name. Free text is
+ * still allowed — a custom event name can be typed and used as-is.
+ */
+function EventNamePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState('');
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const onDocMouseDown = (event: MouseEvent) => {
+            if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', onDocMouseDown);
+        return () => document.removeEventListener('mousedown', onDocMouseDown);
+    }, [open]);
+
+    const q = query.trim().toLowerCase();
+    const matches = useMemo(() => {
+        return [...CLEVERTAP_CATALOG, ...ZENIT_EXTRA_EVENTS].filter((e) => {
+            if (!q) return true;
+            return e.name.toLowerCase().includes(q) || e.category.toLowerCase().includes(q);
+        });
+    }, [q]);
+
+    const exact = useMemo(
+        () => [...CLEVERTAP_CATALOG, ...ZENIT_EXTRA_EVENTS].find((e) => e.name.toLowerCase() === value.trim().toLowerCase()),
+        [value],
+    );
+
+    const choose = (name: string) => {
+        onChange(name);
+        setQuery(name);
+        setOpen(false);
+    };
+
+    return (
+        <div ref={containerRef} className="relative flex-1 min-w-[240px]">
+            <Label htmlFor="html-event-name" className="text-[11px] font-semibold text-muted-foreground">
+                Event name for tooltip-HTML pastes
+            </Label>
+            <div className="relative mt-1">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <Input
+                    id="html-event-name"
+                    role="combobox"
+                    aria-expanded={open}
+                    aria-controls="catalog-event-names"
+                    aria-autocomplete="list"
+                    autoComplete="off"
+                    value={value}
+                    onChange={(e) => {
+                        onChange(e.target.value);
+                        setQuery(e.target.value);
+                        setOpen(true);
+                    }}
+                    onFocus={() => {
+                        setQuery(value);
+                        setOpen(true);
+                    }}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Escape') setOpen(false);
+                        if (e.key === 'Enter' && open && matches[0]) {
+                            e.preventDefault();
+                            choose(matches[0].name);
+                        }
+                    }}
+                    placeholder="Search 50 catalog events, or type a custom name…"
+                    className="h-9 pl-8 pr-8 font-mono text-xs"
+                />
+                <button
+                    type="button"
+                    onClick={() => setOpen((o) => !o)}
+                    aria-label="Toggle event name list"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                >
+                    <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', open && 'rotate-180')} />
+                </button>
+            </div>
+
+            {/* Selected-state hint */}
+            <div className="mt-1 min-h-[16px]">
+                {exact ? (
+                    <span className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <span className={cn('w-1.5 h-1.5 rounded-full', CATEGORY_DOT[exact.category])} />
+                        {exact.category} · {exact.properties.length} expected properties
+                    </span>
+                ) : value.trim() ? (
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                        Custom name — not in the CleverTap CSV (will be reported as an extra event).
+                    </span>
+                ) : (
+                    <span className="text-[10px] text-muted-foreground">Pick from the list or type any event name.</span>
+                )}
+            </div>
+
+            {open && (
+                <div
+                    id="catalog-event-names"
+                    role="listbox"
+                    className="absolute z-50 mt-1 w-full max-h-[300px] overflow-y-auto rounded-lg border border-border bg-popover shadow-xl"
+                >
+                    {matches.length === 0 ? (
+                        <div className="px-3 py-4 text-[11px] text-muted-foreground">
+                            No catalog event matches “{query.trim()}”. Type it and hit <b>Analyse gaps</b> to treat it as a custom event.
+                        </div>
+                    ) : (
+                        CATEGORIES.map((cat) => {
+                            const items = matches.filter((e) => e.category === cat);
+                            if (items.length === 0) return null;
+                            return (
+                                <div key={cat}>
+                                    <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-muted/95 backdrop-blur px-2.5 py-1.5 border-b border-border/60">
+                                        <span className={cn('w-1.5 h-1.5 rounded-full', CATEGORY_DOT[cat])} />
+                                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{cat}</span>
+                                    </div>
+                                    {items.map((e) => {
+                                        const selected = e.name.toLowerCase() === value.trim().toLowerCase();
+                                        return (
+                                            <button
+                                                key={e.name}
+                                                type="button"
+                                                role="option"
+                                                aria-selected={selected}
+                                                onMouseDown={(ev) => ev.preventDefault()}
+                                                onClick={() => choose(e.name)}
+                                                className={cn(
+                                                    'w-full flex items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-blue-500/10',
+                                                    selected && 'bg-blue-500/10',
+                                                )}
+                                            >
+                                                <code className="flex-1 min-w-0 truncate text-xs font-semibold">{e.name}</code>
+                                                <span className="text-[10px] text-muted-foreground tabular-nums">{e.properties.length}p</span>
+                                                {selected && <CheckCircle2 className="w-3 h-3 text-blue-600 shrink-0" />}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })
+                    )}
+                    <div className="sticky bottom-0 border-t border-border/60 bg-popover/95 backdrop-blur px-2.5 py-1.5 text-[10px] text-muted-foreground">
+                        Not listed? Type a custom event name and press <b>Analyse gaps</b>.
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+/** Plain-language explanation of the four Zenit coverage states. */
+function ZenitStatusLegend() {
+    const entries: Array<[ZenitStatus | 'unknown', string]> = [
+        ['wired', 'Tracked automatically or called from Zenit app code today.'],
+        ['available', 'Helper exists in clevertap-analytics.ts, but nothing calls it yet.'],
+        ['schema-only', 'Defined in analytics-schema.json — no code path yet.'],
+        ['not-implemented', 'No Zenit equivalent (usually a video/streaming-only event).'],
+        ['unknown', 'Captured event that is not in the CleverTap CSV.'],
+    ];
+    return (
+        <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5" /> What the Zenit column means
+            </p>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-2">
+                {entries.map(([key, description]) => (
+                    <div key={key} className="space-y-1">
+                        <Pill className={ZENIT_STYLE[key].cls}>{ZENIT_STYLE[key].label}</Pill>
+                        <p className="text-[11px] text-muted-foreground leading-snug">{description}</p>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 }
@@ -295,6 +485,11 @@ export default function EventGapAnalysis() {
         };
     }, [result]);
 
+    const systemExtras = useMemo(
+        () => (result?.rows ?? []).filter((r) => r.status === 'extra' && r.isSystem).length,
+        [result],
+    );
+
     return (
         <div className="space-y-5">
             {/* ── Hero / intro ── */}
@@ -353,7 +548,7 @@ export default function EventGapAnalysis() {
                                     <h3 className="font-semibold text-sm">Paste captured events</h3>
                                 </div>
                                 <div className="flex flex-wrap gap-1.5">
-                                    {['JSON array', 'NDJSON', 'CSV rows', 'Event names', 'Tooltip HTML'].map((f) => (
+                                    {['JSON array', 'NDJSON', 'CSV rows', 'Event names', 'Tooltip HTML', 'Activity page'].map((f) => (
                                         <Pill key={f} className="bg-muted/70 border-border text-muted-foreground">{f}</Pill>
                                     ))}
                                 </div>
@@ -361,34 +556,17 @@ export default function EventGapAnalysis() {
                             <Textarea
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
-                                placeholder={`Paste anything — all at once, not one by one:\n\n• JSON array:  [{"event":"Login","properties":{"source":"D2C"}}]\n• NDJSON:      one {"event":"Page_View","properties":{...}} per line\n• CSV rows:    Login,source,isNewUser,loginStatus\n• Names only:  Login\n               Page_View\n               Searched\n• Tooltip HTML: <span data-t="tooltip" title="source">B2B</span>…\n               (type the event name below)`}
+                                placeholder={`Paste anything — all at once, not one by one:\n\n• CleverTap activity page: paste the whole "User activity details" HTML (best coverage)\n• JSON array:  [{"event":"Login","properties":{"source":"D2C"}}]\n• NDJSON:      one {"event":"Page_View","properties":{...}} per line\n• CSV rows:    Login,source,isNewUser,loginStatus\n• Names only:  Login\n               Page_View\n               Searched\n• Tooltip HTML: <span data-t="tooltip" title="source">B2B</span>…\n               (type the event name below)`}
                                 className="min-h-[170px] font-mono text-xs leading-relaxed"
                                 spellCheck={false}
                             />
 
-                            {/* Event name for HTML / property-only pastes */}
-                            <div className="flex flex-wrap items-end gap-2 rounded-lg border border-border/60 bg-muted/20 p-2.5">
-                                <div className="flex-1 min-w-[180px]">
-                                    <Label htmlFor="html-event-name" className="text-[11px] font-semibold text-muted-foreground">
-                                        Event name for tooltip-HTML pastes
-                                    </Label>
-                                    <Input
-                                        id="html-event-name"
-                                        list="catalog-event-names"
-                                        value={htmlEventName}
-                                        onChange={(e) => setHtmlEventName(e.target.value)}
-                                        placeholder="e.g. Page_View"
-                                        className="h-8 mt-1 font-mono text-xs"
-                                    />
-                                    <datalist id="catalog-event-names">
-                                        {CLEVERTAP_CATALOG.map((e) => (
-                                            <option key={e.name} value={e.name} />
-                                        ))}
-                                    </datalist>
-                                </div>
-                                <p className="text-[11px] text-muted-foreground flex-1 min-w-[220px]">
-                                    The CleverTap tooltip snippet contains <b>properties only</b> — it has no event name.
-                                    Pick the event it belongs to (or put the name on the first line).
+                            {/* Event name for tooltip-HTML / property-only pastes */}
+                            <div className="flex flex-wrap items-start gap-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                                <EventNamePicker value={htmlEventName} onChange={setHtmlEventName} />
+                                <p className="text-[11px] text-muted-foreground flex-1 min-w-[220px] pt-4">
+                                    Only needed for a <b>tooltip snippet</b> (properties only, no event name).
+                                    A full <b>User activity details</b> paste already contains every event name, so you can leave this blank.
                                 </p>
                             </div>
                             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -446,6 +624,28 @@ export default function EventGapAnalysis() {
                                 </div>
                             )}
 
+                            {result && result.parse.format === 'activity-html' && (
+                                <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-blue-500/25 bg-blue-500/5 p-2.5">
+                                    <Pill className="bg-blue-500/15 border-blue-500/30 text-blue-600">
+                                        <Layers className="w-3 h-3" /> CleverTap activity page
+                                    </Pill>
+                                    <Pill className="bg-emerald-500/10 border-emerald-500/25 text-emerald-600">
+                                        {result.parse.events.length} unique event(s)
+                                    </Pill>
+                                    <Pill className="bg-sky-500/10 border-sky-500/25 text-sky-600">
+                                        {result.parse.events.reduce((sum, e) => sum + e.count, 0)} record(s)
+                                    </Pill>
+                                    {systemExtras > 0 && (
+                                        <Pill className="bg-slate-500/10 border-slate-500/25 text-slate-600">
+                                            {systemExtras} CleverTap system event(s)
+                                        </Pill>
+                                    )}
+                                    <span className="text-[11px] text-muted-foreground">
+                                        Every event on the page was read in one pass — names and property names only.
+                                    </span>
+                                </div>
+                            )}
+
                             {result && result.parse.errors.length > 0 && (
                                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] text-amber-700">
                                     <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />
@@ -474,7 +674,7 @@ export default function EventGapAnalysis() {
                                     <StatTile label="Captured" value={result.summary.capturedTotal} sub="in your paste" tone="sky" icon={ClipboardPaste} />
                                     <StatTile label="Matched" value={result.summary.matched} sub="catalog events found" tone="emerald" icon={CheckCircle2} />
                                     <StatTile label="Missing" value={result.summary.missing} sub="in CSV, not captured" tone="rose" icon={XCircle} />
-                                    <StatTile label="Extra" value={result.summary.extra} sub="not in CSV" tone="violet" icon={PlusCircle} />
+                                    <StatTile label="Extra" value={result.summary.extra} sub={systemExtras > 0 ? `not in CSV · ${systemExtras} system` : 'not in CSV'} tone="violet" icon={PlusCircle} />
                                     <StatTile label="Prop coverage" value={`${result.summary.propertyCoverage}%`} sub="matched properties" tone="emerald" icon={ListChecks} />
                                 </div>
 
@@ -569,6 +769,8 @@ export default function EventGapAnalysis() {
                                     Click any row to inspect expected vs. captured properties. <b>Coverage</b> is the share of
                                     the CSV&apos;s expected properties that appeared in your capture for that event.
                                 </p>
+
+                                <ZenitStatusLegend />
                             </motion.div>
                         </AnimatePresence>
                     )}
@@ -615,6 +817,8 @@ export default function EventGapAnalysis() {
                             </Button>
                         </div>
                     </div>
+
+                    <ZenitStatusLegend />
 
                     <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
                         {catalogRows.map((e) => {
@@ -672,10 +876,13 @@ function GapTableRow({
                 className={cn('border-b border-border/50 cursor-pointer transition-colors hover:bg-muted/40', isOpen && 'bg-muted/40')}
             >
                 <td className="px-4 py-2.5">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                         {isOpen ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
                         <code className="text-xs font-semibold">{row.name}</code>
                         {row.records > 0 && <span className="text-[10px] text-muted-foreground">×{row.records}</span>}
+                        {row.isSystem && (
+                            <Pill className="bg-slate-500/10 text-slate-600 border-slate-500/25 text-[10px]">CT system</Pill>
+                        )}
                     </div>
                 </td>
                 <td className="px-3 py-2.5">
@@ -700,6 +907,12 @@ function GapTableRow({
                     <td colSpan={7} className="px-4 py-3">
                         <div className="space-y-2.5">
                             <p className="text-[11px] text-muted-foreground"><b className="text-foreground">Trigger:</b> {row.trigger}</p>
+                            {row.isSystem && (
+                                <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                                    <b>CleverTap system event:</b> generated by the SDK, not defined in the CSV. It is expected
+                                    in the activity page and should not be treated as a missing custom event.
+                                </p>
+                            )}
                             {row.zenitEquivalent && (
                                 <p className="text-[11px] text-blue-600"><b>Zenit equivalent:</b> {row.zenitEquivalent}</p>
                             )}
@@ -742,7 +955,7 @@ function CaptureGuide() {
                         <div className="p-2.5 rounded-lg bg-blue-500/15 text-blue-600"><Terminal className="w-5 h-5" /></div>
                         <div>
                             <h3 className="font-bold">Getting the data without an API key</h3>
-                            <p className="text-sm text-muted-foreground">Three ways, from easiest to most complete.</p>
+                            <p className="text-sm text-muted-foreground">Four ways, from easiest to most complete.</p>
                         </div>
                     </div>
 
@@ -764,9 +977,9 @@ function CaptureGuide() {
                                 tag: 'Zero setup',
                             },
                             {
-                                n: 4, title: 'CleverTap dashboard export',
-                                body: 'Log in → Analytics ▸ Events. Use Export / Download CSV. Paste the event names (or the whole CSV rows) into the box above.',
-                                tag: 'Best coverage',
+                                n: 4, title: 'User activity details page',
+                                body: 'Open a user in CleverTap ▸ User activity details. Select the whole page (Ctrl+A) and paste it above — every event row (name + properties) is read in one pass.',
+                                tag: 'One paste',
                             },
                         ].map((s) => (
                             <div key={s.n} className="rounded-xl border p-4 space-y-2 bg-muted/20">
@@ -805,7 +1018,27 @@ Page_View
 Searched
 
 // E) Tooltip HTML (properties only — set the event name above)
-<span data-t="tooltip" title="source">B2B</span>…`}</pre>
+<span data-t="tooltip" title="source">B2B</span>…
+
+// F) CleverTap "User activity details" page (best coverage)
+//    Select the whole page (Ctrl+A) and paste it.
+//    Every event row is read at once — names + property names.`}</pre>
+                    </div>
+
+                    <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4 space-y-2">
+                        <p className="text-sm font-semibold flex items-center gap-2">
+                            <Layers className="w-4 h-4 text-emerald-600" /> Best single paste: “User activity details”
+                        </p>
+                        <ol className="list-decimal pl-5 text-[12px] text-muted-foreground space-y-1">
+                            <li>Open the user in CleverTap and go to <b>User activity details</b>.</li>
+                            <li>Select the whole page (<b>Ctrl+A</b> / <b>Cmd+A</b>) and copy it.</li>
+                            <li>Paste it into the box above and press <b>Analyse gaps</b>.</li>
+                        </ol>
+                        <p className="text-[11px] text-muted-foreground">
+                            The page contains many events in one HTML table. Zenit reads every row, groups repeated events,
+                            unions their property names, and flags CleverTap system events (App Launched, Identity Set, …)
+                            so they are not mistaken for missing CSV events. Parsing is local — nothing is uploaded.
+                        </p>
                     </div>
 
                     <div className="rounded-xl border border-blue-500/25 bg-blue-500/5 p-4 space-y-2">
@@ -842,6 +1075,7 @@ Searched
                             To get the <b>overall</b> capture in one shot, use one of these:
                         </p>
                         <ul className="list-disc pl-5 space-y-1">
+                            <li><b>User activity details →</b> open the page, select the whole page and paste it. It already contains every event and its properties in one HTML table.</li>
                             <li><b>Import HAR</b> — DevTools ▸ Network ▸ Preserve log ▸ filter <code>clevertap</code> ▸ do your actions ▸ right-click ▸ <b>Save all as HAR with content</b> ▸ click <b>Import HAR</b> above. One file covers the whole session and is parsed locally.</li>
                             <li><b>DevTools → Network →</b> filter <code>clevertap</code> → click the request → <b>Payload</b> tab → copy the whole JSON body. It contains the batched events (names + properties).</li>
                             <li><b>Console hook →</b> use the snippet above to record every <code>clevertap.push</code> call, then copy the JSON array.</li>

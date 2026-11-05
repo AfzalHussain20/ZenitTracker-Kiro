@@ -525,6 +525,39 @@ export const CATEGORIES: CatalogCategory[] = [
   'Zenit Specific',
 ];
 
+/**
+ * Events CleverTap generates itself (not defined in the CSV).
+ * They appear in the user-activity page, so we keep them out of the
+ * "unexpected custom event" bucket by flagging them as system events.
+ */
+export const CLEVERTAP_SYSTEM_EVENTS = new Set(
+  [
+    'App Launched',
+    'App Installed',
+    'App Uninstalled',
+    'App Updated',
+    'UTM Visited',
+    'Identity Set',
+    'Identity Copied',
+    'Reachable By',
+    'Channel Subscribed',
+    'Channel Unsubscribed',
+    'Notification Viewed',
+    'Notification Clicked',
+    'Notification Sent',
+    'Push Impressions',
+    'Web Session',
+    'Geocluster Entered',
+    'Geocluster Exited',
+    'Profile Updated',
+    'Device Registered',
+  ].map(normalizeName),
+);
+
+export function isCleverTapSystemEvent(name: string): boolean {
+  return CLEVERTAP_SYSTEM_EVENTS.has(normalizeName(name));
+}
+
 /** Normalise for comparison: trim, collapse spaces, case-insensitive. */
 export function normalizeName(name: string): string {
   return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
@@ -548,6 +581,7 @@ export type CaptureFormat =
   | 'csv'
   | 'names'
   | 'html-tooltip'
+  | 'activity-html'
   | 'har'
   | 'empty';
 
@@ -742,6 +776,57 @@ function extractLeadingEventName(text: string): { name: string | null; rest: str
   return { name: null, rest: text };
 }
 
+// ── CleverTap "User activity details" page ───────────────────────────────────
+
+/**
+ * The CleverTap dashboard's user-activity page is a long HTML table where each
+ * row is one recorded event: a timestamp, the event name, then the same
+ * tooltip property pills. Unlike the single tooltip snippet, this format
+ * carries **many events with their names** — so one paste can answer the whole
+ * gap question.
+ */
+function looksLikeActivityHtml(text: string): boolean {
+  if (!/<table\b/i.test(text)) return false;
+  // Strongest signal: CleverTap tags each event table with `class="ev_37"`.
+  if (/\bclass\s*=\s*["'][^"']*\bev_\d+\b/i.test(text)) return true;
+  // Fallback for copied/re-rendered markup: several weighted event-name spans.
+  const nameSpans = text.match(/font-weight\s*:\s*400/gi) ?? [];
+  return nameSpans.length >= 2 && looksLikeHtmlTooltip(text);
+}
+
+/** Pull the event name out of one activity-table row. */
+function extractActivityEventName(chunk: string): string | null {
+  const weighted = /<span[^>]*font-weight\s*:\s*400[^>]*>\s*([^<]+?)\s*<\/span>/i.exec(chunk);
+  if (weighted) return decodeHtmlEntities(weighted[1]).trim();
+
+  // Fallback: first non-tooltip span before the <br> separator.
+  const cell = /<td[^>]*>([\s\S]*?)<br\s*\/?>/i.exec(chunk);
+  if (!cell) return null;
+  const span = /<span\b(?![^>]*data-t\s*=\s*["']tooltip["'])[^>]*>\s*([^<]+?)\s*<\/span>/i.exec(cell[1]);
+  return span ? decodeHtmlEntities(span[1]).trim() : null;
+}
+
+/** Parse every event row from a CleverTap "User activity details" HTML paste. */
+export function parseActivityHtmlEvents(html: string): CapturedEvent[] {
+  const events: CapturedEvent[] = [];
+  const tableRe = /<table\b[^>]*>[\s\S]*?<\/table>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = tableRe.exec(html))) {
+    const chunk = match[0];
+    if (!looksLikeHtmlTooltip(chunk)) continue;
+    const name = extractActivityEventName(chunk);
+    if (!name || !looksLikeEventName(name)) continue;
+    events.push({
+      name,
+      properties: parseHtmlTooltipProperties(chunk),
+      count: 1,
+    });
+  }
+
+  return events;
+}
+
 /**
  * Parse whatever the analyst pastes. Accepted shapes:
  *   1. JSON array:      [{"event":"Login","properties":{...}}, ...]
@@ -752,6 +837,8 @@ function extractLeadingEventName(text: string): { name: string | null; rest: str
  *   6. Tooltip HTML:    `<span data-t="tooltip" title="source">B2B</span>…`
  *                       (properties only — supply the event name via options
  *                        or put it on the first line)
+ *   7. Activity HTML:   the CleverTap "User activity details" table
+ *                       (many events, each with its name + properties)
  */
 export function parseCapturedEvents(input: string, options: ParseOptions = {}): ParseResult {
   const text = (input || '').trim();
@@ -762,7 +849,26 @@ export function parseCapturedEvents(input: string, options: ParseOptions = {}): 
     return { events: [], format: 'empty', errors, ignoredLines: 0 };
   }
 
-  // 0 — CleverTap tooltip HTML (the dashboard's property pill block)
+  // 0a — CleverTap "User activity details" page (many events, with names)
+  if (looksLikeActivityHtml(text)) {
+    const activityEvents = parseActivityHtmlEvents(text);
+    if (activityEvents.length === 0) {
+      return {
+        events: [],
+        format: 'activity-html',
+        errors: ['This looks like a CleverTap activity page, but no event rows could be read from it.'],
+        ignoredLines: 0,
+      };
+    }
+    return {
+      events: rollUp(activityEvents),
+      format: 'activity-html',
+      errors,
+      ignoredLines: 0,
+    };
+  }
+
+  // 0b — CleverTap tooltip HTML (the dashboard's property pill block)
   if (looksLikeHtmlTooltip(text)) {
     const leading = extractLeadingEventName(text);
     const eventName = (options.htmlEventName || '').trim() || leading.name;
@@ -867,6 +973,8 @@ export interface GapRow {
   trigger: string;
   zenitStatus: ZenitStatus | 'unknown';
   zenitEquivalent?: string;
+  /** True for CleverTap-generated events (App Launched, Identity Set, …). */
+  isSystem?: boolean;
   expectedProps: string[];
   capturedProps: string[];
   missingProps: string[];
@@ -937,6 +1045,7 @@ export function analyzeGaps(parse: ParseResult): GapAnalysisResult {
       trigger: known?.trigger ?? 'Captured event not present in the CleverTap CSV',
       zenitStatus: known?.zenitStatus ?? 'unknown',
       zenitEquivalent: known?.zenitEquivalent,
+      isSystem: isCleverTapSystemEvent(ev.name),
       expectedProps: known?.properties ?? [],
       capturedProps: ev.properties,
       missingProps: [],

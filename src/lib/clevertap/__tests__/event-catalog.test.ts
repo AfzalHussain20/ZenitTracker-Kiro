@@ -10,6 +10,8 @@ import {
   analyzeGaps,
   parseCapturedEvents,
   parseHtmlTooltipProperties,
+  parseActivityHtmlEvents,
+  isCleverTapSystemEvent,
   buildGapCsv,
   buildCatalogCsv,
   normalizeName,
@@ -152,6 +154,93 @@ describe('parseCapturedEvents', () => {
       expect(row.missingProps).not.toContain('previousPage');
       expect(row.missingProps).not.toContain('currentPage');
       expect(row.extraProps).toContain('contentLanguageShorts');
+    });
+  });
+
+  describe('CleverTap "User activity details" page', () => {
+    // Representative slice of the real page: repeated events, data-original-title,
+    // comma-separated values, and CleverTap-generated system events.
+    const ACTIVITY_HTML = `
+      <div class="grid-content">
+        <table data-user-iid="21813" class="ev_37"><tbody><tr>
+          <td>11:34:39 am</td>
+          <td><span style="font-weight:400">Page_View</span><br>
+            <span class="label-gray">
+              <span data-t="tooltip" title="previousPage">Search</span><b class="dvr">|</b>
+              <span data-t="tooltip" title="" data-original-title="appName">SunNXT</span><b class="dvr">|</b>
+              <span data-t="tooltip" title="contentLanguage">bengali,english,hindi</span>
+            </span>
+          </td>
+        </tr></tbody></table>
+        <table data-user-iid="21813" class="ev_58"><tbody><tr>
+          <td>11:34:05 am</td>
+          <td><span style="font-weight:400">Searched</span><br>
+            <span class="label-gray">
+              <span data-t="tooltip" title="searchString">singam</span><b class="dvr">|</b>
+              <span data-t="tooltip" title="isFound">yes</span>
+            </span>
+          </td>
+        </tr></tbody></table>
+        <table data-user-iid="21813" class="ev_2"><tbody><tr>
+          <td>11:22:31 am</td>
+          <td><span style="font-weight:400">App Launched</span><br>
+            <span class="label-gray">
+              <span data-t="tooltip" title="CT SDK Version">70701</span>
+            </span>
+          </td>
+        </tr></tbody></table>
+        <table data-user-iid="21813" class="ev_37"><tbody><tr>
+          <td>11:33:52 am</td>
+          <td><span style="font-weight:400">Page_View</span><br>
+            <span class="label-gray">
+              <span data-t="tooltip" title="currentPage">More</span>
+            </span>
+          </td>
+        </tr></tbody></table>
+      </div>`;
+
+    it('detects the activity page before the single-tooltip parser', () => {
+      const r = parseCapturedEvents(ACTIVITY_HTML);
+      expect(r.format).toBe('activity-html');
+      expect(r.events.map((e) => e.name).sort()).toEqual(['App Launched', 'Page_View', 'Searched']);
+    });
+
+    it('rolls up repeated events and unions their properties', () => {
+      const r = parseCapturedEvents(ACTIVITY_HTML);
+      const pageView = r.events.find((e) => e.name === 'Page_View')!;
+      expect(pageView.count).toBe(2);
+      expect(pageView.properties).toEqual(
+        expect.arrayContaining(['previousPage', 'appName', 'contentLanguage', 'currentPage']),
+      );
+      // The comma inside a value must not create extra properties.
+      expect(pageView.properties).not.toContain('english');
+    });
+
+    it('reads data-original-title when title is empty', () => {
+      const r = parseCapturedEvents(ACTIVITY_HTML);
+      expect(r.events.find((e) => e.name === 'Page_View')!.properties).toContain('appName');
+    });
+
+    it('exposes parseActivityHtmlEvents directly', () => {
+      const events = parseActivityHtmlEvents(ACTIVITY_HTML);
+      expect(events).toHaveLength(4); // raw rows, before roll-up
+      expect(events.filter((e) => e.name === 'Page_View')).toHaveLength(2);
+    });
+
+    it('flags CleverTap system events instead of treating them as custom', () => {
+      expect(isCleverTapSystemEvent('App Launched')).toBe(true);
+      expect(isCleverTapSystemEvent('Identity Set')).toBe(true);
+      expect(isCleverTapSystemEvent('Page_View')).toBe(false);
+
+      const result = analyzeGaps(parseCapturedEvents(ACTIVITY_HTML));
+      const appLaunched = result.rows.find((r) => r.name === 'App Launched')!;
+      expect(appLaunched.status).toBe('extra');
+      expect(appLaunched.isSystem).toBe(true);
+
+      const pageView = result.rows.find((r) => r.name === 'Page_View')!;
+      expect(pageView.status).toBe('captured');
+      expect(pageView.isSystem).toBeUndefined();
+      expect(pageView.records).toBe(2);
     });
   });
 });

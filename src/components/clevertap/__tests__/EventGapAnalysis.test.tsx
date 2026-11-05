@@ -106,4 +106,52 @@ describe('EventGapAnalysis', () => {
     expect(screen.getByText(/CSV Catalog/i)).toBeInTheDocument();
     expect(screen.getAllByText('Page_View').length).toBeGreaterThan(0);
   });
+
+  it('picks a catalog event from the searchable event-name dropdown', () => {
+    render(<EventGapAnalysis />);
+    const input = screen.getByLabelText(/event name for tooltip/i) as HTMLInputElement;
+
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'Page_' } });
+    fireEvent.click(screen.getByRole('option', { name: /Page_View/i }));
+
+    expect(input.value).toBe('Page_View');
+  });
+
+  it('analyses a full CleverTap activity-page paste in one shot', () => {
+    render(<EventGapAnalysis />);
+    const activityHtml = `
+      <table data-user-iid="21813" class="ev_37"><tbody><tr>
+        <td>11:34:39 am</td>
+        <td><span style="font-weight:400">Page_View</span><br>
+          <span class="label-gray">
+            <span data-t="tooltip" title="previousPage">Search</span>
+            <span data-t="tooltip" title="" data-original-title="appName">SunNXT</span>
+          </span>
+        </td>
+      </tr></tbody></table>
+      <table data-user-iid="21813" class="ev_58"><tbody><tr>
+        <td>11:34:05 am</td>
+        <td><span style="font-weight:400">Searched</span><br>
+          <span class="label-gray"><span data-t="tooltip" title="searchString">singam</span></span>
+        </td>
+      </tr></tbody></table>
+      <table data-user-iid="21813" class="ev_2"><tbody><tr>
+        <td>11:22:31 am</td>
+        <td><span style="font-weight:400">App Launched</span><br>
+          <span class="label-gray"><span data-t="tooltip" title="CT SDK Version">70701</span></span>
+        </td>
+      </tr></tbody></table>`;
+
+    fireEvent.change(screen.getByPlaceholderText(/Paste anything/i), { target: { value: activityHtml } });
+    fireEvent.click(screen.getByRole('button', { name: /analyse gaps/i }));
+
+    // Activity-page summary is shown instead of the "needs event name" error.
+    expect(screen.getByText(/CleverTap activity page/i)).toBeInTheDocument();
+    expect(screen.getByText(/3 unique event/i)).toBeInTheDocument();
+    // Repeated/captured catalog events are analysed normally.
+    expect(screen.getAllByText('Page_View').length).toBeGreaterThan(0);
+    // CleverTap-generated events are clearly labelled.
+    expect(screen.getAllByText(/CT system/i).length).toBeGreaterThan(0);
+  });
 });
