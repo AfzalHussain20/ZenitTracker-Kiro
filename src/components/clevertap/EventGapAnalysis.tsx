@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 import {
     ScanSearch, ClipboardPaste, FileDown, CheckCircle2, AlertTriangle, XCircle,
     PlusCircle, Search, BookOpen, Info, ChevronDown, ChevronRight, Sparkles,
-    ListChecks, UploadCloud, Terminal, RotateCcw, Copy, Layers,
+    ListChecks, UploadCloud, Terminal, RotateCcw, Copy, Layers, Shield,
 } from 'lucide-react';
 import {
     analyzeGaps, buildGapCsv, buildCatalogCsv, parseCapturedEvents,
@@ -22,6 +22,10 @@ import {
     type GapAnalysisResult, type GapRow, type GapStatus, type CatalogCategory,
     type ZenitStatus,
 } from '@/lib/clevertap/event-catalog';
+import {
+    extractCleverTapEventsFromHar, sanitizeHarEvents, CONSOLE_CAPTURE_SNIPPET,
+    type HarExtractStats,
+} from '@/lib/clevertap/har-parser';
 
 // ─── Style maps ───────────────────────────────────────────────────────────────
 
@@ -137,6 +141,8 @@ export default function EventGapAnalysis() {
     const [input, setInput] = useState('');
     const [htmlEventName, setHtmlEventName] = useState('');
     const [result, setResult] = useState<GapAnalysisResult | null>(null);
+    const [harStats, setHarStats] = useState<HarExtractStats | null>(null);
+    const harInputRef = useRef<HTMLInputElement>(null);
     const [tab, setTab] = useState<Tab>('gap');
     const [filter, setFilter] = useState<Filter>('all');
     const [query, setQuery] = useState('');
@@ -172,8 +178,70 @@ export default function EventGapAnalysis() {
         setInput('');
         setHtmlEventName('');
         setResult(null);
+        setHarStats(null);
         setFilter('all');
         setQuery('');
+    };
+
+    /**
+     * HAR import — fully client-side. The file never leaves the browser:
+     * only event names + property names are retained (no values, headers,
+     * cookies, tokens, or URLs with query strings).
+     */
+    const handleHarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = () => {
+            let har: unknown;
+            try {
+                har = JSON.parse(String(reader.result || ''));
+            } catch {
+                toast({
+                    title: 'Invalid HAR',
+                    description: 'That file is not valid JSON. Use “Save all as HAR with content”.',
+                    variant: 'destructive',
+                });
+                return;
+            }
+
+            const extracted = extractCleverTapEventsFromHar(har);
+            if (extracted.events.length === 0) {
+                toast({
+                    title: 'No CleverTap events found',
+                    description:
+                        extracted.errors[0] ||
+                        'Record a session with the Network tab filtered to “clevertap”, then export again.',
+                    variant: 'destructive',
+                });
+                return;
+            }
+
+            setInput(sanitizeHarEvents(extracted.events));
+            setResult(analyzeGaps(extracted));
+            setHarStats(extracted.stats);
+            setFilter('all');
+            setExpanded(null);
+            toast({
+                title: 'HAR imported',
+                description: `${extracted.events.length} events from ${extracted.stats.cleverTapEntries} CleverTap request(s). Values and headers were discarded.`,
+            });
+        };
+        reader.onerror = () => {
+            toast({ title: 'Could not read the file', variant: 'destructive' });
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+    };
+
+    const handleExportSanitized = () => {
+        if (!result) return;
+        download(
+            `clevertap-captured-events-${new Date().toISOString().slice(0, 10)}.json`,
+            sanitizeHarEvents(result.parse.events),
+        );
+        toast({ title: 'Sanitized events exported', description: 'Names + property names only — safe to share.' });
     };
 
     const handleExportGap = () => {
@@ -324,13 +392,24 @@ export default function EventGapAnalysis() {
                                 </p>
                             </div>
                             <div className="flex items-center justify-between flex-wrap gap-2">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                     <Button onClick={handleAnalyze} className="bg-blue-600 hover:bg-blue-700">
                                         <ScanSearch className="w-4 h-4 mr-1.5" /> Analyse gaps
                                     </Button>
                                     <Button variant="outline" onClick={handleSample}>
                                         <Sparkles className="w-4 h-4 mr-1.5" /> Load sample
                                     </Button>
+                                    <Button variant="outline" onClick={() => harInputRef.current?.click()}>
+                                        <UploadCloud className="w-4 h-4 mr-1.5" /> Import HAR
+                                    </Button>
+                                    <input
+                                        ref={harInputRef}
+                                        type="file"
+                                        accept=".har,.json,application/json"
+                                        className="hidden"
+                                        onChange={handleHarFile}
+                                        aria-label="Import HAR file"
+                                    />
                                     <Button variant="ghost" onClick={handleClear}>
                                         <RotateCcw className="w-4 h-4 mr-1.5" /> Clear
                                     </Button>
@@ -339,6 +418,34 @@ export default function EventGapAnalysis() {
                                     Bulk paste is supported — partial input only reports what you pasted.
                                 </span>
                             </div>
+
+                            {/* Privacy note for HAR import */}
+                            <div className="flex items-start gap-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 p-2.5">
+                                <Shield className="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0" />
+                                <p className="text-[11px] text-emerald-800 dark:text-emerald-300">
+                                    <b>HAR import is local-only.</b> The file is parsed in your browser — only event names and
+                                    property <i>names</i> are kept. Headers, cookies, tokens, values and query strings are discarded.
+                                    Nothing is uploaded to a server or written to Firestore.
+                                </p>
+                            </div>
+
+                            {harStats && (
+                                <div className="flex flex-wrap gap-1.5">
+                                    <Pill className="bg-emerald-500/10 border-emerald-500/25 text-emerald-600">
+                                        {harStats.cleverTapEntries} CleverTap request(s)
+                                    </Pill>
+                                    <Pill className="bg-sky-500/10 border-sky-500/25 text-sky-600">
+                                        {harStats.payloadsDecoded} payload(s) decoded
+                                    </Pill>
+                                    <Pill className="bg-blue-500/10 border-blue-500/25 text-blue-600">
+                                        {harStats.eventsFound} event(s) extracted
+                                    </Pill>
+                                    <Pill className="bg-muted border-border text-muted-foreground">
+                                        {harStats.entriesScanned} HAR entries scanned
+                                    </Pill>
+                                </div>
+                            )}
+
                             {result && result.parse.errors.length > 0 && (
                                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] text-amber-700">
                                     <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />
@@ -403,7 +510,10 @@ export default function EventGapAnalysis() {
                                             />
                                         </div>
                                         <Button size="sm" variant="outline" onClick={handleExportGap}>
-                                            <FileDown className="w-3.5 h-3.5 mr-1.5" /> Export
+                                            <FileDown className="w-3.5 h-3.5 mr-1.5" /> Export CSV
+                                        </Button>
+                                        <Button size="sm" variant="outline" onClick={handleExportSanitized} title="Sanitized captured events (names + property names only)">
+                                            <Shield className="w-3.5 h-3.5 mr-1.5" /> Safe JSON
                                         </Button>
                                         <Button size="sm" variant="ghost" onClick={handleCopyReport}>
                                             <Copy className="w-3.5 h-3.5" />
@@ -610,6 +720,20 @@ function GapTableRow({
 // ─── Guide ────────────────────────────────────────────────────────────────────
 
 function CaptureGuide() {
+    const { toast } = useToast();
+    const [copied, setCopied] = useState(false);
+
+    const handleCopySnippet = async () => {
+        try {
+            await navigator.clipboard.writeText(CONSOLE_CAPTURE_SNIPPET);
+            setCopied(true);
+            toast({ title: 'Snippet copied', description: 'Paste it in the browser console before using the app.' });
+            setTimeout(() => setCopied(false), 2500);
+        } catch {
+            toast({ title: 'Copy failed', description: 'Select the snippet and copy it manually.', variant: 'destructive' });
+        }
+    };
+
     return (
         <div className="space-y-4">
             <Card>
@@ -622,22 +746,27 @@ function CaptureGuide() {
                         </div>
                     </div>
 
-                    <div className="grid md:grid-cols-3 gap-3">
+                    <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
                         {[
                             {
-                                n: 1, title: 'CleverTap dashboard export',
-                                body: 'Log in → Analytics ▸ Events. Use Export / Download CSV. Paste the event names (or the whole CSV rows) into the box above.',
-                                tag: 'Best coverage',
+                                n: 1, title: 'HAR import (recommended)',
+                                body: 'F12 ▸ Network ▸ Preserve log ▸ filter “clevertap”. Do your actions, then right-click ▸ Save all as HAR with content. Click Import HAR above — parsed locally, values discarded.',
+                                tag: 'One file',
                             },
                             {
                                 n: 2, title: 'Browser DevTools (Network)',
-                                body: 'F12 ▸ Network ▸ filter “clevertap”. Perform actions, click the request, open Payload, copy the JSON body. Paste it above — one or many at once.',
+                                body: 'F12 ▸ Network ▸ filter “clevertap”. Click a request ▸ Payload ▸ copy the JSON body. Paste it above — one or many events at once.',
                                 tag: 'Live truth',
                             },
                             {
                                 n: 3, title: 'Console hook',
-                                body: 'In the app console run: clevertap.event.getHistory() — or wrap clevertap.push to log every event. Copy the array and paste it above.',
+                                body: 'Paste the snippet below before using the app, then copy the captured array and paste it above. No cookies, no HAR, no API key.',
                                 tag: 'Zero setup',
+                            },
+                            {
+                                n: 4, title: 'CleverTap dashboard export',
+                                body: 'Log in → Analytics ▸ Events. Use Export / Download CSV. Paste the event names (or the whole CSV rows) into the box above.',
+                                tag: 'Best coverage',
                             },
                         ].map((s) => (
                             <div key={s.n} className="rounded-xl border p-4 space-y-2 bg-muted/20">
@@ -679,6 +808,29 @@ Searched
 <span data-t="tooltip" title="source">B2B</span>…`}</pre>
                     </div>
 
+                    <div className="rounded-xl border border-blue-500/25 bg-blue-500/5 p-4 space-y-2">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                            <p className="text-sm font-semibold flex items-center gap-2">
+                                <Terminal className="w-4 h-4 text-blue-600" /> Console hook — no HAR, no API key
+                            </p>
+                            <Button size="sm" variant="outline" onClick={handleCopySnippet}>
+                                {copied
+                                    ? <><CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-emerald-600" /> Copied</>
+                                    : <><Copy className="w-3.5 h-3.5 mr-1.5" /> Copy snippet</>}
+                            </Button>
+                        </div>
+                        <p className="text-[12px] text-muted-foreground">
+                            Run this in the browser console <b>before</b> using the app. It wraps <code>clevertap.push</code>
+                            and records every event. Afterwards it copies a JSON array you can paste straight into the box above.
+                            Nothing leaves your browser.
+                        </p>
+                        <pre className="text-[11px] font-mono bg-background/70 border rounded-lg p-3 overflow-x-auto leading-relaxed whitespace-pre-wrap">{CONSOLE_CAPTURE_SNIPPET}</pre>
+                        <p className="text-[11px] text-amber-700 dark:text-amber-400 flex items-start gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                            Run it after the SDK has loaded (i.e. once the app is open). Reloading the page clears the hook.
+                        </p>
+                    </div>
+
                     <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-[12px] text-amber-800 dark:text-amber-300 space-y-2">
                         <p className="font-semibold flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> The tooltip snippet is NOT the full capture</p>
                         <p>
@@ -690,9 +842,11 @@ Searched
                             To get the <b>overall</b> capture in one shot, use one of these:
                         </p>
                         <ul className="list-disc pl-5 space-y-1">
+                            <li><b>Import HAR</b> — DevTools ▸ Network ▸ Preserve log ▸ filter <code>clevertap</code> ▸ do your actions ▸ right-click ▸ <b>Save all as HAR with content</b> ▸ click <b>Import HAR</b> above. One file covers the whole session and is parsed locally.</li>
                             <li><b>DevTools → Network →</b> filter <code>clevertap</code> → click the request → <b>Payload</b> tab → copy the whole JSON body. It contains the batched events (names + properties).</li>
+                            <li><b>Console hook →</b> use the snippet above to record every <code>clevertap.push</code> call, then copy the JSON array.</li>
                             <li><b>CleverTap dashboard → Analytics ▸ Events</b> → use the <b>Export / download</b> action to get the event list as CSV.</li>
-                            <li>Paste that export here — every event is analysed in one pass.</li>
+                            <li>Paste or import any of these here — every event is analysed in one pass.</li>
                         </ul>
                     </div>
 

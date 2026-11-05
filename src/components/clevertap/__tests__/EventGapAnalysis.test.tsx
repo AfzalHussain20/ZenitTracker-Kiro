@@ -3,7 +3,7 @@
  * Verifies the three tabs and the sample-driven analysis flow.
  */
 
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import EventGapAnalysis from '../EventGapAnalysis';
 
@@ -43,6 +43,41 @@ describe('EventGapAnalysis', () => {
     fireEvent.click(screen.getByRole('button', { name: /how to capture/i }));
     expect(screen.getByText(/Getting the data without an API key/i)).toBeInTheDocument();
     expect(screen.getByText(/Browser DevTools/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Console hook/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /copy snippet/i })).toBeInTheDocument();
+  });
+
+  it('imports a HAR file locally and analyses the CleverTap events', async () => {
+    render(<EventGapAnalysis />);
+    const har = {
+      log: {
+        entries: [
+          {
+            request: {
+              method: 'POST',
+              url: 'https://wzrkt.com/a?t=secret',
+              postData: {
+                text: JSON.stringify({
+                  evt: [{ evtName: 'Login', evtData: { source: 'D2C', isNewUser: false, loginStatus: 'ok' } }],
+                }),
+              },
+            },
+          },
+        ],
+      },
+    };
+    const file = new File([JSON.stringify(har)], 'session.har', { type: 'application/json' });
+
+    fireEvent.change(screen.getByLabelText(/import har file/i), { target: { files: [file] } });
+
+    await waitFor(() => expect(screen.getByText(/CSV Catalog/i)).toBeInTheDocument());
+    expect(screen.getByText(/CleverTap request/i)).toBeInTheDocument();
+    expect(screen.getAllByText('Login').length).toBeGreaterThan(0);
+    // The sanitized textarea must not contain captured values or the token.
+    const textarea = screen.getByPlaceholderText(/Paste anything/i) as HTMLTextAreaElement;
+    expect(textarea.value).toContain('Login');
+    expect(textarea.value).not.toContain('D2C');
+    expect(textarea.value).not.toContain('secret');
   });
 
   it('filters results to missing events after analysing the sample', () => {

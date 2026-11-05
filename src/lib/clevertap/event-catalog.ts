@@ -548,6 +548,7 @@ export type CaptureFormat =
   | 'csv'
   | 'names'
   | 'html-tooltip'
+  | 'har'
   | 'empty';
 
 export interface ParseOptions {
