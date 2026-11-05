@@ -9,6 +9,7 @@ import {
   CATEGORIES,
   analyzeGaps,
   parseCapturedEvents,
+  parseHtmlTooltipProperties,
   buildGapCsv,
   buildCatalogCsv,
   normalizeName,
@@ -95,6 +96,63 @@ describe('parseCapturedEvents', () => {
     const r = parseCapturedEvents('   \n  ');
     expect(r.format).toBe('empty');
     expect(r.events).toHaveLength(0);
+  });
+
+  describe('CleverTap tooltip HTML', () => {
+    // Exact shape copied from the CleverTap dashboard event detail.
+    const HTML =
+      '<span class="label-gray ">' +
+      '<span data-t="tooltip" title="previousPage">Profile Page</span><b class="dvr">|</b>' +
+      '<span data-t="tooltip" title="" data-original-title="appName">SunNXT</span><b class="dvr">|</b>' +
+      '<span data-t="tooltip" title="contentLanguage">Tamil</span><b class="dvr">|</b>' +
+      '<span data-t="tooltip" title="source">B2B free</span><b class="dvr">|</b>' +
+      '<span data-t="tooltip" title="currentPage">Home Page</span><b class="dvr">|</b>' +
+      '<span data-t="tooltip" title="contentLanguageShorts">tamil,telugu,malayalam,kannada</span><b class="dvr">|</b>' +
+      '<span data-t="tooltip" title="CT App Version">4.2.57</span><b class="dvr">|</b>' +
+      '<span data-t="tooltip" title="CT Source">Mobile</span><b class="dvr">|</b>' +
+      '</span>';
+
+    it('extracts properties, including data-original-title and comma values', () => {
+      const props = parseHtmlTooltipProperties(HTML);
+      expect(props).toEqual([
+        'previousPage', 'appName', 'contentLanguage', 'source', 'currentPage',
+        'contentLanguageShorts', 'CT App Version', 'CT Source',
+      ]);
+      // The comma inside "tamil,telugu,…" must NOT create extra events.
+      expect(props).toContain('contentLanguageShorts');
+    });
+
+    it('parses HTML when an event name is supplied', () => {
+      const r = parseCapturedEvents(HTML, { htmlEventName: 'Page_View' });
+      expect(r.format).toBe('html-tooltip');
+      expect(r.events).toHaveLength(1);
+      expect(r.events[0].name).toBe('Page_View');
+      expect(r.events[0].properties).toContain('contentLanguage');
+      expect(r.events[0].properties).toContain('appName');
+    });
+
+    it('asks for an event name when HTML is pasted alone', () => {
+      const r = parseCapturedEvents(HTML);
+      expect(r.format).toBe('html-tooltip');
+      expect(r.events).toHaveLength(0);
+      expect(r.errors[0]).toMatch(/event name/i);
+    });
+
+    it('accepts an event name on the first line', () => {
+      const r = parseCapturedEvents(`Page_View\n${HTML}`);
+      expect(r.events).toHaveLength(1);
+      expect(r.events[0].name).toBe('Page_View');
+    });
+
+    it('marks contentLanguage as captured for a Page_View HTML paste', () => {
+      const result = analyzeGaps(parseCapturedEvents(HTML, { htmlEventName: 'Page_View' }));
+      const row = result.rows.find((r) => r.name === 'Page_View')!;
+      expect(row.status).toBe('captured');
+      expect(row.missingProps).not.toContain('contentLanguage');
+      expect(row.missingProps).not.toContain('previousPage');
+      expect(row.missingProps).not.toContain('currentPage');
+      expect(row.extraProps).toContain('contentLanguageShorts');
+    });
   });
 });
 

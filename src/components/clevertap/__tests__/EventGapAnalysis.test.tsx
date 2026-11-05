@@ -57,4 +57,18 @@ describe('EventGapAnalysis', () => {
     // A captured event from the sample should be filtered out.
     expect(screen.queryByText('Page_View')).not.toBeInTheDocument();
   });
+
+  it('analyses a CleverTap tooltip HTML paste once the event name is set', () => {
+    render(<EventGapAnalysis />);
+    const html =
+      '<span data-t="tooltip" title="previousPage">Profile Page</span>' +
+      '<span data-t="tooltip" title="contentLanguage">Tamil</span>';
+
+    fireEvent.change(screen.getByPlaceholderText(/Paste anything/i), { target: { value: html } });
+    fireEvent.change(screen.getByLabelText(/event name for tooltip/i), { target: { value: 'Page_View' } });
+    fireEvent.click(screen.getByRole('button', { name: /analyse gaps/i }));
+
+    expect(screen.getByText(/CSV Catalog/i)).toBeInTheDocument();
+    expect(screen.getAllByText('Page_View').length).toBeGreaterThan(0);
+  });
 });

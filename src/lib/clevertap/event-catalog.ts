@@ -547,7 +547,17 @@ export type CaptureFormat =
   | 'ndjson'
   | 'csv'
   | 'names'
+  | 'html-tooltip'
   | 'empty';
+
+export interface ParseOptions {
+  /**
+   * Event name to attach when the paste is a CleverTap tooltip HTML snippet
+   * (the `<span data-t="tooltip" title="...">` block from the dashboard).
+   * That format carries properties only, not the event name.
+   */
+  htmlEventName?: string;
+}
 
 export interface ParseResult {
   events: CapturedEvent[];
@@ -667,6 +677,70 @@ function parseLines(input: string, out: CapturedEvent[], errors: string[]): { fo
   return { format: sawCsv ? 'csv' : 'names', ignored };
 }
 
+// ── CleverTap tooltip HTML ────────────────────────────────────────────────────
+
+const HTML_ENTITIES: Record<string, string> = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+};
+
+function decodeHtmlEntities(value: string): string {
+  return value.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (whole, code: string) => {
+    if (code[0] === '#') {
+      const n = code[1]?.toLowerCase() === 'x'
+        ? parseInt(code.slice(2), 16)
+        : parseInt(code.slice(1), 10);
+      return Number.isFinite(n) ? String.fromCodePoint(n) : whole;
+    }
+    return HTML_ENTITIES[code.toLowerCase()] ?? whole;
+  });
+}
+
+/** Read an attribute value from an HTML tag string (handles "…" and '…'). */
+function readAttr(tag: string, name: string): string | null {
+  // `(?:^|\s)` prevents `title` from matching `data-original-title`.
+  const re = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i');
+  const m = re.exec(tag);
+  if (!m) return null;
+  return decodeHtmlEntities(m[1] ?? m[2] ?? '');
+}
+
+function looksLikeHtmlTooltip(text: string): boolean {
+  return /data-t\s*=\s*["']tooltip["']/i.test(text)
+    || /<span\b[^>]*data-original-title\s*=/i.test(text);
+}
+
+/**
+ * Extract property names from the tooltip HTML CleverTap renders for an event.
+ * Handles both `title="…"` and `data-original-title="…"` (CleverTap uses the
+ * latter for the appName pill, where `title` is left empty).
+ */
+export function parseHtmlTooltipProperties(html: string): string[] {
+  const props: string[] = [];
+  const spanRe = /<span\b[^>]*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = spanRe.exec(html))) {
+    const tag = match[0];
+    if (!/data-t\s*=\s*(?:"tooltip"|'tooltip')/i.test(tag)) continue;
+    const key = (readAttr(tag, 'title') || readAttr(tag, 'data-original-title') || '').trim();
+    if (key && !props.includes(key)) props.push(key);
+  }
+  return props;
+}
+
+/** If the paste starts with a bare event name, treat it as the event label. */
+function extractLeadingEventName(text: string): { name: string | null; rest: string } {
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    if (!/[<>]/.test(line) && looksLikeEventName(line)) {
+      return { name: line, rest: lines.slice(i + 1).join('\n') };
+    }
+    break;
+  }
+  return { name: null, rest: text };
+}
+
 /**
  * Parse whatever the analyst pastes. Accepted shapes:
  *   1. JSON array:      [{"event":"Login","properties":{...}}, ...]
@@ -674,14 +748,50 @@ function parseLines(input: string, out: CapturedEvent[], errors: string[]): { fo
  *   3. NDJSON:          one JSON object per line
  *   4. CSV/TSV:         `Event_Name,prop1,prop2`
  *   5. Plain names:     one event name per line
+ *   6. Tooltip HTML:    `<span data-t="tooltip" title="source">B2B</span>…`
+ *                       (properties only — supply the event name via options
+ *                        or put it on the first line)
  */
-export function parseCapturedEvents(input: string): ParseResult {
+export function parseCapturedEvents(input: string, options: ParseOptions = {}): ParseResult {
   const text = (input || '').trim();
   const events: CapturedEvent[] = [];
   const errors: string[] = [];
 
   if (!text) {
     return { events: [], format: 'empty', errors, ignoredLines: 0 };
+  }
+
+  // 0 — CleverTap tooltip HTML (the dashboard's property pill block)
+  if (looksLikeHtmlTooltip(text)) {
+    const leading = extractLeadingEventName(text);
+    const eventName = (options.htmlEventName || '').trim() || leading.name;
+    const props = parseHtmlTooltipProperties(text);
+
+    if (!eventName) {
+      return {
+        events: [],
+        format: 'html-tooltip',
+        errors: [
+          'This is a CleverTap tooltip snippet — it contains properties but no event name. ' +
+          'Type the event name (e.g. Page_View) in the box above, or put it on the first line.',
+        ],
+        ignoredLines: 0,
+      };
+    }
+    if (props.length === 0) {
+      return {
+        events: [],
+        format: 'html-tooltip',
+        errors: ['HTML detected, but no data-t="tooltip" properties were found.'],
+        ignoredLines: 0,
+      };
+    }
+    return {
+      events: rollUp([{ name: eventName, properties: props, count: 1 }]),
+      format: 'html-tooltip',
+      errors,
+      ignoredLines: 0,
+    };
   }
 
   // 1 & 2 — whole-document JSON

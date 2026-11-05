@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
@@ -134,6 +135,7 @@ type Filter = 'all' | GapStatus;
 export default function EventGapAnalysis() {
     const { toast } = useToast();
     const [input, setInput] = useState('');
+    const [htmlEventName, setHtmlEventName] = useState('');
     const [result, setResult] = useState<GapAnalysisResult | null>(null);
     const [tab, setTab] = useState<Tab>('gap');
     const [filter, setFilter] = useState<Filter>('all');
@@ -142,11 +144,11 @@ export default function EventGapAnalysis() {
     const [expanded, setExpanded] = useState<string | null>(null);
 
     const runAnalysis = (text: string) => {
-        const parsed = parseCapturedEvents(text);
+        const parsed = parseCapturedEvents(text, { htmlEventName });
         if (parsed.events.length === 0) {
             toast({
-                title: 'Nothing to analyse',
-                description: parsed.errors[0] || 'Paste event names, JSON, or NDJSON first.',
+                title: 'Could not read that paste',
+                description: parsed.errors[0] || 'Paste event names, JSON, NDJSON, CSV, or tooltip HTML first.',
                 variant: 'destructive',
             });
             return;
@@ -168,6 +170,7 @@ export default function EventGapAnalysis() {
     };
     const handleClear = () => {
         setInput('');
+        setHtmlEventName('');
         setResult(null);
         setFilter('all');
         setQuery('');
@@ -282,7 +285,7 @@ export default function EventGapAnalysis() {
                                     <h3 className="font-semibold text-sm">Paste captured events</h3>
                                 </div>
                                 <div className="flex flex-wrap gap-1.5">
-                                    {['JSON array', 'NDJSON', 'CSV rows', 'Event names'].map((f) => (
+                                    {['JSON array', 'NDJSON', 'CSV rows', 'Event names', 'Tooltip HTML'].map((f) => (
                                         <Pill key={f} className="bg-muted/70 border-border text-muted-foreground">{f}</Pill>
                                     ))}
                                 </div>
@@ -290,10 +293,36 @@ export default function EventGapAnalysis() {
                             <Textarea
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
-                                placeholder={`Paste anything — all at once, not one by one:\n\n• JSON array:  [{"event":"Login","properties":{"source":"D2C"}}]\n• NDJSON:      one {"event":"Page_View","properties":{...}} per line\n• CSV rows:    Login,source,isNewUser,loginStatus\n• Names only:  Login\n               Page_View\n               Searched`}
+                                placeholder={`Paste anything — all at once, not one by one:\n\n• JSON array:  [{"event":"Login","properties":{"source":"D2C"}}]\n• NDJSON:      one {"event":"Page_View","properties":{...}} per line\n• CSV rows:    Login,source,isNewUser,loginStatus\n• Names only:  Login\n               Page_View\n               Searched\n• Tooltip HTML: <span data-t="tooltip" title="source">B2B</span>…\n               (type the event name below)`}
                                 className="min-h-[170px] font-mono text-xs leading-relaxed"
                                 spellCheck={false}
                             />
+
+                            {/* Event name for HTML / property-only pastes */}
+                            <div className="flex flex-wrap items-end gap-2 rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                                <div className="flex-1 min-w-[180px]">
+                                    <Label htmlFor="html-event-name" className="text-[11px] font-semibold text-muted-foreground">
+                                        Event name for tooltip-HTML pastes
+                                    </Label>
+                                    <Input
+                                        id="html-event-name"
+                                        list="catalog-event-names"
+                                        value={htmlEventName}
+                                        onChange={(e) => setHtmlEventName(e.target.value)}
+                                        placeholder="e.g. Page_View"
+                                        className="h-8 mt-1 font-mono text-xs"
+                                    />
+                                    <datalist id="catalog-event-names">
+                                        {CLEVERTAP_CATALOG.map((e) => (
+                                            <option key={e.name} value={e.name} />
+                                        ))}
+                                    </datalist>
+                                </div>
+                                <p className="text-[11px] text-muted-foreground flex-1 min-w-[220px]">
+                                    The CleverTap tooltip snippet contains <b>properties only</b> — it has no event name.
+                                    Pick the event it belongs to (or put the name on the first line).
+                                </p>
+                            </div>
                             <div className="flex items-center justify-between flex-wrap gap-2">
                                 <div className="flex items-center gap-2">
                                     <Button onClick={handleAnalyze} className="bg-blue-600 hover:bg-blue-700">
@@ -644,7 +673,27 @@ Page_View,previousPage,currentPage
 // D) Event names only
 Login
 Page_View
-Searched`}</pre>
+Searched
+
+// E) Tooltip HTML (properties only — set the event name above)
+<span data-t="tooltip" title="source">B2B</span>…`}</pre>
+                    </div>
+
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-[12px] text-amber-800 dark:text-amber-300 space-y-2">
+                        <p className="font-semibold flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> The tooltip snippet is NOT the full capture</p>
+                        <p>
+                            The <code>&lt;span data-t=&quot;tooltip&quot; …&gt;</code> block you copy from a CleverTap event detail
+                            is <b>one event&apos;s properties only</b>. It has no event name and no list of the other events.
+                            That is why it cannot answer &quot;what is missing&quot; on its own.
+                        </p>
+                        <p>
+                            To get the <b>overall</b> capture in one shot, use one of these:
+                        </p>
+                        <ul className="list-disc pl-5 space-y-1">
+                            <li><b>DevTools → Network →</b> filter <code>clevertap</code> → click the request → <b>Payload</b> tab → copy the whole JSON body. It contains the batched events (names + properties).</li>
+                            <li><b>CleverTap dashboard → Analytics ▸ Events</b> → use the <b>Export / download</b> action to get the event list as CSV.</li>
+                            <li>Paste that export here — every event is analysed in one pass.</li>
+                        </ul>
                     </div>
 
                     <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-[12px] text-amber-800 dark:text-amber-300 space-y-1">
