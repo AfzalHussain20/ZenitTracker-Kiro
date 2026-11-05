@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
@@ -684,15 +683,13 @@ export default function EventGapAnalysis() {
                         <AnimatePresence mode="wait">
                             <motion.div key="results" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
                                 {/* Summary tiles */}
-                                <div className={cn('grid grid-cols-2 md:grid-cols-3 gap-3', showProps ? 'lg:grid-cols-6' : 'lg:grid-cols-5')}>
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                                     <StatTile label="CSV Catalog" value={result.summary.catalogTotal} sub="expected events" tone="blue" icon={Layers} />
                                     <StatTile label="In your paste" value={result.summary.capturedTotal} sub="unique events seen" tone="sky" icon={ClipboardPaste} />
                                     <StatTile label="Found" value={result.summary.matched} sub="CSV events in paste" tone="emerald" icon={CheckCircle2} />
                                     <StatTile label="Not in paste" value={result.summary.missing} sub="CSV events absent" tone="rose" icon={XCircle} />
                                     <StatTile label="Beyond CSV" value={result.summary.extra} sub={systemExtras > 0 ? `in paste, not in CSV · ${systemExtras} system` : 'in paste, not in CSV'} tone="violet" icon={PlusCircle} />
-                                    {showProps && (
-                                        <StatTile label="Prop coverage" value={`${result.summary.propertyCoverage}%`} sub="matched properties" tone="emerald" icon={ListChecks} />
-                                    )}
+                                    <StatTile label="Prop coverage" value={`${result.summary.propertyCoverage}%`} sub="matched properties" tone="emerald" icon={ListChecks} />
                                 </div>
 
                                 {/* Toolbar */}
@@ -754,7 +751,7 @@ export default function EventGapAnalysis() {
 
                                 {/* Table */}
                                 <Card className="overflow-hidden">
-                                    <ScrollArea className="max-h-[560px]">
+                                    <div className="overflow-x-auto">
                                         <table className="w-full text-sm">
                                             <thead className="sticky top-0 z-10 bg-card/95 backdrop-blur border-b border-border">
                                                 <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -799,13 +796,13 @@ export default function EventGapAnalysis() {
                                                 )}
                                             </tbody>
                                         </table>
-                                    </ScrollArea>
+                                    </div>
                                 </Card>
 
                                 <p className="text-[11px] text-muted-foreground">
                                     <Info className="w-3.5 h-3.5 inline mr-1" />
-                                    <b>Not in paste</b> means the event wasn&apos;t in this capture — it is still in the 39-event CSV
-                                    catalog. Default view is <b>Events only</b> (since multi-fire events like <code>Page_View</code> vary per
+                                    <b>Not in paste</b> means the event wasn&apos;t in this capture — it is still in the 39-event
+                                    reference list. Default view is <b>Events only</b> (since multi-fire events vary per
                                     occurrence); click <b>Events only</b> in the toolbar to toggle normalized property coverage on.
                                 </p>
 
@@ -1138,7 +1135,7 @@ Searched
 
                     <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-[12px] text-amber-800 dark:text-amber-300 space-y-1">
                         <p className="font-semibold flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> Partial input = partial report</p>
-                        <p>If you paste only 5 events, the report can only validate those 5. The other 34 are still in the CSV catalog and will show as <b>Not in paste</b> — they are not invented. Paste everything you have in one go for a complete picture.</p>
+                        <p>If you paste only 5 events, the report can only validate those 5. The other 34 are still in the 39-event reference list and will show as <b>Not in paste</b> — they are not invented. Paste everything you have in one go for a complete picture.</p>
                     </div>
 
                     <div className="rounded-xl border border-blue-500/25 bg-blue-500/10 p-4 text-[12px] text-blue-800 dark:text-blue-300 space-y-1">
