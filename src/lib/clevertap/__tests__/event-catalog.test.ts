@@ -242,6 +242,53 @@ describe('parseCapturedEvents', () => {
       expect(pageView.isSystem).toBeUndefined();
       expect(pageView.records).toBe(2);
     });
+
+    it('keeps event names containing "&" (T&C_Clicked)', () => {
+      const html =
+        '<table class="ev_91"><tr><td>11:00:00 am</td>' +
+        '<td><span style="font-weight:400">T&amp;C_Clicked</span><br>' +
+        '<span class="label-gray"><span data-t="tooltip" title="source">Footer</span></span>' +
+        '</td></tr></table>';
+      const r = parseCapturedEvents(html);
+      expect(r.format).toBe('activity-html');
+      expect(r.events.map((e) => e.name)).toContain('T&C_Clicked');
+    });
+
+    it('keeps events that have no properties at all (Logout)', () => {
+      const html =
+        '<table class="ev_12"><tr><td>11:05:00 am</td>' +
+        '<td><span style="font-weight:400">Logout</span></td></tr></table>';
+      const r = parseCapturedEvents(html);
+      expect(r.format).toBe('activity-html');
+      const logout = r.events.find((e) => e.name === 'Logout')!;
+      expect(logout).toBeDefined();
+      expect(logout.properties).toEqual([]);
+
+      const row = analyzeGaps(r).rows.find((x) => x.name === 'Logout')!;
+      expect(row.status).toBe('captured');
+    });
+
+    it('counts multiple occurrences grouped in one event table', () => {
+      const html =
+        '<table class="ev_37">' +
+        '<tr><td>11:34:39 am</td><td><span style="font-weight:400">Page_View</span><br>' +
+        '<span class="label-gray"><span data-t="tooltip" title="previousPage">Search</span></span></td></tr>' +
+        '<tr><td>11:33:52 am</td><td><span style="font-weight:400">Page_View</span><br>' +
+        '<span class="label-gray"><span data-t="tooltip" title="currentPage">More</span></span></td></tr>' +
+        '</table>';
+      const raw = parseActivityHtmlEvents(html);
+      expect(raw).toHaveLength(2);
+
+      const rolled = parseCapturedEvents(html);
+      expect(rolled.events).toHaveLength(1);
+      expect(rolled.events[0].count).toBe(2);
+      expect(rolled.events[0].properties.sort()).toEqual(['currentPage', 'previousPage']);
+    });
+
+    it('reads a plain name list containing "&"', () => {
+      const r = parseCapturedEvents('Login\nT&C_Clicked\nShared');
+      expect(r.events.map((e) => e.name).sort()).toEqual(['Login', 'Shared', 'T&C_Clicked']);
+    });
   });
 });
 

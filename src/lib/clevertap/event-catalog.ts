@@ -610,7 +610,8 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 function looksLikeEventName(v: string): boolean {
   const t = v.trim();
-  return t.length > 0 && t.length <= 80 && /^[A-Za-z][A-Za-z0-9 _./:-]*$/.test(t);
+  // `&` and `+` are legal in real CleverTap names (e.g. T&C_Clicked).
+  return t.length > 0 && t.length <= 80 && /^[A-Za-z][A-Za-z0-9 _./:&+-]*$/.test(t);
 }
 
 function pickName(obj: Record<string, unknown>): string | null {
@@ -794,16 +795,30 @@ function looksLikeActivityHtml(text: string): boolean {
   return nameSpans.length >= 2 && looksLikeHtmlTooltip(text);
 }
 
+/** Strip tags + entities and collapse whitespace. */
+function textContent(html: string): string {
+  return decodeHtmlEntities(html.replace(/<[^>]*>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /** Pull the event name out of one activity-table row. */
 function extractActivityEventName(chunk: string): string | null {
-  const weighted = /<span[^>]*font-weight\s*:\s*400[^>]*>\s*([^<]+?)\s*<\/span>/i.exec(chunk);
-  if (weighted) return decodeHtmlEntities(weighted[1]).trim();
+  // 1. CleverTap renders the event label as a weight-400 span.
+  const weighted = /<span[^>]*font-weight\s*:\s*400[^>]*>([\s\S]*?)<\/span>/i.exec(chunk);
+  if (weighted) {
+    const text = textContent(weighted[1]);
+    if (text) return text;
+  }
 
-  // Fallback: first non-tooltip span before the <br> separator.
-  const cell = /<td[^>]*>([\s\S]*?)<br\s*\/?>/i.exec(chunk);
-  if (!cell) return null;
-  const span = /<span\b(?![^>]*data-t\s*=\s*["']tooltip["'])[^>]*>\s*([^<]+?)\s*<\/span>/i.exec(cell[1]);
-  return span ? decodeHtmlEntities(span[1]).trim() : null;
+  // 2. Fallback: the label is the first non-tooltip element in the second
+  //    <td> (the first cell is the timestamp). Works with <span> and <a>.
+  const cells = [...chunk.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((m) => m[1]);
+  const body = cells[1] ?? cells[0] ?? '';
+  const beforeBreak = body.split(/<br\s*\/?>/i)[0];
+  const tag = /<(span|a)\b(?![^>]*data-t\s*=\s*["']tooltip["'])[^>]*>([\s\S]*?)<\/\1>/i.exec(beforeBreak);
+  const text = textContent(tag ? tag[2] : beforeBreak);
+  return text || null;
 }
 
 /** Parse every event row from a CleverTap "User activity details" HTML paste. */
@@ -814,14 +829,25 @@ export function parseActivityHtmlEvents(html: string): CapturedEvent[] {
 
   while ((match = tableRe.exec(html))) {
     const chunk = match[0];
-    if (!looksLikeHtmlTooltip(chunk)) continue;
-    const name = extractActivityEventName(chunk);
-    if (!name || !looksLikeEventName(name)) continue;
-    events.push({
-      name,
-      properties: parseHtmlTooltipProperties(chunk),
-      count: 1,
-    });
+    // `class="ev_N"` is CleverTap's own event-table marker. Trust it even when
+    // the row has zero properties (e.g. Logout), so those events are not lost.
+    const isEventTable = /\bclass\s*=\s*["'][^"']*\bev_\d+\b/i.test(chunk);
+    if (!isEventTable && !looksLikeHtmlTooltip(chunk)) continue;
+
+    // A table can hold one row per occurrence, so parse row-by-row to keep the
+    // record count right. Fall back to the whole table for unusual markup.
+    const rows = [...chunk.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].map((m) => m[1]);
+    const candidates = rows.length > 0 ? rows : [chunk];
+
+    for (const row of candidates) {
+      const name = extractActivityEventName(row);
+      if (!name || !looksLikeEventName(name)) continue;
+      events.push({
+        name,
+        properties: parseHtmlTooltipProperties(row),
+        count: 1,
+      });
+    }
   }
 
   return events;
