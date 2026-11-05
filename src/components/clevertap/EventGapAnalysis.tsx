@@ -345,7 +345,6 @@ export default function EventGapAnalysis() {
     const [query, setQuery] = useState('');
     const [category, setCategory] = useState<'all' | CatalogCategory>('all');
     const [expanded, setExpanded] = useState<string | null>(null);
-    const [showProps, setShowProps] = useState(false);
 
     const runAnalysis = (text: string) => {
         const parsed = parseCapturedEvents(text, { htmlEventName });
@@ -444,14 +443,8 @@ export default function EventGapAnalysis() {
 
     const handleExportGap = () => {
         if (!result) return;
-        download(
-            `clevertap-gap-analysis-${new Date().toISOString().slice(0, 10)}.csv`,
-            buildGapCsv(result, { includeProperties: showProps }),
-        );
-        toast({
-            title: 'Report exported',
-            description: showProps ? 'Gap analysis CSV (with properties) downloaded.' : 'Event-level gap analysis CSV downloaded.',
-        });
+        download(`clevertap-gap-analysis-${new Date().toISOString().slice(0, 10)}.csv`, buildGapCsv(result));
+        toast({ title: 'Report exported', description: 'Gap analysis CSV downloaded.' });
     };
 
     const handleExportCatalog = () => {
@@ -462,7 +455,7 @@ export default function EventGapAnalysis() {
     const handleCopyReport = async () => {
         if (!result) return;
         try {
-            await navigator.clipboard.writeText(buildGapCsv(result, { includeProperties: showProps }));
+            await navigator.clipboard.writeText(buildGapCsv(result));
             toast({ title: 'Copied', description: 'Gap analysis CSV copied to clipboard.' });
         } catch {
             toast({ title: 'Copy failed', variant: 'destructive' });
@@ -713,21 +706,7 @@ export default function EventGapAnalysis() {
                                             </button>
                                         ))}
                                     </div>
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowProps((v) => !v)}
-                                            title="Toggle property-key columns in the table and CSV export"
-                                            className={cn(
-                                                'h-8 px-2.5 rounded-md border text-xs font-semibold transition-all flex items-center gap-1.5',
-                                                showProps
-                                                    ? 'bg-blue-500/15 border-blue-500/40 text-blue-600'
-                                                    : 'bg-background border-border text-muted-foreground hover:text-foreground',
-                                            )}
-                                        >
-                                            <ListChecks className="w-3.5 h-3.5" />
-                                            {showProps ? 'Properties: On' : 'Events only'}
-                                        </button>
+                                    <div className="flex items-center gap-2">
                                         <div className="relative">
                                             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                                             <Input
@@ -759,14 +738,8 @@ export default function EventGapAnalysis() {
                                                     <th className="px-3 py-2.5 font-semibold">Category</th>
                                                     <th className="px-3 py-2.5 font-semibold">In paste</th>
                                                     <th className="px-3 py-2.5 font-semibold">Zenit</th>
-                                                    {showProps ? (
-                                                        <>
-                                                            <th className="px-3 py-2.5 font-semibold">Coverage</th>
-                                                            <th className="px-3 py-2.5 font-semibold text-right">Props</th>
-                                                        </>
-                                                    ) : (
-                                                        <th className="px-3 py-2.5 font-semibold text-right">Records</th>
-                                                    )}
+                                                    <th className="px-3 py-2.5 font-semibold">Coverage</th>
+                                                    <th className="px-3 py-2.5 font-semibold text-right">Props</th>
                                                     <th className="w-8" />
                                                 </tr>
                                             </thead>
@@ -783,13 +756,12 @@ export default function EventGapAnalysis() {
                                                             onToggle={() => setExpanded(isOpen ? null : row.name)}
                                                             st={st}
                                                             zn={zn}
-                                                            showProps={showProps}
                                                         />
                                                     );
                                                 })}
                                                 {visibleRows.length === 0 && (
                                                     <tr>
-                                                        <td colSpan={showProps ? 7 : 6} className="px-4 py-10 text-center text-muted-foreground text-sm">
+                                                        <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground text-sm">
                                                             No events match this filter.
                                                         </td>
                                                     </tr>
@@ -801,9 +773,8 @@ export default function EventGapAnalysis() {
 
                                 <p className="text-[11px] text-muted-foreground">
                                     <Info className="w-3.5 h-3.5 inline mr-1" />
-                                    <b>Not in paste</b> means the event wasn&apos;t in this capture — it is still in the 39-event
-                                    reference list. Default view is <b>Events only</b> (since multi-fire events vary per
-                                    occurrence); click <b>Events only</b> in the toolbar to toggle normalized property coverage on.
+                                    Click any row to inspect expected vs. captured properties. <b>Coverage</b> is the share of
+                                    the CSV&apos;s expected properties that appeared in your capture for that event.
                                 </p>
 
                                 <ZenitStatusLegend />
@@ -896,14 +867,13 @@ export default function EventGapAnalysis() {
 // ─── Row ──────────────────────────────────────────────────────────────────────
 
 function GapTableRow({
-    row, isOpen, onToggle, st, zn, showProps,
+    row, isOpen, onToggle, st, zn,
 }: {
     row: GapRow;
     isOpen: boolean;
     onToggle: () => void;
     st: { label: string; cls: string; icon: typeof CheckCircle2 };
     zn: { label: string; cls: string };
-    showProps: boolean;
 }) {
     const StIcon = st.icon;
     return (
@@ -931,25 +901,17 @@ function GapTableRow({
                 <td className="px-3 py-2.5">
                     <Pill className={zn.cls}>{zn.label}</Pill>
                 </td>
-                {showProps ? (
-                    <>
-                        <td className="px-3 py-2.5">
-                            {row.status === 'captured' || row.status === 'extra' ? <CoverageBar value={row.propertyCoverage} /> : <span className="text-[11px] text-muted-foreground">—</span>}
-                        </td>
-                        <td className="px-3 py-2.5 text-right text-[11px] text-muted-foreground tabular-nums">
-                            {row.expectedProps.length > 0 ? `${row.expectedProps.length - row.missingProps.length}/${row.expectedProps.length}` : '—'}
-                        </td>
-                    </>
-                ) : (
-                    <td className="px-3 py-2.5 text-right text-[11px] text-muted-foreground tabular-nums">
-                        {row.records > 0 ? row.records : '—'}
-                    </td>
-                )}
+                <td className="px-3 py-2.5">
+                    {row.status === 'captured' || row.status === 'extra' ? <CoverageBar value={row.propertyCoverage} /> : <span className="text-[11px] text-muted-foreground">—</span>}
+                </td>
+                <td className="px-3 py-2.5 text-right text-[11px] text-muted-foreground tabular-nums">
+                    {row.expectedProps.length > 0 ? `${row.expectedProps.length - row.missingProps.length}/${row.expectedProps.length}` : '—'}
+                </td>
                 <td className="px-2 py-2.5" />
             </tr>
             {isOpen && (
                 <tr className="border-b border-border/50 bg-muted/20">
-                    <td colSpan={showProps ? 7 : 6} className="px-4 py-3">
+                    <td colSpan={7} className="px-4 py-3">
                         <div className="space-y-2.5">
                             <p className="text-[11px] text-muted-foreground"><b className="text-foreground">Trigger:</b> {row.trigger}</p>
                             {row.isSystem && (
@@ -961,15 +923,11 @@ function GapTableRow({
                             {row.zenitEquivalent && (
                                 <p className="text-[11px] text-blue-600"><b>Zenit equivalent:</b> {row.zenitEquivalent}</p>
                             )}
-                            {showProps && (
-                                <>
-                                    <PropList label="Missing props" props={row.missingProps} tone="rose" />
-                                    <PropList label="Seen props" props={row.capturedProps} tone="emerald" />
-                                    <PropList label="Extra props" props={row.extraProps} tone="sky" />
-                                    {row.expectedProps.length === 0 && row.capturedProps.length === 0 && (
-                                        <p className="text-[11px] text-muted-foreground">No properties expected or captured.</p>
-                                    )}
-                                </>
+                            <PropList label="Missing" props={row.missingProps} tone="rose" />
+                            <PropList label="Captured" props={row.capturedProps} tone="emerald" />
+                            <PropList label="Unexpected" props={row.extraProps} tone="sky" />
+                            {row.expectedProps.length === 0 && row.capturedProps.length === 0 && (
+                                <p className="text-[11px] text-muted-foreground">No properties expected or captured.</p>
                             )}
                         </div>
                     </td>
