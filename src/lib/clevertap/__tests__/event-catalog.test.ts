@@ -415,6 +415,36 @@ describe('analyzeGaps', () => {
     expect(watched.extraProps).toEqual([]);
   });
 
+  it('resolves known CSV misspellings to the key the app actually sends', () => {
+    expect(normalizeProperty('viewingRestrcition')).toBe(normalizeProperty('viewingRestriction'));
+    expect(normalizeProperty('trnasactionAmount')).toBe(normalizeProperty('transactionAmount'));
+
+    const result = analyzeGaps(
+      parseCapturedEvents(
+        JSON.stringify([
+          {
+            event: 'Edit_Profile',
+            properties: {
+              source: 'b2c',
+              isPinSet: 'no',
+              appName: 'SunNXT',
+              viewingRestriction: '18+',
+              contentLanguage: 'tamil',
+              displayLanguage: 'english',
+              profileType: 'Profile',
+              profileName: 'test',
+            },
+          },
+        ]),
+      ),
+    );
+    const row = result.rows.find((r) => r.name === 'Edit_Profile')!;
+    expect(row.missingProps).toEqual([]);
+    expect(row.extraProps).toEqual([]);
+    expect(row.propertyCoverage).toBe(100);
+    expect(row.capturedValues?.viewingRestriction).toEqual(['18+']);
+  });
+
   it('excludes CleverTap SDK system properties from capturedProps and extraProps', () => {
     expect(isCleverTapSystemProperty('CT App Version')).toBe(true);
     expect(isCleverTapSystemProperty('ct_app_version')).toBe(true);

@@ -561,6 +561,27 @@ export function isCleverTapSystemEvent(name: string): boolean {
 }
 
 /**
+ * Strip display noise and casing so `content genre` and `contentGenre` match,
+ * and drop the CSV's "(Values -> …)" note.
+ */
+function baseNormalizeProperty(key: string): string {
+  return String(key || '')
+    .replace(/\s*\(Values?\s*->[^)]*\)/gi, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Known misspellings in the CSV contract. The app sends the corrected key, so
+ * without these aliases the event looks like it is missing a property and the
+ * real key looks "unexpected".
+ */
+const PROPERTY_ALIASES: Record<string, string> = {
+  [baseNormalizeProperty('viewingRestrcition')]: baseNormalizeProperty('viewingRestriction'),
+  [baseNormalizeProperty('trnasactionAmount')]: baseNormalizeProperty('transactionAmount'),
+};
+
+/**
  * Properties CleverTap's SDK attaches automatically (app version, SDK version,
  * source, device/network details, …). They are not part of the CSV contract,
  * so they must not be reported as extra app properties.
@@ -601,13 +622,11 @@ export function normalizeName(name: string): string {
  * Normalise a property key for comparison. CleverTap payloads sometimes use
  * display labels ("content genre", "content type") while the CSV uses
  * camelCase ("contentGenre", "contentType"). Strip everything except letters
- * and digits so both forms match. Also drops the CSV's "(Values -> …)" note.
+ * and digits so both forms match, then resolve known CSV typos.
  */
 export function normalizeProperty(key: string): string {
-  return String(key || '')
-    .replace(/\s*\(Values?\s*->[^)]*\)/gi, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
+  const base = baseNormalizeProperty(key);
+  return PROPERTY_ALIASES[base] ?? base;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
