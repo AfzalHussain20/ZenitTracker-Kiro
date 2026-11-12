@@ -16,7 +16,7 @@ import {
     ListChecks, UploadCloud, Terminal, RotateCcw, Copy, Layers, Shield,
 } from 'lucide-react';
 import {
-    analyzeGaps, buildGapCsv, buildCatalogCsv, parseCapturedEvents,
+    analyzeGaps, buildGapCsv, buildCatalogCsv, buildValuesCsv, parseCapturedEvents,
     CLEVERTAP_CATALOG, ZENIT_EXTRA_EVENTS, CATEGORIES, SAMPLE_CAPTURE,
     GAP_STATUS_LABEL, ZENIT_STATUS_LABEL,
     type GapAnalysisResult, type GapRow, type GapStatus, type CatalogCategory,
@@ -452,6 +452,17 @@ export default function EventGapAnalysis() {
         toast({ title: 'Catalog exported', description: 'Full event catalog CSV downloaded.' });
     };
 
+    const hasAnyValues = useMemo(
+        () => (result?.rows ?? []).some((r) => r.capturedValues && Object.keys(r.capturedValues).length > 0),
+        [result],
+    );
+
+    const handleExportValues = () => {
+        if (!result) return;
+        download(`clevertap-captured-values-${new Date().toISOString().slice(0, 10)}.csv`, buildValuesCsv(result));
+        toast({ title: 'Values exported', description: 'Captured property values CSV downloaded.' });
+    };
+
     const handleCopyReport = async () => {
         if (!result) return;
         try {
@@ -719,6 +730,16 @@ export default function EventGapAnalysis() {
                                         <Button size="sm" variant="outline" onClick={handleExportGap}>
                                             <FileDown className="w-3.5 h-3.5 mr-1.5" /> Export CSV
                                         </Button>
+                                        {hasAnyValues && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={handleExportValues}
+                                                title="Property values captured from HTML/JSON pastes (HAR import strips values)"
+                                            >
+                                                <FileDown className="w-3.5 h-3.5 mr-1.5" /> Export values
+                                            </Button>
+                                        )}
                                         <Button size="sm" variant="outline" onClick={handleExportSanitized} title="Sanitized captured events (names + property names only)">
                                             <Shield className="w-3.5 h-3.5 mr-1.5" /> Safe JSON
                                         </Button>
@@ -926,6 +947,15 @@ function GapTableRow({
                             <PropList label="Missing" props={row.missingProps} tone="rose" />
                             <PropList label="Captured" props={row.capturedProps} tone="emerald" />
                             <PropList label="Unexpected" props={row.extraProps} tone="sky" />
+                            {row.status === 'captured' && row.propertyCoverage === 100 && (
+                                <CapturedValues row={row} />
+                            )}
+                            {row.status === 'captured' && row.propertyCoverage !== 100 && row.capturedValues && (
+                                <p className="text-[11px] text-muted-foreground">
+                                    Values are shown for events with <b>100% property coverage</b>. This event is missing
+                                    {row.missingProps.length === 1 ? ' 1 property' : ` ${row.missingProps.length} properties`}, so its values are hidden.
+                                </p>
+                            )}
                             {row.expectedProps.length === 0 && row.capturedProps.length === 0 && (
                                 <p className="text-[11px] text-muted-foreground">No properties expected or captured.</p>
                             )}
@@ -934,6 +964,59 @@ function GapTableRow({
                 </tr>
             )}
         </>
+    );
+}
+
+// ─── Captured values ──────────────────────────────────────────────────────────
+
+function CapturedValues({ row }: { row: GapRow }) {
+    const { toast } = useToast();
+    const entries = Object.entries(row.capturedValues ?? {}).filter(([, values]) => values.length > 0);
+    if (entries.length === 0) return null;
+
+    const copyAll = async () => {
+        const text = entries
+            .map(([prop, values]) => `${prop}: ${values.join(' | ')}`)
+            .join('\n');
+        try {
+            await navigator.clipboard.writeText(text);
+            toast({ title: 'Values copied', description: `${row.name} — ${entries.length} properties.` });
+        } catch {
+            toast({ title: 'Copy failed', description: 'Select the values and copy them manually.', variant: 'destructive' });
+        }
+    };
+
+    return (
+        <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Captured values · 100% covered
+                </p>
+                <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={copyAll}>
+                    <Copy className="w-3 h-3 mr-1" /> Copy all
+                </Button>
+            </div>
+            <div className="space-y-1.5">
+                {entries.map(([prop, values]) => (
+                    <div key={prop} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px]">
+                        <code className="font-semibold text-foreground">{prop}</code>
+                        <span className="text-muted-foreground">
+                            {values.map((v, i) => (
+                                <span key={`${prop}-${i}`}>
+                                    {i > 0 && <span className="opacity-40 mx-1">·</span>}
+                                    <span className="rounded bg-background/70 border border-border/60 px-1.5 py-0.5">{v}</span>
+                                </span>
+                            ))}
+                        </span>
+                        <span className="text-muted-foreground/70">({values.length} value{values.length === 1 ? '' : 's'})</span>
+                    </div>
+                ))}
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+                Distinct values from this paste, capped at 25 per property. Values come from activity-page HTML or JSON
+                pastes — HAR import keeps names only.
+            </p>
+        </div>
     );
 }
 

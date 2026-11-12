@@ -617,8 +617,66 @@ export function normalizeProperty(key: string): string {
 export interface CapturedEvent {
   name: string;
   properties: string[];
+  /**
+   * Distinct values seen for each property, when the input carries values
+   * (activity-page HTML or JSON payloads). HAR import intentionally strips
+   * values, so it leaves this undefined.
+   */
+  values?: Record<string, string[]>;
   /** How many raw records rolled up into this event name. */
   count: number;
+}
+
+/** Keep a 100-row paste light: cap distinct values stored per property. */
+const MAX_VALUES_PER_PROPERTY = 25;
+
+function stringifyValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function addValue(map: Record<string, string[]>, key: string, value: unknown): void {
+  const text = stringifyValue(value);
+  if (!text) return;
+  const list = map[key] ?? (map[key] = []);
+  if (list.length < MAX_VALUES_PER_PROPERTY && !list.includes(text)) list.push(text);
+}
+
+/** Merge two value maps, deduping and respecting the per-property cap. */
+function mergeValueMaps(
+  target: Record<string, string[]> | undefined,
+  source: Record<string, string[]> | undefined,
+): Record<string, string[]> | undefined {
+  if (!target && !source) return undefined;
+  const out: Record<string, string[]> = {};
+  for (const [key, values] of Object.entries(target ?? {})) out[key] = [...values];
+  for (const [key, values] of Object.entries(source ?? {})) {
+    const list = out[key] ?? (out[key] = []);
+    for (const value of values) {
+      if (list.length >= MAX_VALUES_PER_PROPERTY) break;
+      if (!list.includes(value)) list.push(value);
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** Drop values for properties the caller does not want to show. */
+export function filterCapturedValues(
+  values: Record<string, string[]> | undefined,
+  keep: (key: string) => boolean,
+): Record<string, string[]> | undefined {
+  if (!values) return undefined;
+  const out: Record<string, string[]> = {};
+  for (const [key, list] of Object.entries(values)) {
+    if (keep(key) && list.length) out[key] = [...list];
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 export type CaptureFormat =
@@ -679,6 +737,26 @@ function pickProperties(obj: Record<string, unknown>, name: string | null): stri
   return Object.keys(obj).filter((k) => !NAME_KEYS.includes(k) && k !== name);
 }
 
+/** Extract property values when the payload carries an object of props. */
+function pickValues(
+  obj: Record<string, unknown>,
+  name: string | null,
+): Record<string, string[]> | undefined {
+  const values: Record<string, string[]> = {};
+  for (const k of PROP_KEYS) {
+    const v = obj[k];
+    if (isPlainObject(v)) {
+      for (const [key, val] of Object.entries(v)) addValue(values, key, val);
+      return Object.keys(values).length ? values : undefined;
+    }
+  }
+  for (const [key, val] of Object.entries(obj)) {
+    if (NAME_KEYS.includes(key) || key === name) continue;
+    addValue(values, key, val);
+  }
+  return Object.keys(values).length ? values : undefined;
+}
+
 function fromJsonValue(value: unknown, out: CapturedEvent[], errors: string[]): void {
   if (Array.isArray(value)) {
     for (const item of value) fromJsonValue(item, out, errors);
@@ -698,15 +776,21 @@ function fromJsonValue(value: unknown, out: CapturedEvent[], errors: string[]): 
     }
     const name = pickName(value);
     if (name) {
-      out.push({ name, properties: pickProperties(value, name), count: 1 });
+      out.push({
+        name,
+        properties: pickProperties(value, name),
+        values: pickValues(value, name),
+        count: 1,
+      });
       return;
     }
     // Map form: { "Event_Name": { props } | [props] | true }
     for (const [k, v] of Object.entries(value)) {
       if (!looksLikeEventName(k)) continue;
       if (Array.isArray(v)) out.push({ name: k, properties: v.map(String).map((s) => s.trim()).filter(Boolean), count: 1 });
-      else if (isPlainObject(v)) out.push({ name: k, properties: pickProperties(v, k), count: 1 });
-      else out.push({ name: k, properties: [], count: 1 });
+      else if (isPlainObject(v)) {
+        out.push({ name: k, properties: pickProperties(v, k), values: pickValues(v, k), count: 1 });
+      } else out.push({ name: k, properties: [], count: 1 });
     }
     return;
   }
@@ -792,20 +876,37 @@ function looksLikeHtmlTooltip(text: string): boolean {
     || /<span\b[^>]*data-original-title\s*=/i.test(text);
 }
 
+export interface HtmlTooltipEntry {
+  key: string;
+  value: string;
+}
+
 /**
- * Extract property names from the tooltip HTML CleverTap renders for an event.
+ * Extract property names *and* the values CleverTap displays for them.
  * Handles both `title="…"` and `data-original-title="…"` (CleverTap uses the
  * latter for the appName pill, where `title` is left empty).
+ *
+ * Values are only available when the analyst pastes dashboard HTML or JSON.
+ * HAR import deliberately discards them.
  */
-export function parseHtmlTooltipProperties(html: string): string[] {
-  const props: string[] = [];
-  const spanRe = /<span\b[^>]*>/gi;
+export function parseHtmlTooltipEntries(html: string): HtmlTooltipEntry[] {
+  const entries: HtmlTooltipEntry[] = [];
+  const spanRe = /<span\b([^>]*\bdata-t\s*=\s*(?:"tooltip"|'tooltip')[^>]*)>([\s\S]*?)<\/span>/gi;
   let match: RegExpExecArray | null;
   while ((match = spanRe.exec(html))) {
-    const tag = match[0];
-    if (!/data-t\s*=\s*(?:"tooltip"|'tooltip')/i.test(tag)) continue;
-    const key = (readAttr(tag, 'title') || readAttr(tag, 'data-original-title') || '').trim();
-    if (key && !props.includes(key)) props.push(key);
+    const attrs = `<span ${match[1]}>`;
+    const key = (readAttr(attrs, 'title') || readAttr(attrs, 'data-original-title') || '').trim();
+    if (!key) continue;
+    entries.push({ key, value: textContent(match[2]) });
+  }
+  return entries;
+}
+
+/** Property names only (kept for callers that don't need values). */
+export function parseHtmlTooltipProperties(html: string): string[] {
+  const props: string[] = [];
+  for (const entry of parseHtmlTooltipEntries(html)) {
+    if (!props.includes(entry.key)) props.push(entry.key);
   }
   return props;
 }
@@ -889,9 +990,16 @@ export function parseActivityHtmlEvents(html: string): CapturedEvent[] {
     for (const row of candidates) {
       const name = extractActivityEventName(row);
       if (!name || !looksLikeEventName(name)) continue;
+      const properties: string[] = [];
+      const values: Record<string, string[]> = {};
+      for (const entry of parseHtmlTooltipEntries(row)) {
+        if (!properties.includes(entry.key)) properties.push(entry.key);
+        addValue(values, entry.key, entry.value);
+      }
       events.push({
         name,
-        properties: parseHtmlTooltipProperties(row),
+        properties,
+        values: Object.keys(values).length ? values : undefined,
         count: 1,
       });
     }
@@ -945,7 +1053,13 @@ export function parseCapturedEvents(input: string, options: ParseOptions = {}): 
   if (looksLikeHtmlTooltip(text)) {
     const leading = extractLeadingEventName(text);
     const eventName = (options.htmlEventName || '').trim() || leading.name;
-    const props = parseHtmlTooltipProperties(text);
+    const entries = parseHtmlTooltipEntries(text);
+    const props: string[] = [];
+    const values: Record<string, string[]> = {};
+    for (const entry of entries) {
+      if (!props.includes(entry.key)) props.push(entry.key);
+      addValue(values, entry.key, entry.value);
+    }
 
     if (!eventName) {
       return {
@@ -967,7 +1081,12 @@ export function parseCapturedEvents(input: string, options: ParseOptions = {}): 
       };
     }
     return {
-      events: rollUp([{ name: eventName, properties: props, count: 1 }]),
+      events: rollUp([{
+        name: eventName,
+        properties: props,
+        values: Object.keys(values).length ? values : undefined,
+        count: 1,
+      }]),
       format: 'html-tooltip',
       errors,
       ignoredLines: 0,
@@ -1026,8 +1145,14 @@ function rollUp(events: CapturedEvent[]): CapturedEvent[] {
     if (existing) {
       existing.count += e.count;
       existing.properties = [...new Set([...existing.properties, ...e.properties])];
+      existing.values = mergeValueMaps(existing.values, e.values);
     } else {
-      map.set(key, { name: e.name, properties: [...new Set(e.properties)], count: e.count });
+      map.set(key, {
+        name: e.name,
+        properties: [...new Set(e.properties)],
+        values: mergeValueMaps(undefined, e.values),
+        count: e.count,
+      });
     }
   }
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -1073,6 +1198,8 @@ export interface GapRow {
   capturedProps: string[];
   missingProps: string[];
   extraProps: string[];
+  /** Distinct captured values per property, when the paste carried values. */
+  capturedValues?: Record<string, string[]>;
   propertyCoverage: number; // 0–100
   records: number;
 }
@@ -1107,6 +1234,10 @@ export function analyzeGaps(parse: ParseResult): GapAnalysisResult {
     const capturedProps = (captured?.properties ?? []).filter(
       (p) => !isCleverTapSystemProperty(p),
     );
+    const capturedValues = filterCapturedValues(
+      captured?.values,
+      (p) => !isCleverTapSystemProperty(p),
+    );
     const capturedNorm = new Set(capturedProps.map(normalizeProperty));
     const missingProps = ev.properties.filter((p) => !capturedNorm.has(normalizeProperty(p)));
     const expectedNorm = new Set(ev.properties.map(normalizeProperty));
@@ -1126,6 +1257,7 @@ export function analyzeGaps(parse: ParseResult): GapAnalysisResult {
       capturedProps,
       missingProps,
       extraProps,
+      capturedValues,
       propertyCoverage: captured ? found : 0,
       records: captured?.count ?? 0,
     });
@@ -1136,6 +1268,10 @@ export function analyzeGaps(parse: ParseResult): GapAnalysisResult {
     if (CATALOG_NAMES.has(normalizeName(ev.name))) continue;
     const known = CATALOG_BY_NAME.get(normalizeName(ev.name));
     const capturedProps = ev.properties.filter((p) => !isCleverTapSystemProperty(p));
+    const capturedValues = filterCapturedValues(
+      ev.values,
+      (p) => !isCleverTapSystemProperty(p),
+    );
     rows.push({
       name: ev.name,
       status: 'extra',
@@ -1152,6 +1288,7 @@ export function analyzeGaps(parse: ParseResult): GapAnalysisResult {
             (p) => !known.properties.map(normalizeProperty).includes(normalizeProperty(p)),
           )
         : capturedProps,
+      capturedValues,
       propertyCoverage: 100,
       records: ev.count,
     });
@@ -1221,6 +1358,25 @@ export function buildGapCsv(result: GapAnalysisResult, options: GapCsvOptions = 
           r.records, r.trigger,
         ];
     lines.push(cells.map(csvCell).join(','));
+  }
+  return lines.join('\n');
+}
+
+/**
+ * CSV of captured property values. Values are only available when the paste
+ * carried them (activity-page HTML or JSON payloads); HAR import strips them.
+ * Includes the coverage % so 100%-covered events are easy to isolate.
+ */
+export function buildValuesCsv(result: GapAnalysisResult): string {
+  const header = ['Event Name', 'Property Coverage %', 'Property', 'Distinct Values', 'Values'];
+  const lines = [header.join(',')];
+  for (const r of result.rows) {
+    if (r.status !== 'captured' || !r.capturedValues) continue;
+    for (const [prop, values] of Object.entries(r.capturedValues)) {
+      lines.push([
+        r.name, r.propertyCoverage, prop, values.length, values.join(' | '),
+      ].map(csvCell).join(','));
+    }
   }
   return lines.join('\n');
 }

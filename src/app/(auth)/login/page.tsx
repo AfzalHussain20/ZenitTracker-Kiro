@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebaseConfig';
+import { signInWithGoogle } from '@/lib/google-auth';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -76,18 +77,12 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
     setError(null);
-    const provider = new GoogleAuthProvider();
     try {
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      if (!user.email || !user.email.endsWith('@sunnetwork.in')) {
-        await auth.signOut();
-        throw new Error("Only @sunnetwork.in accounts are allowed");
-      }
+      const { user, nextPath } = await signInWithGoogle();
       document.cookie = "firebase-auth-session=true; path=/; max-age=86400";
       try { sessionStorage.setItem('zenit:play-splash', '1'); } catch { /* ignore */ }
-      toast({ title: "Welcome!", description: `Logged in as ${user.displayName}` });
-      router.replace('/dashboard');
+      toast({ title: "Welcome!", description: `Logged in as ${user.displayName || user.email || 'Zenit user'}` });
+      router.replace(nextPath);
     } catch (err: any) {
       if (err.code !== 'auth/popup-closed-by-user') {
         setError(err.message || "Google sign-in failed");

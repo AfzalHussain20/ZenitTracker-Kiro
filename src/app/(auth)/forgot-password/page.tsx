@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Loader2, ArrowLeft, Mail, CheckCircle2 } from 'lucide-react';
 
 const forgotPasswordSchema = z.object({
-    email: z.string().email({ message: "Invalid email address" }).refine(email => email.endsWith('@sunnetwork.in'), { message: "Only @sunnetwork.in emails are allowed." }),
+    email: z.string().email({ message: "Invalid email address" }),
 });
 
 type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>;
@@ -86,7 +86,7 @@ export default function ForgotPasswordPage() {
                 <h2 className="text-2xl font-bold text-center text-foreground">Reset Password</h2>
             </div>
             <p className="text-muted-foreground text-sm mb-6">
-                Enter your @sunnetwork.in email and we&apos;ll send you a link to reset your password.
+                Enter your email and we&apos;ll send you a link to reset your password.
             </p>
 
             {error && (
@@ -103,7 +103,7 @@ export default function ForgotPasswordPage() {
                         <Input
                             id="email"
                             type="email"
-                            placeholder="you@sunnetwork.in"
+                            placeholder="you@company.com"
                             {...register("email")}
                             autoComplete="email"
                             className="pl-10"

@@ -10,11 +10,14 @@ import {
   analyzeGaps,
   parseCapturedEvents,
   parseHtmlTooltipProperties,
+  parseHtmlTooltipEntries,
   parseActivityHtmlEvents,
   isCleverTapSystemEvent,
   isCleverTapSystemProperty,
   buildGapCsv,
   buildCatalogCsv,
+  buildValuesCsv,
+  filterCapturedValues,
   normalizeName,
   normalizeProperty,
   SAMPLE_CAPTURE,
@@ -424,6 +427,75 @@ describe('analyzeGaps', () => {
     const result = analyzeGaps(parseCapturedEvents(SAMPLE_CAPTURE));
     expect(result.summary.capturedTotal).toBeGreaterThan(0);
     expect(result.summary.extra).toBeGreaterThan(0); // Test_Case_Executed is Zenit-specific
+  });
+});
+
+describe('captured property values', () => {
+  it('parses key/value pairs from tooltip HTML', () => {
+    const entries = parseHtmlTooltipEntries(
+      '<span data-t="tooltip" title="source">B2B free</span>' +
+      '<span data-t="tooltip" title="" data-original-title="appName">SunNXT</span>',
+    );
+    expect(entries).toEqual([
+      { key: 'source', value: 'B2B free' },
+      { key: 'appName', value: 'SunNXT' },
+    ]);
+  });
+
+  it('captures distinct values from JSON payloads', () => {
+    const result = analyzeGaps(
+      parseCapturedEvents(
+        '[{"event":"Login","properties":{"source":"D2C","isNewUser":true}},' +
+        '{"event":"Login","properties":{"source":"B2B","isNewUser":false}}]',
+      ),
+    );
+    const login = result.rows.find((r) => r.name === 'Login')!;
+    expect(login.capturedValues?.source).toEqual(['D2C', 'B2B']);
+    expect(login.capturedValues?.isNewUser).toEqual(['true', 'false']);
+  });
+
+  it('captures distinct values across repeated activity-page rows', () => {
+    const html =
+      '<table class="ev_37">' +
+      '<tr><td>11:34:39 am</td><td><span style="font-weight:400">Page_View</span><br>' +
+      '<span class="label-gray"><span data-t="tooltip" title="currentPage">Home</span></span></td></tr>' +
+      '<tr><td>11:33:52 am</td><td><span style="font-weight:400">Page_View</span><br>' +
+      '<span class="label-gray"><span data-t="tooltip" title="currentPage">More</span></span></td></tr>' +
+      '</table>';
+    const result = analyzeGaps(parseCapturedEvents(html));
+    const pageView = result.rows.find((r) => r.name === 'Page_View')!;
+    expect(pageView.capturedValues?.currentPage).toEqual(['Home', 'More']);
+  });
+
+  it('drops CleverTap SDK properties from captured values', () => {
+    const result = analyzeGaps(
+      parseCapturedEvents(
+        '[{"event":"Login","properties":{"source":"D2C","CT App Version":"4.2.57"}}]',
+      ),
+    );
+    const login = result.rows.find((r) => r.name === 'Login')!;
+    expect(login.capturedValues?.source).toEqual(['D2C']);
+    expect(login.capturedValues?.['CT App Version']).toBeUndefined();
+  });
+
+  it('filters values by key', () => {
+    const filtered = filterCapturedValues(
+      { source: ['D2C'], secret: ['x'] },
+      (key) => key !== 'secret',
+    );
+    expect(filtered).toEqual({ source: ['D2C'] });
+  });
+
+  it('exports a values CSV with the property and distinct values', () => {
+    const result = analyzeGaps(
+      parseCapturedEvents('[{"event":"Login","properties":{"source":"D2C"}}]'),
+    );
+    const csv = buildValuesCsv(result);
+    const lines = csv.split('\n');
+    expect(lines[0]).toBe('Event Name,Property Coverage %,Property,Distinct Values,Values');
+    expect(csv).toContain('Login');
+    expect(csv).toContain('source');
+    expect(csv).toContain('D2C');
   });
 });
 
