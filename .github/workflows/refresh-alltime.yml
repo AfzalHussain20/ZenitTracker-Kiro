@@ -3,14 +3,24 @@ name: refresh-alltime
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 0 * * *'
+    # Every 15 minutes. The dashboard treats this snapshot as the source of
+    # truth for all-time / per-person counts, so a once-a-day build made today's
+    # bugs invisible until the next morning. The repo is public, so the extra
+    # runs do not consume private-repo minutes.
+    - cron: '*/15 * * * *'
 
 permissions:
   contents: read
 
+# Never let two snapshot builds overlap and race on the same KV key.
+concurrency:
+  group: refresh-alltime
+  cancel-in-progress: false
+
 jobs:
   build-snapshot:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     name: Build and upload all-time Jira snapshot
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +37,7 @@ jobs:
           JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
         run: |
           node --experimental-strip-types scripts/refresh-alltime.ts
-          node -e "const s=require('./alltime.json'); if(!Array.isArray(s.allTimeBugs)||!Array.isArray(s.allTimeAll)) process.exit(1); console.log('snapshot ok:', s.allTimeBugs.length, 'bugs /', s.allTimeAll.length, 'all')"
+          node -e "const s=require('./alltime.json'); if(!Array.isArray(s.allTimeBugs)||!Array.isArray(s.allTimeAll)) process.exit(1); console.log('snapshot ok:', s.allTimeBugs.length, 'bugs /', s.allTimeAll.length, 'all', 'builtAt', s.builtAt)"
 
       - name: Upload compressed snapshot to KV
         env:

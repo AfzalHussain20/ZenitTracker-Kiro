@@ -43,6 +43,10 @@ export interface PersonKPI {
     qualityScore: number; closeRate: number;
     // Team labels found on their bugs
     teams: string[];
+    // Daily breakdown of bugs reported (created date, Jira-local YYYY-MM-DD)
+    daily?: Record<string, { reported: number; closed: number; open: number; inProgress: number }>;
+    // Exact bug counts for the three most recent calendar days
+    bugsToday?: number; bugsYesterday?: number; bugsPrevDay?: number;
     // Monthly breakdown
     monthly: Record<string, { reported: number; closed: number; open: number; inProgress: number; assigned: number; storyPoints: number }>;}
 
@@ -90,6 +94,8 @@ export interface KPIData {
     closedBugsCurrentMonth: number;
     liveBuildsCount: number;
     syncedAt: string; cacheAge: number; nextRefresh: number;
+    /** ISO timestamp of the all-time snapshot this data came from. */
+    snapshotBuiltAt: string | null;
     fromCache: boolean; refreshing?: boolean;
 }
 
@@ -114,6 +120,11 @@ function classify(status: string): 'open' | 'in_progress' | 'closed' {
 }
 
 function monthKey(d: string) { return d.slice(0, 7); }
+function dayKey(d: string) { return d.slice(0, 10); }
+
+function localDayKey(date: Date): string {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
 
 function monthLabel(key: string) {
     const [y, m] = key.split('-');
@@ -134,7 +145,7 @@ function emptyMonth(key: string): MonthlyStats {
 
 // ─── Process sync data → KPIs ─────────────────────────────────────────────────
 
-function processKPI(raw: any): KPIData {
+export function processKPI(raw: any): KPIData {
     const bugs: JiraIssueRaw[] = raw.bugs || [];
     const stories: JiraIssueRaw[] = raw.stories || [];
     const epics: JiraIssueRaw[] = raw.epics || [];
@@ -144,9 +155,11 @@ function processKPI(raw: any): KPIData {
     // allForSP excludes sub-tasks — sub-tasks duplicate parent story SP
     const allForSP: JiraIssueRaw[] = raw.allForSP || all.filter(i => !i.isSubTask);
     // allTimeBugs — all bugs ever reported, not sprint-scoped — for Team KPI bug counts
-    const allTimeBugs: JiraIssueRaw[] = raw.allTimeBugs || bugs;
+    // An empty array means the snapshot failed to load, so fall back to the
+    // sprint payload rather than rendering a dashboard full of zeros.
+    const allTimeBugs: JiraIssueRaw[] = Array.isArray(raw.allTimeBugs) && raw.allTimeBugs.length ? raw.allTimeBugs : bugs;
     // allTimeAll — all issues ever (bugs + stories + tasks/epics), not sprint-scoped — for member profile
-    const allTimeAll: JiraIssueRaw[] = raw.allTimeAll || allTimeBugs;
+    const allTimeAll: JiraIssueRaw[] = Array.isArray(raw.allTimeAll) && raw.allTimeAll.length ? raw.allTimeAll : allTimeBugs;
     const liveTickets: JiraIssueRaw[] = raw.liveTickets || all.filter(i => i.isLive);
 
     // ── Per-person map ──
@@ -155,14 +168,20 @@ function processKPI(raw: any): KPIData {
         bugsReported: JiraIssueRaw[];
         allAssigned: JiraIssueRaw[];
         storiesReported: number; epicsReported: number; tasksReported: number;
+        daily: Map<string, { reported: number; closed: number; open: number; inProgress: number }>;
         monthly: Map<string, { reported: number; closed: number; open: number; inProgress: number; assigned: number; storyPoints: number }>;
     };
 
     const pm = new Map<string, PersonEntry>();
 
     function get(id: string, name: string, avatar?: string): PersonEntry {
-        if (!pm.has(id)) pm.set(id, { userId: id, name, avatarUrl: avatar, bugsReported: [], allAssigned: [], storiesReported: 0, epicsReported: 0, tasksReported: 0, monthly: new Map() });
+        if (!pm.has(id)) pm.set(id, { userId: id, name, avatarUrl: avatar, bugsReported: [], allAssigned: [], storiesReported: 0, epicsReported: 0, tasksReported: 0, daily: new Map(), monthly: new Map() });
         return pm.get(id)!;
+    }
+
+    function ensureDay(p: PersonEntry, dk: string) {
+        if (!p.daily.has(dk)) p.daily.set(dk, { reported: 0, closed: 0, open: 0, inProgress: 0 });
+        return p.daily.get(dk)!;
     }
 
     function ensureMonth(p: PersonEntry, mk: string) {
@@ -176,12 +195,17 @@ function processKPI(raw: any): KPIData {
         if (b.reporter) {
             const p = get(b.reporter.accountId, b.reporter.displayName, b.reporter.avatarUrl);
             p.bugsReported.push(b);
+            const cls = classify(b.status);
             const m = ensureMonth(p, monthKey(b.created));
             m.reported++;
-            const cls = classify(b.status);
             if (cls === 'closed') m.closed++;
             else if (cls === 'in_progress') m.inProgress++;
             else m.open++; // truly To-Do only
+            const d = ensureDay(p, dayKey(b.created));
+            d.reported++;
+            if (cls === 'closed') d.closed++;
+            else if (cls === 'in_progress') d.inProgress++;
+            else d.open++;
         }
     });
 
@@ -227,6 +251,18 @@ function processKPI(raw: any): KPIData {
         const spTodo = aa.filter(i => classify(i.status) === 'open').reduce((s, i) => s + (i.storyPoints || 0), 0);
         const monthly: PersonKPI['monthly'] = {};
         p.monthly.forEach((v, k) => { monthly[k] = v; });
+        const daily: PersonKPI['daily'] = {};
+        p.daily.forEach((v, k) => { daily[k] = v; });
+
+        const today = new Date();
+        const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+        const prevDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 2);
+        const todayKey = localDayKey(today);
+        const yesterdayKey = localDayKey(yesterday);
+        const prevDayKey = localDayKey(prevDay);
+        const bugsToday = daily[todayKey]?.reported || 0;
+        const bugsYesterday = daily[yesterdayKey]?.reported || 0;
+        const bugsPrevDay = daily[prevDayKey]?.reported || 0;
 
         // Collect unique teams from the team field (customfield_10001)
         // Use the most common team as primary, list all teams they've worked with
@@ -262,6 +298,8 @@ function processKPI(raw: any): KPIData {
             qualityScore: calcQuality(br),
             closeRate: br.length > 0 ? Math.min(100, Math.round((closed / br.length) * 1000) / 10) : 0,
             teams: teamSet,
+            daily,
+            bugsToday, bugsYesterday, bugsPrevDay,
             monthly,
         };
     }).sort((a, b) => b.bugsReported - a.bugsReported);
@@ -372,6 +410,8 @@ function processKPI(raw: any): KPIData {
                         storiesReported: 0, epicsReported: 0, tasksReported: 0, totalIssues: 0,
                         qualityScore: 0, closeRate: 0,
                         teams: [team.name],
+                        daily: {},
+                        bugsToday: 0, bugsYesterday: 0, bugsPrevDay: 0,
                         monthly: {},
                     });
                     existingIds.add(member.accountId);
@@ -415,6 +455,7 @@ function processKPI(raw: any): KPIData {
         syncedAt: raw.syncedAt || new Date().toISOString(),
         cacheAge: raw.cacheAge || 0,
         nextRefresh: raw.nextRefresh || 600,
+        snapshotBuiltAt: raw.allTimeBuiltAt || null,
         fromCache: raw.fromCache || false,
         refreshing: raw.refreshing || false,
     };
@@ -451,8 +492,9 @@ export function useJiraKPI(sprintId?: string) {
             if (data.error) throw new Error(data.error);
             // Attach the all-time snapshot (fetched separately, HTTP-cached) so
             // processKPI keeps computing overall numbers without the sync route
-            // shipping a ~16 MB payload on every navigation.
-            await attachAllTime(data);
+            // shipping a ~16 MB payload on every navigation. Force refresh also
+            // busts the snapshot memo/browser cache so today's bugs appear.
+            await attachAllTime(data, force);
 
             // Merge teams data — use API teams if available, else empty (will use issue-based teams)
             if (teamsRes?.ok) {

@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { attachAllTime } from '@/lib/jira/alltime';
 import { fetchApiJson } from '@/lib/jira/fetchJson';
 import { useJiraKPI, type PersonKPI, type JiraIssueRaw } from '@/hooks/useJiraKPI';
+import { filterPeople } from '@/lib/jira/people-filter';
 import { useExport } from '@/hooks/useExport';
 import { TeamCard } from '@/components/dashboard/TeamCard';
 import JiraInsightsChat from '@/components/JiraInsightsChat';
@@ -43,6 +44,20 @@ function classifyStatus(s: string): 'open'|'in_progress'|'closed' {
 }
 
 function n(v: number|undefined|null) { return String(v ?? 0); }
+
+/** Human-friendly age for a snapshot timestamp, e.g. "4m ago". */
+function relativeTime(iso: string | null | undefined): string {
+    if (!iso) return 'unknown';
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) return 'unknown';
+    const diff = Math.max(0, Date.now() - t);
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+}
 
 function Delta({ v, hib=true, size='sm' }: { v:number; hib?:boolean; size?:'sm'|'xs' }) {
     if (v === 0) return null;
@@ -140,10 +155,72 @@ function SPBreakdown({assigned,todo,inProg,done}:{assigned:number;todo:number;in
 }
 
 
+// --- Issue List --------------------------------------------------------------
+function IssueList({ issues, emptyMsg }: { issues:JiraIssueRaw[]; emptyMsg:string }) {
+    const [q, setQ] = useState('');
+    const [status, setStatus] = useState<'all'|'open'|'in_progress'|'closed'>('all');
+
+    const filtered = useMemo(() => {
+        let list = issues;
+        if (status !== 'all') list = list.filter(i => classifyStatus(i.status) === status);
+        const query = q.trim().toLowerCase();
+        if (query) {
+            list = list.filter(i =>
+                i.key.toLowerCase().includes(query) ||
+                i.summary.toLowerCase().includes(query) ||
+                i.status.toLowerCase().includes(query) ||
+                (i.assignee?.displayName.toLowerCase().includes(query) ?? false)
+            );
+        }
+        return list;
+    }, [issues, q, status]);
+
+    return (
+        <div className="p-4 space-y-3">
+            {issues.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative flex-1 min-w-40">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground"/>
+                        <Input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search key, summary, assignee…" className="pl-8 h-8 text-xs"/>
+                    </div>
+                    <Select value={status} onValueChange={v=>setStatus(v as any)}>
+                        <SelectTrigger className="w-36 h-8 text-xs"><SelectValue/></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All statuses</SelectItem>
+                            <SelectItem value="open">To-Do</SelectItem>
+                            <SelectItem value="in_progress">In Progress</SelectItem>
+                            <SelectItem value="closed">Done</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <span className="text-xs text-muted-foreground ml-auto">{filtered.length} of {issues.length}</span>
+                </div>
+            )}
+            <div className="space-y-1.5">
+                {issues.length===0&&<div className="flex flex-col items-center justify-center py-16 text-muted-foreground"><FileText className="w-10 h-10 mb-2 opacity-20"/><div className="font-medium">{emptyMsg}</div></div>}
+                {issues.length>0&&filtered.length===0&&<div className="flex flex-col items-center justify-center py-16 text-muted-foreground"><Search className="w-10 h-10 mb-2 opacity-20"/><div className="font-medium">No issues match your search</div><button onClick={()=>{setQ('');setStatus('all');}} className="text-xs text-primary mt-2 hover:underline">Clear search</button></div>}
+                {filtered.map(issue=>(
+                    <a key={issue.id} href={issue.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-3 rounded-xl border hover:bg-muted/40 hover:border-primary/30 transition-all group">
+                        <span className="text-xs font-mono font-bold text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20 shrink-0 min-w-[76px] text-center group-hover:bg-blue-500/20">{issue.key}</span>
+                        <span className="text-[10px] bg-muted/60 px-1.5 py-0.5 rounded-md shrink-0 font-medium">{issue.issueType}</span>
+                        <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full border shrink-0',PRIORITY_STYLE[issue.priority]||PRIORITY_STYLE.Medium)}>{issue.priority}</span>
+                        <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded-md shrink-0">{issue.status}</span>
+                        {issue.isLive&&<span className="text-[10px] bg-emerald-500/15 text-emerald-700 px-1.5 py-0.5 rounded-md shrink-0 font-medium">Live</span>}
+                        {issue.storyPoints&&<span className="text-[10px] bg-violet-500/15 text-violet-700 px-1.5 py-0.5 rounded-md shrink-0">{issue.storyPoints}sp</span>}
+                        <span className="text-xs flex-1 truncate text-foreground/80">{issue.summary}</span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">{issue.created.slice(0,10)}</span>
+                        <ExternalLink className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 shrink-0"/>
+                    </a>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 // --- Member Profile Portal ---------------------------------------------------
-function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClose, onFilterBugs }: {
+function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, snapshotBuiltAt, onClose, onFilterBugs }: {
     person:PersonKPI; allIssues:JiraIssueRaw[]; sprintIssues?:JiraIssueRaw[];
     allSprints?: Array<{id:number;name:string;state:string;startDate:string|null;endDate:string|null}>;
+    snapshotBuiltAt?: string | null;
     onClose:()=>void;
     onFilterBugs?:(filters:{reporterId?:string; assigneeId?:string; statusFilter?:string; priorityFilter?:string; issueType?:string})=>void
 }) {
@@ -265,32 +342,60 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
         if(myTasks.length>0)   tabs.push({id:'tasks',   label:'Tasks',   icon:'check',count:myTasks.length});
         if(myLive.length>0)    tabs.push({id:'live',    label:'Live',    icon:'live', count:myLive.length});
         if(myAssigned.length>0)tabs.push({id:'assigned',label:'Assigned',icon:'clip', count:myAssigned.length});
+        tabs.push({id:'daily',label:'Daily',icon:'cal',count:0});
         tabs.push({id:'monthly',label:'Monthly',icon:'cal',count:0});
         return tabs;
     },[myBugs,myStories,myEpics,myTasks,myLive,myAssigned]);
 
-    const IssueList = ({ issues, emptyMsg }: { issues:JiraIssueRaw[]; emptyMsg:string }) => (
-        <div className="p-4 space-y-1.5">
-            {issues.length===0&&<div className="flex flex-col items-center justify-center py-16 text-muted-foreground"><div className="font-medium mt-3">{emptyMsg}</div></div>}
-            {issues.map(issue=>(
-                <a key={issue.id} href={issue.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-3 rounded-xl border hover:bg-muted/40 hover:border-primary/30 transition-all group">
-                    <span className="text-xs font-mono font-bold text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20 shrink-0 min-w-[76px] text-center group-hover:bg-blue-500/20">{issue.key}</span>
-                    <span className="text-[10px] bg-muted/60 px-1.5 py-0.5 rounded-md shrink-0 font-medium">{issue.issueType}</span>
-                    <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full border shrink-0',PRIORITY_STYLE[issue.priority]||PRIORITY_STYLE.Medium)}>{issue.priority}</span>
-                    <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded-md shrink-0">{issue.status}</span>
-                    {issue.isLive&&<span className="text-[10px] bg-emerald-500/15 text-emerald-700 px-1.5 py-0.5 rounded-md shrink-0 font-medium">Live</span>}
-                    {issue.storyPoints&&<span className="text-[10px] bg-violet-500/15 text-violet-700 px-1.5 py-0.5 rounded-md shrink-0">{issue.storyPoints}sp</span>}
-                    <span className="text-xs flex-1 truncate text-foreground/80">{issue.summary}</span>
-                    <span className="text-[10px] text-muted-foreground shrink-0">{issue.created.slice(0,10)}</span>
-                    <ExternalLink className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 shrink-0"/>
-                </a>
-            ))}
-        </div>
-    );
+    // ── Daily bug counts (local calendar days, matching Jira created date) ──
+    const dayKeyOf = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const daily = person.daily || {};
+    const today = new Date();
+    const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate()-1);
+    const prevDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()-2);
+    const todayKey = dayKeyOf(today);
+    const yesterdayKey = dayKeyOf(yesterday);
+    const prevDayKey = dayKeyOf(prevDay);
+    const todayCount = person.bugsToday ?? daily[todayKey]?.reported ?? 0;
+    const yesterdayCount = person.bugsYesterday ?? daily[yesterdayKey]?.reported ?? 0;
+    const prevDayCount = person.bugsPrevDay ?? daily[prevDayKey]?.reported ?? 0;
+
+    // Last 14 days of reported bugs — from the all-time snapshot's daily map.
+    const last14 = useMemo(()=>{
+        return Array.from({length:14},(_,i)=>{
+            const d=new Date(today.getFullYear(),today.getMonth(),today.getDate()-13+i);
+            const key=dayKeyOf(d);
+            return { key, label:`${d.getDate()}/${d.getMonth()+1}`, count:daily[key]?.reported||0, closed:daily[key]?.closed||0 };
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    },[daily, todayKey]);
+    const maxDaily = Math.max(...last14.map(d=>d.count),1);
+
+    // Last 30 days with full status breakdown, newest first (Daily tab).
+    const last30 = useMemo(()=>{
+        return Array.from({length:30},(_,i)=>{
+            const d=new Date(today.getFullYear(),today.getMonth(),today.getDate()-(29-i));
+            const key=dayKeyOf(d);
+            const s=daily[key];
+            return { key, label:`${d.getDate()}/${d.getMonth()+1}`, reported:s?.reported||0, closed:s?.closed||0, open:s?.open||0, inProgress:s?.inProgress||0 };
+        }).reverse();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    },[daily, todayKey]);
+    const last30Total = last30.reduce((s,d)=>s+d.reported,0);
+    const last30Closed = last30.reduce((s,d)=>s+d.closed,0);
+
+    // Escape closes the portal; lock background scroll.
+    useEffect(()=>{
+        const onKey=(e:KeyboardEvent)=>{ if(e.key==='Escape') onClose(); };
+        window.addEventListener('keydown',onKey);
+        return ()=>window.removeEventListener('keydown',onKey);
+    },[onClose]);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/70 backdrop-blur-md" onClick={onClose}>
             <motion.div initial={{opacity:0,scale:0.95,y:12}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.95,y:12}} transition={{duration:0.18,ease:[0.16,1,0.3,1]}}
+                role="dialog" aria-modal="true" aria-labelledby="member-profile-title"
                 className="bg-background border border-border/60 rounded-3xl shadow-2xl w-full max-w-3xl max-h-[95vh] overflow-hidden flex flex-col" onClick={e=>e.stopPropagation()}>
 
                 {/* HERO HEADER */}
@@ -301,7 +406,7 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
                         <div className="flex items-start gap-4">
                             <div className={cn('w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-black shadow-xl ring-2 shrink-0',av.bg,av.text,av.ring)}>{initials}</div>
                             <div className="flex-1 min-w-0 pt-0.5">
-                                <h2 className="text-xl font-bold text-white leading-tight truncate">{person.name}</h2>
+                                <h2 id="member-profile-title" className="text-xl font-bold text-white leading-tight truncate">{person.name}</h2>
                                 <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                                     {person.teams.map(t=><span key={t} className="inline-flex items-center gap-1 text-[11px] bg-white/10 text-white/80 px-2 py-0.5 rounded-full border border-white/15 font-medium">{t}</span>)}
                                     {person.teams.length===0&&<span className="text-xs text-white/40 italic">No team</span>}
@@ -351,6 +456,24 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
                                 <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-white/10 text-white/50 hover:text-white transition-all"><X className="w-5 h-5"/></button>
                             </div>
                         </div>
+                        {/* Exact daily bug counts — today / yesterday / day before */}
+                        <div className="grid grid-cols-3 gap-2 mt-4">
+                            {[
+                                {label:'Today',value:todayCount,accent:'text-orange-300'},
+                                {label:'Yesterday',value:yesterdayCount,accent:'text-amber-300'},
+                                {label:'Day before',value:prevDayCount,accent:'text-sky-300'},
+                            ].map(s=>(
+                                <div key={s.label} className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 flex items-center justify-between">
+                                    <span className="text-[10px] text-white/50 font-semibold uppercase tracking-wider">{s.label}</span>
+                                    <span className={cn('text-2xl font-black leading-none',s.accent)}>{s.value}</span>
+                                </div>
+                            ))}
+                        </div>
+                        {snapshotBuiltAt&&(
+                            <p className="text-[10px] text-white/35 mt-2 flex items-center gap-1">
+                                <Clock className="w-3 h-3"/> Jira snapshot {relativeTime(snapshotBuiltAt)} · bugs counted by created date
+                            </p>
+                        )}
                         {/* 5 KPI cards — Total SP replaces redundant SP To-Do */}
                         <div className="grid grid-cols-3 md:grid-cols-5 gap-2 mt-4">
                             {[
@@ -409,6 +532,29 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
                                     <StatCard label="Total Reported" value={myReported.length} color="text-slate-700" bg="bg-slate-500/8 border-slate-200"/>
                                     <StatCard label="Assigned" value={person.ticketsAssigned} color="text-blue-600" bg="bg-blue-500/8 border-blue-200" sub={`${person.assignedOpen} to-do, ${person.assignedInProgress} in prog`}/>
                                     <StatCard label="Live Tickets" value={myLive.length} color="text-emerald-600" bg="bg-emerald-500/8 border-emerald-200"/>
+                                </div>
+                            </div>
+
+                            {/* Last 14 days — reported bugs */}
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Last 14 Days — Bugs Reported</p>
+                                    <span className="text-[10px] text-muted-foreground">Today <strong className="text-orange-600">{todayCount}</strong> · Yesterday <strong>{yesterdayCount}</strong></span>
+                                </div>
+                                <div className="rounded-xl border bg-card p-4">
+                                    <div className="flex items-end gap-1.5" style={{height:'84px'}}>
+                                        {last14.map((d,i)=>{
+                                            const h=Math.max(Math.round((d.count/maxDaily)*64),3);
+                                            const isToday=i===last14.length-1;
+                                            return(
+                                                <div key={d.key} className="flex-1 flex flex-col items-center gap-1 group" title={`${d.key}: ${d.count} reported, ${d.closed} closed`}>
+                                                    <span className="text-[8px] text-muted-foreground leading-none h-2">{d.count||''}</span>
+                                                    <div className={cn('w-full rounded-t-md transition-colors',isToday?'bg-orange-500':'bg-primary/40 group-hover:bg-primary/70')} style={{height:`${h}px`}}/>
+                                                    <span className={cn('text-[8px] leading-none',isToday?'text-orange-600 font-bold':'text-muted-foreground')}>{d.label}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
                             </div>
 
@@ -560,6 +706,60 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, onClo
                     {tab==='tasks'&&<IssueList issues={myTasks} emptyMsg="No tasks reported"/>}
                     {tab==='live'&&<IssueList issues={myLive} emptyMsg="No live build tickets"/>}
                     {tab==='assigned'&&<IssueList issues={myAssigned} emptyMsg="No tickets assigned"/>}
+
+                    {/* DAILY TAB */}
+                    {tab==='daily'&&(
+                        <div className="p-4 space-y-4">
+                            <div className="grid grid-cols-3 gap-2">
+                                {[
+                                    {label:'Today',value:todayCount,c:'text-orange-600',bg:'bg-orange-500/8 border-orange-200'},
+                                    {label:'Yesterday',value:yesterdayCount,c:'text-amber-600',bg:'bg-amber-500/8 border-amber-200'},
+                                    {label:'Day before',value:prevDayCount,c:'text-sky-600',bg:'bg-sky-500/8 border-sky-200'},
+                                ].map(s=>(
+                                    <div key={s.label} className={cn('rounded-xl border p-3 text-center',s.bg)}>
+                                        <div className={cn('text-2xl font-black leading-none',s.c)}>{s.value}</div>
+                                        <div className="text-[10px] text-muted-foreground font-semibold mt-1">{s.label}</div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Last 30 Days</p>
+                                <span className="text-[10px] text-muted-foreground">{last30Total} reported · {last30Closed} closed</span>
+                            </div>
+
+                            <div className="rounded-xl border overflow-hidden">
+                                <table className="w-full text-xs">
+                                    <thead>
+                                        <tr className="bg-muted/40 border-b">
+                                            <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Day</th>
+                                            <th className="text-center px-2 py-2 font-semibold text-slate-600">Reported</th>
+                                            <th className="text-center px-2 py-2 font-semibold text-red-600">To-Do</th>
+                                            <th className="text-center px-2 py-2 font-semibold text-amber-600">In Progress</th>
+                                            <th className="text-center px-2 py-2 font-semibold text-green-600">Done</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {last30.map((d,i)=>(
+                                            <tr key={d.key} className={cn('border-b last:border-0',i===0&&'bg-orange-500/5',d.reported===0&&'text-muted-foreground/60')}>
+                                                <td className="px-3 py-1.5 font-medium">{d.key}{i===0&&<span className="ml-1.5 text-[9px] text-orange-600 font-bold">today</span>}</td>
+                                                <td className="px-2 py-1.5 text-center font-bold">{d.reported||'—'}</td>
+                                                <td className="px-2 py-1.5 text-center">{d.open||'—'}</td>
+                                                <td className="px-2 py-1.5 text-center">{d.inProgress||'—'}</td>
+                                                <td className="px-2 py-1.5 text-center text-green-700">{d.closed||'—'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {last30Total===0&&(
+                                <div className="flex flex-col items-center py-8 text-muted-foreground">
+                                    <Calendar className="w-10 h-10 mb-2 opacity-20"/>
+                                    <p className="text-sm font-medium">No bugs reported in the last 30 days</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* MONTHLY TAB */}
                     {tab==='monthly'&&(
@@ -1136,7 +1336,7 @@ export default function KPIDashboard() {
     const [liveTeamFilter, setLiveTeamFilter] = useState('all');
     const [teamFilter, setTeamFilter] = useState('all');
     const [memberFilter, setMemberFilter] = useState('all');
-    const [sortBy, setSortBy] = useState<'bugsReported'|'ticketsAssigned'|'storyPointsAssigned'|'closeRate'|'storiesReported'>('bugsReported');
+    const [sortBy, setSortBy] = useState<'bugsReported'|'bugsToday'|'bugsYesterday'|'ticketsAssigned'|'storyPointsAssigned'|'closeRate'|'storiesReported'>('bugsReported');
     const [issueSearch, setIssueSearch] = useState('');
     
     // Instant filters - single state, no pending/apply pattern
@@ -1306,21 +1506,8 @@ export default function KPIDashboard() {
 
     const filteredPeople = useMemo(()=>{
         if(!kpi)return[];
-        let people=kpi.people;
-        if(memberFilter!=='all'){
-            people=people.filter(p=>p.userId===memberFilter);
-        } else if(teamFilter!=='all'){
-            // Filter by team - works whether teams came from API or issue field
-            people=people.filter(p=>p.teams.includes(teamFilter));
-        }
-        if(memberSearch){const q=memberSearch.toLowerCase();people=people.filter(p=>p.name.toLowerCase().includes(q));}
-        if(filterMonth!=='all'){
-            people=people.map(p=>{
-                const m=p.monthly[filterMonth]||{reported:0,closed:0,open:0,assigned:0,storyPoints:0};
-                return{...p,bugsReported:m.reported,bugsClosed:m.closed,bugsOpen:m.open,ticketsAssigned:m.assigned,storyPointsAssigned:m.storyPoints};
-            }).filter(p=>p.bugsReported>0||p.ticketsAssigned>0||p.storyPointsAssigned>0);
-        }
-        return [...people].sort((a,b)=>(b[sortBy] as number)-(a[sortBy] as number)).map((p,i)=>({...p,rank:i+1}));
+        return filterPeople(kpi.people,{memberFilter,teamFilter,memberSearch,filterMonth,sortBy})
+            .map((p,i)=>({...p,rank:i+1}));
     },[kpi,memberSearch,memberFilter,teamFilter,filterMonth,sortBy]);
 
     const teamScopedStats = useMemo(()=>{
@@ -1544,9 +1731,10 @@ export default function KPIDashboard() {
                 <AnimatePresence>
                     <MemberProfileModal 
                         person={selectedPerson} 
-                        allIssues={kpi.allTimeIssues ?? kpi.all} 
+                        allIssues={kpi.allTimeIssues?.length ? kpi.allTimeIssues : kpi.all} 
                         sprintIssues={kpi.all}
                         allSprints={allSprints.length > 0 ? allSprints : kpi.sprints}
+                        snapshotBuiltAt={kpi.snapshotBuiltAt}
                         onClose={()=>setSelectedPerson(null)}
                         onFilterBugs={handleFilterBugsFromModal}
                     />
@@ -1566,6 +1754,13 @@ export default function KPIDashboard() {
                                 {kpi?.fromCache&&<span className="ml-2 text-amber-600 text-xs">— Cached ({kpi.cacheAge}s old)</span>}
                                 {kpi?.refreshing&&<span className="ml-2 text-blue-600 text-xs">— Refreshing...</span>}
                             </p>
+                            {kpi?.snapshotBuiltAt&&(
+                                <p className="text-xs mt-1 flex items-center gap-1.5 text-muted-foreground" title={`All-time Jira snapshot built at ${new Date(kpi.snapshotBuiltAt).toLocaleString()}`}>
+                                    <span className={cn('inline-block w-1.5 h-1.5 rounded-full', Date.now()-Date.parse(kpi.snapshotBuiltAt) < 20*60*1000 ? 'bg-green-500' : 'bg-amber-500')}/>
+                                    Jira snapshot {relativeTime(kpi.snapshotBuiltAt)}
+                                    <span className="opacity-60">· all-time counts are exact as of the last refresh</span>
+                                </p>
+                            )}
                         </div>
                     </div>
                     <div className="flex gap-2 flex-wrap">
@@ -1791,6 +1986,8 @@ export default function KPIDashboard() {
                                     <SelectTrigger className="w-44 h-8 text-xs"><SelectValue/></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="bugsReported">Sort: Bugs Reported</SelectItem>
+                                        <SelectItem value="bugsToday">Sort: Bugs Today</SelectItem>
+                                        <SelectItem value="bugsYesterday">Sort: Bugs Yesterday</SelectItem>
                                         <SelectItem value="ticketsAssigned">Sort: Tickets Assigned</SelectItem>
                                         <SelectItem value="storyPointsAssigned">Sort: SP Assigned</SelectItem>
                                         <SelectItem value="storiesReported">Sort: Stories</SelectItem>
@@ -1805,6 +2002,8 @@ export default function KPIDashboard() {
                                         Name: p.name,
                                         Team: p.teams[0]||'',
                                         'Bugs Reported': p.bugsReported,
+                                        'Bugs Today': p.bugsToday ?? 0,
+                                        'Bugs Yesterday': p.bugsYesterday ?? 0,
                                         'Bugs Open': p.bugsOpen,
                                         'Bugs Closed': p.bugsClosed,
                                         'Bugs In Progress': p.bugsInProgress,
@@ -1842,6 +2041,7 @@ export default function KPIDashboard() {
                                             <th className="text-left px-3 py-2.5 text-xs font-semibold">Member</th>
                                             {/* Bug columns */}
                                             <th className="text-center px-2 py-2.5 text-xs font-semibold text-red-600">Bugs</th>
+                                            <th className="text-center px-2 py-2.5 text-xs font-semibold text-orange-600">Today</th>
                                             <th className="text-center px-2 py-2.5 text-xs font-semibold text-red-500">Open</th>
                                             <th className="text-center px-2 py-2.5 text-xs font-semibold text-green-600">Closed</th>
                                             <th className="text-center px-2 py-2.5 text-xs font-semibold text-red-700">Critical</th>
@@ -1883,6 +2083,19 @@ export default function KPIDashboard() {
                                                     {/* Bug columns - show value or dash */}
                                                     <td className="px-2 py-2.5 text-center">
                                                         {p.bugsReported>0?<span className="font-bold text-red-600">{p.bugsReported}</span>:<span className="text-muted-foreground text-xs">&#8212;</span>}
+                                                    </td>
+                                                    {/* Today / yesterday — exact Jira created-date counts */}
+                                                    <td className="px-2 py-2.5 text-center">
+                                                        {(()=>{
+                                                            const today=p.bugsToday??0, yest=p.bugsYesterday??0;
+                                                            if(today===0&&yest===0) return <span className="text-muted-foreground text-xs">&#8212;</span>;
+                                                            return(
+                                                                <div className="flex flex-col items-center leading-tight">
+                                                                    <span className={cn('font-bold text-xs px-1.5 py-0.5 rounded',today>0?'bg-orange-500/15 text-orange-700':'text-muted-foreground')}>{today}</span>
+                                                                    <span className="text-[9px] text-muted-foreground">yest {yest}</span>
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </td>
                                                     <td className="px-2 py-2.5 text-center">
                                                         {p.bugsReported>0?<span className={cn('font-semibold text-xs px-1.5 py-0.5 rounded',p.bugsOpen>0?'bg-red-500/10 text-red-600':'text-muted-foreground')}>{p.bugsOpen}</span>:<span className="text-muted-foreground text-xs">&#8212;</span>}
@@ -1930,11 +2143,30 @@ export default function KPIDashboard() {
                                             );
                                         })}
                                     </tbody>
+                                    {filteredPeople.length===0&&(
+                                        <tfoot>
+                                            <tr>
+                                                <td colSpan={12} className="px-4 py-10 text-center">
+                                                    <div className="flex flex-col items-center gap-2">
+                                                        <Users className="w-8 h-8 text-muted-foreground/40"/>
+                                                        <p className="text-sm font-medium">No members match the current filters</p>
+                                                        <p className="text-xs text-muted-foreground">
+                                                            {filterMonth!=='all'?'Nobody has activity in this month. Try “All Time” or clear the filters.':'Adjust the team, member, or search filter.'}
+                                                        </p>
+                                                        <Button variant="outline" size="sm" className="mt-1" onClick={()=>{setTeamFilter('all');setMemberFilter('all');setMemberSearch('');setFilterMonth('all');}}>
+                                                            <X className="w-3.5 h-3.5 mr-1"/> Clear all filters
+                                                        </Button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </tfoot>
+                                    )}
                                     {filteredPeople.length>0&&(
                                         <tfoot>
                                             <tr className="border-t-2 bg-muted/50 font-bold">
-                                                <td colSpan={3} className="px-3 py-2.5 text-xs text-muted-foreground">TOTAL ({filteredPeople.length} members)</td>
+                                                <td colSpan={4} className="px-3 py-2.5 text-xs text-muted-foreground">TOTAL ({filteredPeople.length} members)</td>
                                                 <td className="px-2 py-2.5 text-center text-red-600">{filteredPeople.reduce((s,p)=>s+p.bugsReported,0)}</td>
+                                                <td className="px-2 py-2.5 text-center text-orange-600">{filteredPeople.reduce((s,p)=>s+(p.bugsToday??0),0)}</td>
                                                 <td className="px-2 py-2.5 text-center text-red-500">{filteredPeople.reduce((s,p)=>s+p.bugsOpen,0)}</td>
                                                 <td className="px-2 py-2.5 text-center text-green-600">{filteredPeople.reduce((s,p)=>s+p.bugsClosed,0)}</td>
                                                 <td className="px-2 py-2.5 text-center text-red-700">{filteredPeople.reduce((s,p)=>s+p.bugsCritical,0)}</td>

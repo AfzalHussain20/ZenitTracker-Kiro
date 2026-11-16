@@ -25,7 +25,11 @@ export async function GET(_req: NextRequest) {
             status: 200,
             headers: {
                 'Content-Type': 'application/json',
-                'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
+                // The snapshot itself is rebuilt every 15 minutes by the
+                // refresh-alltime workflow. Keep the browser cache short so a
+                // tab that stays open picks up new bugs quickly; stale-while-
+                // revalidate keeps navigation instant.
+                'Cache-Control': 'public, max-age=60, stale-while-revalidate=300',
             },
         });
     } catch {
