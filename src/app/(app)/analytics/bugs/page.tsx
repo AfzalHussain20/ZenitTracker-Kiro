@@ -2164,7 +2164,7 @@ export default function KPIDashboard() {
                                     {filteredPeople.length>0&&(
                                         <tfoot>
                                             <tr className="border-t-2 bg-muted/50 font-bold">
-                                                <td colSpan={4} className="px-3 py-2.5 text-xs text-muted-foreground">TOTAL ({filteredPeople.length} members)</td>
+                                                <td colSpan={2} className="px-3 py-2.5 text-xs text-muted-foreground">TOTAL ({filteredPeople.length} members)</td>
                                                 <td className="px-2 py-2.5 text-center text-red-600">{filteredPeople.reduce((s,p)=>s+p.bugsReported,0)}</td>
                                                 <td className="px-2 py-2.5 text-center text-orange-600">{filteredPeople.reduce((s,p)=>s+(p.bugsToday??0),0)}</td>
                                                 <td className="px-2 py-2.5 text-center text-red-500">{filteredPeople.reduce((s,p)=>s+p.bugsOpen,0)}</td>
