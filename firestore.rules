@@ -6,6 +6,18 @@ service cloud.firestore {
         return request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'lead';
     }
 
+    // Sun Network staff. Used to protect company-wide collections while
+    // external accounts can still use their own sessions and notes.
+    function isInternal() {
+        return request.auth != null
+            && request.auth.token.email is string
+            && request.auth.token.email.matches('.*@sunnetwork[.]in$');
+    }
+
+    function changedKeys() {
+        return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
     // True when the caller is an invited tester on this session.
     function isSessionTester() {
         return request.auth != null
@@ -29,7 +41,18 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if request.auth.uid == userId || isLead();
-      allow write: if request.auth.uid == userId;
+      // A user may create their own profile, but cannot grant themselves a
+      // privileged role or a paid plan. Only staff may start on enterprise.
+      allow create: if request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.role == 'tester'
+        && (request.resource.data.plan == 'free'
+            || (isInternal() && request.resource.data.plan == 'enterprise'));
+      // Role, plan and org membership are server-managed. Without this, any
+      // signed-in user could promote themselves to lead or enterprise.
+      allow update: if request.auth.uid == userId
+        && !changedKeys().hasAny(['role', 'plan', 'orgId', 'orgRole', 'orgName', 'subscription']);
+      allow delete: if isLead();
     }
     
     match /testSessions/{sessionId} {
@@ -45,7 +68,7 @@ service cloud.firestore {
     }
 
     match /managedTestCases/{testCaseId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isInternal();
     }
 
     match /tasks/{taskId} {
@@ -56,9 +79,7 @@ service cloud.firestore {
     }
 
     match /bugs/{bugId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null;
+      allow read, write: if isInternal();
     }
 
     match /testCaseGenerations/{pageId} {
@@ -85,27 +106,32 @@ service cloud.firestore {
     }
 
     // Worklogs and cached team metrics used by the KPI/analytics screens.
+    // These contain company-wide performance data.
     match /worklogs/{worklogId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isInternal();
     }
 
     match /team_metrics_cache/{cacheId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isInternal();
     }
 
-    // Keepr device registry and audit log.
+    // Keepr device registry and audit log (company hardware).
     match /keepr_devices/{deviceId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isInternal();
+    }
+
+    match /keepr_history/{historyId} {
+      allow read, write: if isInternal();
     }
 
     match /keepr_audit_logs/{logId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isInternal();
     }
 
     // Certificates back the public /verify/{id} page, so reads must be public.
     match /certificates/{certId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if isInternal();
     }
   }
 }

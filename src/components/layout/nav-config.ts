@@ -20,6 +20,8 @@ export interface NavItem {
   icon: NavIcon;
   /** Only shown to users with the `lead` role. */
   leadOnly?: boolean;
+  /** Only shown to Sun Network staff (company Jira/Confluence data). */
+  internalOnly?: boolean;
 }
 
 export interface NavGroup {
@@ -44,7 +46,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Quality',
-    items: [{ title: 'Jira KPI', href: '/analytics/bugs', icon: BarChart3 }],
+    items: [{ title: 'Jira KPI', href: '/analytics/bugs', icon: BarChart3, internalOnly: true }],
   },
   {
     label: 'Workspace',

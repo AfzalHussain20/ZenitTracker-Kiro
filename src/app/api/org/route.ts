@@ -2,28 +2,43 @@
  * Organization API
  * POST — Create a new organization (called during onboarding)
  * GET  — Get the current user's organization
+ *
+ * Identity comes from the signed session, never from the request body. The
+ * previous version trusted `uid` and `plan` from the client, which let anyone
+ * create an "enterprise" org for any account.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCompatDb } from '@/lib/firebase-compat';
-import { PLAN_LIMITS, type PlanTier } from '@/types/organization';
+import { PLAN_LIMITS } from '@/types/organization';
+import { getRequestUser, unauthorized, isInternalEmail } from '@/lib/server/request-auth';
 
 const ORG_COLLECTION = 'organizations';
 const MEMBERS_SUB = 'members';
 
 export async function POST(req: NextRequest) {
-    const body = await req.json();
-    const { name, uid, email, displayName, plan = 'free' } = body;
+    const user = await getRequestUser(req);
+    if (!user) return unauthorized();
 
-    if (!name?.trim() || !uid || !email) {
-        return NextResponse.json({ error: 'Missing name, uid, or email' }, { status: 400 });
+    const body = await req.json().catch(() => ({}));
+    const { name, displayName } = body;
+    const uid = user.uid;
+    const email = user.email;
+
+    if (!name?.trim() || !email) {
+        return NextResponse.json({ error: 'Missing organization name' }, { status: 400 });
     }
 
     const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const serverNow = new Date().toISOString();
-    const tier = (plan as PlanTier) || 'free';
 
     try {
         const db = getCompatDb();
+
+        // One organization per user unless they are staff (support accounts).
+        const profile = await db.collection('users').doc(uid).get();
+        if (profile.data()?.orgId && !isInternalEmail(email)) {
+            return NextResponse.json({ error: 'You already belong to an organization' }, { status: 409 });
+        }
 
         // Check slug uniqueness
         const existing = await db.collection(ORG_COLLECTION).where('slug', '==', slug).limit(1).get();
@@ -31,6 +46,9 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'An organization with that name already exists' }, { status: 409 });
         }
 
+        // New organizations always start on the free plan. Paid plans are only
+        // granted through /api/billing/activate after payment.
+        const tier = 'free' as const;
         const orgData = {
             name: name.trim(),
             slug,
@@ -43,7 +61,6 @@ export async function POST(req: NextRequest) {
         const orgRef = await db.collection(ORG_COLLECTION).add(orgData);
         const orgId = orgRef.id;
 
-        // Add creator as owner member
         await orgRef.collection(MEMBERS_SUB).doc(uid).set({
             uid,
             email,
@@ -52,7 +69,6 @@ export async function POST(req: NextRequest) {
             joinedAt: serverNow,
         });
 
-        // Update user profile with orgId
         await db.collection('users').doc(uid).set(
             { orgId, orgRole: 'owner', orgName: name.trim() },
             { merge: true }
@@ -65,15 +81,17 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-    const { searchParams } = new URL(req.url);
-    const uid = searchParams.get('uid');
+    const user = await getRequestUser(req);
+    if (!user) return unauthorized();
 
-    if (!uid) return NextResponse.json({ error: 'Missing uid' }, { status: 400 });
+    // Staff may inspect another user's org for support; everyone else can only
+    // read their own.
+    const requestedUid = new URL(req.url).searchParams.get('uid');
+    const uid = requestedUid && isInternalEmail(user.email) ? requestedUid : user.uid;
 
     try {
         const db = getCompatDb();
 
-        // Find user's org from their profile
         const userDoc = await db.collection('users').doc(uid).get();
         const orgId = userDoc.data()?.orgId;
 
@@ -82,7 +100,6 @@ export async function GET(req: NextRequest) {
         const orgDoc = await db.collection(ORG_COLLECTION).doc(orgId).get();
         if (!orgDoc.exists) return NextResponse.json({ org: null, members: [] });
 
-        // Get members
         const membersSnap = await orgDoc.ref.collection(MEMBERS_SUB).get();
         const members = membersSnap.docs.map(d => d.data());
 

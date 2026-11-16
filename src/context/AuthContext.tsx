@@ -8,6 +8,7 @@ import { auth, db } from '@/lib/firebaseConfig';
 import type { UserProfile } from '@/types';
 import type { PlanTier } from '@/types/organization';
 import { getEntitlements, isInternalEmail, type Entitlements } from '@/lib/entitlements';
+import { establishSession, clearSession } from '@/lib/session-client';
 
 interface AuthContextType {
   user: User | null;
@@ -49,8 +50,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const unsubscribe = onAuthStateChanged(auth, async (user) => {
         setUser(user);
         if (user) {
-          // Refresh the session cookie so middleware doesn't expire it mid-session
-          document.cookie = "firebase-auth-session=true; path=/; max-age=86400";
+          // Exchange the Firebase ID token for a signed, HttpOnly session
+          // cookie. Awaited so API calls made right after mount are authorised.
+          await establishSession(user);
           setDisplayName(user.displayName?.split(' ')[0] || user.email?.split('@')[0] || 'Tester');
           setLoading(false);
           // Fetch Firestore profile in background — doesn't block render
@@ -75,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setDisplayName(user.displayName?.split(' ')[0] || user.email?.split('@')[0] || 'Tester');
           }
         } else {
+          await clearSession();
           setUserRole(null);
           setDisplayName('');
           setStoredPlan(null);

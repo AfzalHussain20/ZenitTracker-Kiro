@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCompatDb } from '@/lib/firebase-compat';
+import { getRequestUser, unauthorized } from '@/lib/server/request-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,8 +20,14 @@ const COLLECTION = 'analytics_events';
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getRequestUser(req);
+    if (!user) return unauthorized();
+
     const body = await req.json();
-    const { eventName, properties = {}, userId, userName, domain = 'user_action', sessionId } = body;
+    const { eventName, properties = {}, userName, domain = 'user_action', sessionId } = body;
+    // Never trust a client-supplied userId — it would let anyone forge another
+    // person's activity.
+    const userId = user.uid;
 
     if (!eventName) {
       return NextResponse.json({ error: 'eventName is required' }, { status: 400 });

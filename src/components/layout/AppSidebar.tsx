@@ -22,7 +22,7 @@ import { NAV_GROUPS, getActiveHref } from './nav-config';
 
 export default function AppSidebar() {
   const pathname = usePathname();
-  const { userRole } = useAuth();
+  const { userRole, isInternal } = useAuth();
   const { setOpenMobile } = useSidebar();
   const activeHref = getActiveHref(pathname);
 
@@ -47,7 +47,9 @@ export default function AppSidebar() {
 
       <SidebarContent>
         {NAV_GROUPS.map((group) => {
-          const items = group.items.filter((item) => !item.leadOnly || userRole === 'lead');
+          const items = group.items.filter(
+            (item) => (!item.leadOnly || userRole === 'lead') && (!item.internalOnly || isInternal),
+          );
           if (items.length === 0) return null;
           return (
             <SidebarGroup key={group.label}>

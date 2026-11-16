@@ -31,6 +31,7 @@ import {
   type DocumentReference,
   type QueryConstraint,
 } from 'firebase/firestore/lite';
+import { createAdminCompatDb, hasAdminCredentials } from '@/lib/server/firestore-admin';
 
 // ─── Initialize Firebase once ─────────────────────────────────────────────────
 function getFirebaseApp(): FirebaseApp {
@@ -252,6 +253,14 @@ function buildBatch(fsDb: Firestore): CompatBatch {
  *   const snap = await db.collection('things').doc('id').get();
  */
 export function getCompatDb(): CompatDb {
+  // Server code must act as the service account. The browser SDK used here is
+  // anonymous, so security rules rejected every write ("Missing or insufficient
+  // permissions"). The REST adapter authenticates with the service account and
+  // keeps the same v8-style API.
+  if (hasAdminCredentials()) {
+    return createAdminCompatDb();
+  }
+
   const fsDb = getFirestore(getFirebaseApp());
 
   return {

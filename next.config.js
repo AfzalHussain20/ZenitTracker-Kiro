@@ -11,6 +11,28 @@ const nextConfig = {
   },
   // Do not ship full source maps to clients in production.
   productionBrowserSourceMaps: false,
+  // Do not advertise the framework.
+  poweredByHeader: false,
+  // Baseline security headers. CSP is intentionally omitted for now: Next's
+  // inline bootstrap scripts need nonces/hashes, and a wrong CSP silently
+  // breaks the app. These headers are safe and close common clickjacking,
+  // MIME-sniffing and referrer-leak issues.
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
+          { key: 'X-DNS-Prefetch-Control', value: 'on' },
+        ],
+      },
+    ];
+  },
   images: {
     unoptimized: true,
     remotePatterns: [

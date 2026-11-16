@@ -1,19 +1,28 @@
 /**
  * Accept Invite API
  * POST — Accept an org invite (adds user as member)
+ *
+ * The accepting identity and email come from the signed session, so an invite
+ * cannot be claimed by someone else.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCompatDb } from '@/lib/firebase-compat';
+import { getRequestUser, unauthorized } from '@/lib/server/request-auth';
 
 const INVITES_COLLECTION = 'org_invites';
 const ORG_COLLECTION = 'organizations';
 
 export async function POST(req: NextRequest) {
-    const body = await req.json();
-    const { inviteId, uid, email, displayName } = body;
+    const user = await getRequestUser(req);
+    if (!user) return unauthorized();
 
-    if (!inviteId || !uid || !email) {
-        return NextResponse.json({ error: 'Missing inviteId, uid, or email' }, { status: 400 });
+    const body = await req.json().catch(() => ({}));
+    const { inviteId, displayName } = body;
+    const uid = user.uid;
+    const email = user.email;
+
+    if (!inviteId || !email) {
+        return NextResponse.json({ error: 'Missing inviteId' }, { status: 400 });
     }
 
     try {
@@ -26,9 +35,10 @@ export async function POST(req: NextRequest) {
         const invite = inviteSnap.data()!;
 
         if (invite.status !== 'pending') return NextResponse.json({ error: 'Invite already used or expired' }, { status: 400 });
-        if (invite.email !== email.toLowerCase()) return NextResponse.json({ error: 'Email mismatch' }, { status: 403 });
+        if (String(invite.email).toLowerCase() !== email.toLowerCase()) {
+            return NextResponse.json({ error: 'This invite belongs to a different email address' }, { status: 403 });
+        }
 
-        // Check expiry
         if (new Date(invite.expiresAt) < new Date()) {
             await inviteRef.update({ status: 'expired' });
             return NextResponse.json({ error: 'Invite expired' }, { status: 410 });
@@ -37,7 +47,6 @@ export async function POST(req: NextRequest) {
         const serverNow = new Date().toISOString();
         const orgId = invite.orgId;
 
-        // Add as member
         await db.collection(ORG_COLLECTION).doc(orgId).collection('members').doc(uid).set({
             uid,
             email: email.toLowerCase(),
@@ -46,13 +55,11 @@ export async function POST(req: NextRequest) {
             joinedAt: serverNow,
         });
 
-        // Update user profile
         await db.collection('users').doc(uid).set(
             { orgId, orgRole: invite.role || 'member', orgName: invite.orgName || '' },
             { merge: true }
         );
 
-        // Mark invite accepted
         await inviteRef.update({ status: 'accepted', acceptedAt: serverNow });
 
         return NextResponse.json({ success: true, orgId });

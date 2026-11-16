@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCompatDb } from '@/lib/firebase-compat';
+import { getRequestUser, unauthorized, isInternalEmail } from '@/lib/server/request-auth';
 
-// GET /api/notes — list notes (with optional search/filter)
+// GET /api/notes — list the signed-in user's notes (with optional search/filter)
 export async function GET(req: NextRequest) {
   try {
+    const user = await getRequestUser(req);
+    if (!user) return unauthorized();
+
     const adminDb = getCompatDb();
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get('userId');
+    const requestedUserId = searchParams.get('userId');
+    const userId = requestedUserId && isInternalEmail(user.email) ? requestedUserId : user.uid;
     const search = searchParams.get('search')?.toLowerCase();
     const category = searchParams.get('category');
     const tag = searchParams.get('tag');
@@ -68,13 +73,13 @@ export async function GET(req: NextRequest) {
 // POST /api/notes — create a new note
 export async function POST(req: NextRequest) {
   try {
+    const user = await getRequestUser(req);
+    if (!user) return unauthorized();
+
     const adminDb = getCompatDb();
     const body = await req.json();
-    const { title, content, plainText, tags, userId, userName, category, linkedBugs, linkedSession, pinned } = body;
-
-    if (!userId) {
-      return NextResponse.json({ error: 'userId required' }, { status: 400 });
-    }
+    const { title, content, plainText, tags, userName, category, linkedBugs, linkedSession, pinned } = body;
+    const userId = user.uid;
 
     // Allow saving even with empty content (for drafts)
     const now = new Date();

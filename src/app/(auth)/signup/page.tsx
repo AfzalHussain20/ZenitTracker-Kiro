@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
@@ -10,6 +10,8 @@ import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebaseConfig';
 import { signInWithGoogle } from '@/lib/google-auth';
+import { establishSession } from '@/lib/session-client';
+import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,10 +43,16 @@ type SignupFormValues = z.infer<typeof signupSchema>;
 export default function SignupPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { user, loading } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
+  // Refresh the signed cookie for an already-authenticated visitor.
+  useEffect(() => {
+    if (!loading && user) router.replace('/dashboard');
+  }, [loading, user, router]);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<SignupFormValues>({
     resolver: zodResolver(signupSchema),
@@ -68,7 +76,7 @@ export default function SignupPage() {
         createdAt: new Date(),
       });
 
-      document.cookie = "firebase-auth-session=true; path=/; max-age=86400";
+      await establishSession(userCredential.user);
       try { sessionStorage.setItem('zenit:play-splash', '1'); } catch { /* ignore */ }
       toast({ title: "Account created!", description: "Welcome to Zenit Tracker" });
 
@@ -92,7 +100,7 @@ export default function SignupPage() {
     setError(null);
     try {
       const { user, nextPath } = await signInWithGoogle();
-      document.cookie = "firebase-auth-session=true; path=/; max-age=86400";
+      await establishSession(user);
       try { sessionStorage.setItem('zenit:play-splash', '1'); } catch { /* ignore */ }
       toast({
         title: "Signed in with Google",

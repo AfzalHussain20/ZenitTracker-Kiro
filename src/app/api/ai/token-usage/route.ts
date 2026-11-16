@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getInMemoryStats } from '@/lib/ai/token-tracker';
 import { getCompatDb } from '@/lib/firebase-compat';
+import { getRequestUser, unauthorized, forbidden, isInternalEmail } from '@/lib/server/request-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,10 @@ export const dynamic = 'force-dynamic';
  *   ?days=7  — how many days of daily history to include (default: 7)
  */
 export async function GET(req: NextRequest) {
+  const user = await getRequestUser(req);
+  if (!user) return unauthorized();
+  if (!isInternalEmail(user.email)) return forbidden('Staff only');
+
   try {
     const { searchParams } = new URL(req.url);
     const days = Math.min(parseInt(searchParams.get('days') || '7', 10), 30);

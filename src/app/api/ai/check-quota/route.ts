@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { keyPool } from '@/lib/ai/providers/key-pool';
 import { getCompatDb } from '@/lib/firebase-compat';
+import { getRequestUser, unauthorized, forbidden, isInternalEmail } from '@/lib/server/request-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +13,11 @@ export const dynamic = 'force-dynamic';
  * 2. Firestore ai_token_usage_daily — today's persistent call/token counts
  *    This survives across serverless cold starts unlike in-memory stats.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const user = await getRequestUser(req);
+  if (!user) return unauthorized();
+  if (!isInternalEmail(user.email)) return forbidden('Staff only');
+
   try {
     const poolStats = keyPool.getStats();
 

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { collection, getDocs, orderBy, limit as limitQuery, query } from 'firebase/firestore';
 import { getCompatDb } from '@/lib/firebase-compat';
 
 export const dynamic = 'force-dynamic';
@@ -13,12 +12,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ investigations: [], error: 'Firestore not configured' });
     }
 
-    const db = getCompatDb()._native;
+    const db = getCompatDb();
 
     const limitParam = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '20', 10), 50);
-    const investigationRef = collection(db, 'investigation_index');
-    const q = query(investigationRef, orderBy('generatedAt', 'desc'), limitQuery(limitParam));
-    const snap = await getDocs(q);
+    const snap = await db
+      .collection('investigation_index')
+      .orderBy('generatedAt', 'desc')
+      .limit(limitParam)
+      .get();
 
     const investigations: any[] = [];
     snap.forEach(doc => investigations.push({ id: doc.id, ...doc.data() }));

@@ -1,32 +1,50 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
 import { getCompatDb } from '@/lib/firebase-compat';
+import { getRequestUser, unauthorized, forbidden, isInternalEmail } from '@/lib/server/request-auth';
 
-// GET /api/notes/[id] â€” get single note
+async function loadOwnedNote(id: string, uid: string, email: string) {
+  const db = getCompatDb();
+  const doc = await db.collection('zenit_notes').doc(id).get();
+  if (!doc.exists) return { error: 'not_found' as const };
+  const data = doc.data() || {};
+  if (data.userId !== uid && !isInternalEmail(email)) return { error: 'forbidden' as const };
+  return { doc, data };
+}
+
+// GET /api/notes/[id] — get single note
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getRequestUser(req);
+    if (!user) return unauthorized();
+
     const { id } = await params;
-    const adminDb = getCompatDb();
-    const doc = await adminDb.collection('zenit_notes').doc(id).get();
-    if (!doc.exists) {
-      return NextResponse.json({ error: 'Note not found' }, { status: 404 });
-    }
-    const data = doc.data();
+    const result = await loadOwnedNote(id, user.uid, user.email);
+    if (result.error === 'not_found') return NextResponse.json({ error: 'Note not found' }, { status: 404 });
+    if (result.error === 'forbidden') return forbidden();
+
+    const data = result.data!;
     return NextResponse.json({
-      id: doc.id,
+      id: result.doc!.id,
       ...data,
-      createdAt: data?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      updatedAt: data?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+      createdAt: data?.createdAt?.toDate?.()?.toISOString() || data?.createdAt || new Date().toISOString(),
+      updatedAt: data?.updatedAt?.toDate?.()?.toISOString() || data?.updatedAt || new Date().toISOString(),
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Failed to fetch note' }, { status: 500 });
   }
 }
 
-// PATCH /api/notes/[id] â€” update note
+// PATCH /api/notes/[id] — update note
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getRequestUser(req);
+    if (!user) return unauthorized();
+
     const { id } = await params;
-    const adminDb = getCompatDb();
+    const result = await loadOwnedNote(id, user.uid, user.email);
+    if (result.error === 'not_found') return NextResponse.json({ error: 'Note not found' }, { status: 404 });
+    if (result.error === 'forbidden') return forbidden();
+
     const body = await req.json();
     const { title, content, plainText, tags, category, pinned, archived, linkedBugs } = body;
 
@@ -40,7 +58,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (archived !== undefined) updateData.archived = archived;
     if (linkedBugs !== undefined) updateData.linkedBugs = linkedBugs;
 
-    await adminDb.collection('zenit_notes').doc(id).update(updateData);
+    await getCompatDb().collection('zenit_notes').doc(id).update(updateData);
 
     return NextResponse.json({ success: true, id });
   } catch (error: any) {
@@ -48,12 +66,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 }
 
-// DELETE /api/notes/[id] â€” soft delete (archive)
+// DELETE /api/notes/[id] — soft delete (archive)
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getRequestUser(req);
+    if (!user) return unauthorized();
+
     const { id } = await params;
-    const adminDb = getCompatDb();
-    await adminDb.collection('zenit_notes').doc(id).update({
+    const result = await loadOwnedNote(id, user.uid, user.email);
+    if (result.error === 'not_found') return NextResponse.json({ error: 'Note not found' }, { status: 404 });
+    if (result.error === 'forbidden') return forbidden();
+
+    await getCompatDb().collection('zenit_notes').doc(id).update({
       archived: true,
       updatedAt: new Date(),
     });

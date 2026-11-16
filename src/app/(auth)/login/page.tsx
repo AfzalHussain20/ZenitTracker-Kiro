@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
@@ -9,6 +9,8 @@ import * as z from 'zod';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebaseConfig';
 import { signInWithGoogle } from '@/lib/google-auth';
+import { establishSession } from '@/lib/session-client';
+import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,9 +37,16 @@ const GoogleIcon = () => (
 export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { user, loading } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  // If Firebase still has a persisted user (e.g. an older session cookie),
+  // AuthContext has just minted a fresh signed cookie — continue to the app.
+  useEffect(() => {
+    if (!loading && user) router.replace('/dashboard');
+  }, [loading, user, router]);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -46,8 +55,8 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginFormValues) => {
     setError(null);
     try {
-      await signInWithEmailAndPassword(auth, data.email, data.password);
-      document.cookie = "firebase-auth-session=true; path=/; max-age=86400";
+      const credential = await signInWithEmailAndPassword(auth, data.email, data.password);
+      await establishSession(credential.user);
       try { sessionStorage.setItem('zenit:play-splash', '1'); } catch { /* ignore */ }
       toast({ title: "Welcome back!", description: "Login successful" });
       router.replace('/dashboard');
@@ -79,7 +88,7 @@ export default function LoginPage() {
     setError(null);
     try {
       const { user, nextPath } = await signInWithGoogle();
-      document.cookie = "firebase-auth-session=true; path=/; max-age=86400";
+      await establishSession(user);
       try { sessionStorage.setItem('zenit:play-splash', '1'); } catch { /* ignore */ }
       toast({ title: "Welcome!", description: `Logged in as ${user.displayName || user.email || 'Zenit user'}` });
       router.replace(nextPath);

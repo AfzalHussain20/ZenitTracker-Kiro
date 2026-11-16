@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebaseConfig';
 import { useAuth } from '@/context/AuthContext';
+import { clearSession } from '@/lib/session-client';
 import { useTheme } from 'next-themes';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -46,7 +47,7 @@ import TokenQuotaBadge from '@/components/ai/TokenQuotaBadge';
 import { NAV_GROUPS, getActiveHref } from './nav-config';
 
 export default function AppTopbar() {
-  const { user, userRole } = useAuth();
+  const { user, userRole, isInternal } = useAuth();
   const { setTheme, theme } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
@@ -68,8 +69,8 @@ export default function AppTopbar() {
   }, []);
 
   const handleLogout = async () => {
+    await clearSession();
     await signOut(auth);
-    document.cookie = 'firebase-auth-session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     router.push('/login');
   };
 
@@ -82,7 +83,9 @@ export default function AppTopbar() {
 
   const visibleGroups = NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => !item.leadOnly || userRole === 'lead'),
+    items: group.items.filter(
+      (item) => (!item.leadOnly || userRole === 'lead') && (!item.internalOnly || isInternal),
+    ),
   })).filter((group) => group.items.length > 0);
 
   return (
@@ -125,7 +128,7 @@ export default function AppTopbar() {
         <Search className="h-4 w-4" />
       </Button>
 
-      <TokenQuotaBadge />
+      {isInternal && <TokenQuotaBadge />}
 
       <Button
         variant="ghost"
