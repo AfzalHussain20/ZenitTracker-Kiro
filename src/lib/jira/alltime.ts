@@ -7,6 +7,7 @@
  * first loaded. `force` bypasses both the memo and the browser HTTP cache.
  */
 import { fetchApiJson } from './fetchJson';
+import { fetchRecentIssues } from './recent';
 
 export interface AllTimeSnapshot {
     allTimeBugs: any[];
@@ -34,13 +35,45 @@ export function fetchAllTime(force = false): Promise<AllTimeSnapshot | null> {
     return pending;
 }
 
-/** Attach the all-time snapshot to a raw sync payload (mutates and returns `raw`). */
+function laterIso(a: string | null | undefined, b: string | null | undefined): string | null {
+    if (!a) return b ?? null;
+    if (!b) return a;
+    return Date.parse(a) >= Date.parse(b) ? a : b;
+}
+
+/**
+ * Attach the all-time snapshot to a raw sync payload (mutates and returns `raw`).
+ *
+ * A small live "recent" window is overlaid on the snapshot so today's and
+ * yesterday's counts do not depend on the scheduled rebuild being on time.
+ * Issues are deduplicated by id, so the overlay can never double-count.
+ */
 export async function attachAllTime<T extends Record<string, any>>(raw: T, force = false): Promise<T> {
-    const snap = await fetchAllTime(force);
-    if (snap) {
-        (raw as Record<string, any>).allTimeBugs = snap.allTimeBugs;
-        (raw as Record<string, any>).allTimeAll = snap.allTimeAll;
-        (raw as Record<string, any>).allTimeBuiltAt = snap.builtAt ?? null;
-    }
+    const [snap, recent] = await Promise.all([
+        fetchAllTime(force),
+        fetchRecentIssues(7, force),
+    ]);
+
+    if (!snap) return raw;
+
+    const mergedBugs = [...snap.allTimeBugs];
+    const mergedAll = [...snap.allTimeAll];
+    const bugIds = new Set(mergedBugs.map((i: any) => i.id));
+    const allIds = new Set(mergedAll.map((i: any) => i.id));
+
+    (recent?.issues || []).forEach((issue: any) => {
+        if (issue?.issueType === 'Bug' && !bugIds.has(issue.id)) {
+            mergedBugs.push(issue);
+            bugIds.add(issue.id);
+        }
+        if (!allIds.has(issue.id)) {
+            mergedAll.push(issue);
+            allIds.add(issue.id);
+        }
+    });
+
+    (raw as Record<string, any>).allTimeBugs = mergedBugs;
+    (raw as Record<string, any>).allTimeAll = mergedAll;
+    (raw as Record<string, any>).allTimeBuiltAt = laterIso(snap.builtAt, recent?.fetchedAt);
     return raw;
 }

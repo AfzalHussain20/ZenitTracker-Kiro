@@ -471,7 +471,7 @@ function MemberProfileModal({ person, allIssues, sprintIssues, allSprints, snaps
                         </div>
                         {snapshotBuiltAt&&(
                             <p className="text-[10px] text-white/35 mt-2 flex items-center gap-1">
-                                <Clock className="w-3 h-3"/> Jira snapshot {relativeTime(snapshotBuiltAt)} · bugs counted by created date
+                                <Clock className="w-3 h-3"/> Jira data {relativeTime(snapshotBuiltAt)} · counted by created date
                             </p>
                         )}
                         {/* 5 KPI cards — Total SP replaces redundant SP To-Do */}
@@ -1757,8 +1757,8 @@ export default function KPIDashboard() {
                             {kpi?.snapshotBuiltAt&&(
                                 <p className="text-xs mt-1 flex items-center gap-1.5 text-muted-foreground" title={`All-time Jira snapshot built at ${new Date(kpi.snapshotBuiltAt).toLocaleString()}`}>
                                     <span className={cn('inline-block w-1.5 h-1.5 rounded-full', Date.now()-Date.parse(kpi.snapshotBuiltAt) < 20*60*1000 ? 'bg-green-500' : 'bg-amber-500')}/>
-                                    Jira snapshot {relativeTime(kpi.snapshotBuiltAt)}
-                                    <span className="opacity-60">· all-time counts are exact as of the last refresh</span>
+                                    Jira data {relativeTime(kpi.snapshotBuiltAt)}
+                                    <span className="opacity-60">· last 7 days refreshed live</span>
                                 </p>
                             )}
                         </div>
