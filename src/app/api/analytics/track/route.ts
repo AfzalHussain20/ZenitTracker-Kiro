@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCompatDb } from '@/lib/firebase-compat';
-import { getRequestUser, unauthorized } from '@/lib/server/request-auth';
+import {
+  getRequestUser,
+  unauthorized,
+  forbidden,
+  isInternalEmail,
+} from '@/lib/server/request-auth';
 
 export const dynamic = 'force-dynamic';
 
 const COLLECTION = 'analytics_events';
+// A single event should be tiny. Refuse anything that could be used to stuff
+// the collection with large blobs.
+const MAX_BODY_BYTES = 8 * 1024;
+const MAX_EVENT_NAME = 120;
+const MAX_PROPERTIES_BYTES = 4 * 1024;
 
 /**
  * POST /api/analytics/track
@@ -23,31 +33,58 @@ export async function POST(req: NextRequest) {
     const user = await getRequestUser(req);
     if (!user) return unauthorized();
 
-    const body = await req.json();
-    const { eventName, properties = {}, userName, domain = 'user_action', sessionId } = body;
-    // Never trust a client-supplied userId — it would let anyone forge another
-    // person's activity.
-    const userId = user.uid;
+    const raw = await req.text();
+    if (raw.length > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: 'Event payload too large' }, { status: 413 });
+    }
 
-    if (!eventName) {
+    let body: any;
+    try {
+      body = JSON.parse(raw || '{}');
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+
+    const { eventName, properties = {}, domain = 'user_action', sessionId } = body;
+    // Never trust client-supplied identity: `userId` and `userName` are derived
+    // from the signed session so activity cannot be attributed to someone else.
+    const userId = user.uid;
+    const userName = user.email ? user.email.split('@')[0] : 'anonymous';
+    const safeDomain = typeof domain === 'string' && domain ? domain.slice(0, 40) : 'user_action';
+    const safeSessionId =
+      typeof sessionId === 'string' && sessionId
+        ? sessionId.slice(0, 100)
+        : `server_session_${Date.now()}`;
+    const safeProps =
+      properties && typeof properties === 'object' && !Array.isArray(properties)
+        ? properties
+        : {};
+
+    if (typeof eventName !== 'string' || !eventName.trim()) {
       return NextResponse.json({ error: 'eventName is required' }, { status: 400 });
+    }
+    if (eventName.length > MAX_EVENT_NAME) {
+      return NextResponse.json({ error: 'eventName too long' }, { status: 400 });
+    }
+    if (JSON.stringify(safeProps).length > MAX_PROPERTIES_BYTES) {
+      return NextResponse.json({ error: 'properties too large' }, { status: 413 });
     }
 
     const event = {
       id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
       timestamp: new Date().toISOString(),
-      eventType: eventName,
-      domain,
+      eventType: eventName.trim(),
+      domain: safeDomain,
       userId: userId || 'anonymous',
       userName,
       metadata: {
-        ...properties,
-        source: properties.source || 'D2C',
-        appName: properties.appName || 'Zenit Tracker',
+        ...safeProps,
+        source: safeProps.source || 'D2C',
+        appName: safeProps.appName || 'Zenit Tracker',
         $D_timestamp: Date.now(),
-        sessionId: sessionId || `server_session_${Date.now()}`,
+        sessionId: safeSessionId,
       },
-      sessionId: sessionId || `server_session_${Date.now()}`,
+      sessionId: safeSessionId,
       createdAt: Date.now(),
     };
 
@@ -79,14 +116,22 @@ export async function POST(req: NextRequest) {
 
 /**
  * GET /api/analytics/track?eventType=...&domain=...&limit=...
- * Query persisted events (admin/debug view).
+ * Raw event dump for debugging. Staff only: the events contain user ids and
+ * names, so external accounts must not be able to read the whole stream.
  */
 export async function GET(req: NextRequest) {
   try {
+    const user = await getRequestUser(req);
+    if (!user) return unauthorized();
+    if (!isInternalEmail(user.email)) {
+      return forbidden('Usage analytics is available to Sun Network staff only');
+    }
+
     const { searchParams } = new URL(req.url);
     const eventType = searchParams.get('eventType');
     const domain = searchParams.get('domain');
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    const requested = parseInt(searchParams.get('limit') || '50', 10);
+    const limit = Math.min(Math.max(Number.isFinite(requested) ? requested : 50, 1), 500);
 
     const db = getCompatDb();
     let query = db.collection(COLLECTION).orderBy('createdAt', 'desc').limit(limit);

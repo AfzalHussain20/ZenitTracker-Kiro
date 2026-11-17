@@ -30,6 +30,50 @@ describe('ZenitAnalytics', () => {
       ).resolves.toBeUndefined();
     });
 
+    it('persists events through the authenticated API, never with a client userId', async () => {
+      const g = global as any;
+      const originalWindow = g.window;
+      g.window = g;
+      g.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+
+      try {
+        await zenitAnalytics.track({
+          eventName: 'Page_View',
+          properties: { currentPage: '/notes' },
+          userId: 'spoofed-user',
+          userName: 'spoofed-name',
+          domain: 'user_action',
+        });
+
+        expect(g.fetch).toHaveBeenCalledTimes(1);
+        const [url, init] = g.fetch.mock.calls[0];
+        expect(url).toBe('/api/analytics/track');
+        const body = JSON.parse(String(init.body));
+        expect(body.eventName).toBe('Page_View');
+        expect(body.properties.currentPage).toBe('/notes');
+        expect(body.userId).toBeUndefined();
+      } finally {
+        g.window = originalWindow;
+        delete g.fetch;
+      }
+    });
+
+    it('never throws when persistence fails', async () => {
+      const g = global as any;
+      const originalWindow = g.window;
+      g.window = g;
+      g.fetch = jest.fn().mockRejectedValue(new Error('offline'));
+
+      try {
+        await expect(
+          zenitAnalytics.track({ eventName: 'Page_View' }),
+        ).resolves.toBeUndefined();
+      } finally {
+        g.window = originalWindow;
+        delete g.fetch;
+      }
+    });
+
     it('resolves for every Zenit convenience event', async () => {
       await zenitAnalytics.login('u1', 'Ada', 'email', true);
       await zenitAnalytics.logout('u1', 'Ada');

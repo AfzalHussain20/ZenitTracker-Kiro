@@ -10,9 +10,10 @@
  *   • Pluggable provider: CleverTapProvider is a no-op buffer when no key is
  *     configured, so events are never dropped. Plug in the real CleverTap JS
  *     SDK the day you have a key — no event-schema migration needed.
- *   • Firestore fallback: every event is also written to the
- *     `analytics_events` collection (via AnalyticsTracker), so you have a
- *     complete, queryable event log locally even without CleverTap.
+ *   • Persistence: every event is posted to `/api/analytics/track`, which
+ *     stamps the signed-in user and writes it to the `analytics_events`
+ *     collection with the service account, so you have a complete, queryable
+ *     event log locally even without CleverTap.
  *   • Auto page-view tracking on route changes; manual `track()` for
  *     Zenit-specific events (test-case execution, session runs, bugs, exports).
  *
@@ -34,12 +35,8 @@
  *   (custom) Export_Downloaded   → CSV / XLSX export
  */
 
-import { FirebaseConnector } from './firebase-connector';
-import { db } from '@/lib/firebaseConfig';
-import { Timestamp } from 'firebase/firestore';
 import type {
   AnalyticsDomain,
-  AnalyticsEvent,
 } from '@/types/bug-analytics';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -182,7 +179,6 @@ class CleverTapProvider {
 export class ZenitAnalytics {
   private config: Required<ZenitAnalyticsConfig>;
   private clevertap: CleverTapProvider;
-  private connector: FirebaseConnector | null = null;
   private sessionId: string;
   private started = false;
 
@@ -195,53 +191,40 @@ export class ZenitAnalytics {
     this.sessionId = `zenit_session_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   }
 
-  /** Lazy-connect Firestore fallback (only when db is available). */
-  private ensureConnector() {
-    if (!this.connector && db) {
-      this.connector = new FirebaseConnector(db);
-    }
-    return this.connector;
-  }
-
   /**
-   * Track a Zenit event. Goes to CleverTap (when configured) AND is queued
-   * for Firestore persistence so nothing is lost without a key.
+   * Track a Zenit event. Buffered for CleverTap (when a key is configured) and
+   * posted to `/api/analytics/track`, which stamps the signed-in user from the
+   * session and persists the event with the service account.
+   *
+   * The browser cannot write `analytics_events` directly: the Firestore rules
+   * deny it, and a client-chosen `userId` would let anyone forge someone
+   * else's activity.
    */
   async track(opts: ZenitTrackOptions): Promise<void> {
-    const { eventName, properties = {}, userId, userName, domain = 'user_action', bugId, sessionId } = opts;
-
-    const payload: AnalyticsEvent = {
-      id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
-      timestamp: Timestamp.now(),
-      eventType: eventName,
-      domain,
-      userId: userId || 'anonymous',
-      userName,
-      metadata: {
-        ...properties,
-        source: properties.source || 'D2C',
-        appName: properties.appName || 'Zenit Tracker',
-        $D_timestamp: Date.now(),
-        bugId,
-        sessionId: sessionId || this.sessionId,
-      },
-      sessionId: sessionId || this.sessionId,
-      bugId,
-      searchableText: [eventName, String(properties.contentTitle || ''), String(properties.searchString || '')]
-        .filter(Boolean).join(' '),
-    };
+    const { eventName, properties = {}, userName, domain = 'user_action', bugId, sessionId } = opts;
 
     // 1) CleverTap (no-op buffer when no key)
     this.clevertap.push(eventName, properties);
 
-    // 2) Firestore fallback (best-effort, never throws to caller)
-    const connector = this.ensureConnector();
-    if (connector) {
-      try {
-        await connector.create('analytics_events', payload, payload.id);
-      } catch (err) {
-        console.error('[ZenitAnalytics] Firestore write failed:', err);
-      }
+    // 2) Server-side persistence (best-effort, never throws to caller)
+    if (typeof window === 'undefined') return;
+    try {
+      await fetch('/api/analytics/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventName,
+          properties: { ...properties, bugId },
+          userName,
+          domain,
+          sessionId: sessionId || this.sessionId,
+        }),
+        credentials: 'same-origin',
+        keepalive: true,
+      });
+    } catch (err) {
+      // Never break the UI because analytics failed.
+      console.error('[ZenitAnalytics] event persist failed:', err);
     }
   }
 

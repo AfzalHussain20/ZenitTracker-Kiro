@@ -83,16 +83,19 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ━━ Auto page-view tracking on route change ━━
+  // Also records the first page: a user who opens one page and leaves still
+  // counts as usage. Each path is recorded once per app session so refreshes
+  // and re-renders do not inflate the numbers.
   const prevPathRef = useRef<string | null>(null);
+  const trackedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!pathname) return;
     const previous = prevPathRef.current;
     prevPathRef.current = pathname;
-    // Skip the initial mount (App_Launched fires separately) — track transitions only.
-    if (previous && previous !== pathname) {
-      const source = searchParams.get('source') || undefined;
-      void pageView(pathname, previous, source);
-    }
+    if (trackedRef.current.has(pathname)) return;
+    trackedRef.current.add(pathname);
+    const source = searchParams.get('source') || undefined;
+    void pageView(pathname, previous || undefined, source);
   }, [pathname, searchParams, pageView]);
 
   const value: AnalyticsContextType = {
