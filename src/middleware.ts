@@ -40,6 +40,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api/public/') ||
     pathname === '/api/geo' ||
     pathname === '/api/auth/session' ||
+    // Browsers post CSP reports without a session; the endpoint only logs.
+    pathname === '/api/csp-report' ||
     isPublicScanApi;
 
   const isApiRoute = pathname.startsWith('/api/');

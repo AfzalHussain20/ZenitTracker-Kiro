@@ -13,11 +13,28 @@ const nextConfig = {
   productionBrowserSourceMaps: false,
   // Do not advertise the framework.
   poweredByHeader: false,
-  // Baseline security headers. CSP is intentionally omitted for now: Next's
-  // inline bootstrap scripts need nonces/hashes, and a wrong CSP silently
-  // breaks the app. These headers are safe and close common clickjacking,
-  // MIME-sniffing and referrer-leak issues.
+  // Baseline security headers. CSP starts in report-only mode: Next's inline
+  // bootstrap scripts and third-party SDKs need a tuning pass before a policy
+  // can be enforced without breaking the app. Reports go to /api/csp-report,
+  // which only logs them, so a clean week of reports is the signal to enforce.
   async headers() {
+    const cspReportOnly = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com https://*.firebaseapp.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebaseapp.com https://*.clevertap.com",
+      "frame-src 'self' https://accounts.google.com https://*.firebaseapp.com",
+      "worker-src 'self' blob:",
+      "media-src 'self' blob: data:",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      'report-uri /api/csp-report',
+    ].join('; ');
+
     return [
       {
         source: '/(.*)',
@@ -29,6 +46,7 @@ const nextConfig = {
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
           { key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
           { key: 'X-DNS-Prefetch-Control', value: 'on' },
+          { key: 'Content-Security-Policy-Report-Only', value: cspReportOnly },
         ],
       },
     ];
