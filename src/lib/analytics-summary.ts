@@ -25,6 +25,12 @@ export interface AnalyticsSummaryOptions {
   windowDays?: number;
   /** Injectable clock for deterministic tests. */
   now?: number;
+  /**
+   * Timezone used for "today" and daily buckets, in minutes east of UTC.
+   * Defaults to IST (330) because that is how the team reads dates; a UTC
+   * boundary would roll "today" over at 05:30 local time.
+   */
+  timezoneOffsetMinutes?: number;
   recentLimit?: number;
   topLimit?: number;
   /** True when the source query hit its row cap and the totals are partial. */
@@ -57,7 +63,10 @@ export interface AnalyticsRecentEvent {
 export interface AnalyticsSummary {
   generatedAt: string;
   windowDays: number;
+  /** Events inside the selected window. */
   totalEvents: number;
+  /** Rows pulled from Firestore, including those outside the window. */
+  rowsRead: number;
   uniqueUsers: number;
   eventsToday: number;
   events7d: number;
@@ -117,13 +126,14 @@ export function eventMillis(event: AnalyticsEventLike): number | null {
   );
 }
 
-function isoDay(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
+function isoDay(ms: number, offsetMs: number): string {
+  return new Date(ms + offsetMs).toISOString().slice(0, 10);
 }
 
-function startOfUtcDay(ms: number): number {
-  const d = new Date(ms);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+/** Epoch millis of local midnight for the day containing `ms`. */
+function startOfDay(ms: number, offsetMs: number): number {
+  const d = new Date(ms + offsetMs);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - offsetMs;
 }
 
 function bump(map: Map<string, { label: string; count: number }>, key: string, label: string) {
@@ -150,8 +160,9 @@ export function summarizeEvents(
   const windowDays = Math.min(Math.max(Math.round(options.windowDays ?? 30), 1), 365);
   const recentLimit = options.recentLimit ?? 20;
   const topLimit = options.topLimit ?? 10;
+  const offsetMs = (options.timezoneOffsetMinutes ?? 330) * 60_000;
 
-  const todayStart = startOfUtcDay(now);
+  const todayStart = startOfDay(now, offsetMs);
   const weekStart = now - 7 * DAY_MS;
   const monthStart = now - 30 * DAY_MS;
   const windowStart = todayStart - (windowDays - 1) * DAY_MS;
@@ -164,18 +175,21 @@ export function summarizeEvents(
 
   const days = new Map<string, { count: number; users: Set<string> }>();
   for (let i = 0; i < windowDays; i++) {
-    days.set(isoDay(windowStart + i * DAY_MS), { count: 0, users: new Set() });
+    days.set(isoDay(windowStart + i * DAY_MS, offsetMs), { count: 0, users: new Set() });
   }
 
   let eventsToday = 0;
   let events7d = 0;
   let events30d = 0;
+  // Totals are scoped to the selected window so the KPI labels ("last N days")
+  // are truthful. `totalEvents` is the number of rows read, which is exposed
+  // separately as `rowsRead`.
+  let windowEvents = 0;
 
   const recent: Array<{ ms: number | null; event: AnalyticsEventLike }> = [];
 
   for (const event of events) {
     const userId = event.userId || ANONYMOUS;
-    if (userId !== ANONYMOUS) uniqueUsers.add(userId);
 
     const ms = eventMillis(event);
     const inWindow = ms == null || ms >= windowStart;
@@ -188,7 +202,7 @@ export function summarizeEvents(
       }
       if (ms >= monthStart) events30d += 1;
 
-      const dayKey = isoDay(ms);
+      const dayKey = isoDay(ms, offsetMs);
       const bucket = days.get(dayKey);
       if (bucket) {
         bucket.count += 1;
@@ -198,12 +212,13 @@ export function summarizeEvents(
     }
 
     if (inWindow) {
+      windowEvents += 1;
+      if (userId !== ANONYMOUS) uniqueUsers.add(userId);
       bump(topEvents, event.eventType || 'unknown', event.eventType || 'Unknown');
       bump(topUsers, userId, event.userName || userId);
       bump(byDomain, event.domain || 'unknown', event.domain || 'Unknown');
+      recent.push({ ms, event });
     }
-
-    recent.push({ ms, event });
   }
 
   recent.sort((a, b) => (b.ms ?? 0) - (a.ms ?? 0));
@@ -211,7 +226,8 @@ export function summarizeEvents(
   return {
     generatedAt: new Date(now).toISOString(),
     windowDays,
-    totalEvents: events.length,
+    totalEvents: windowEvents,
+    rowsRead: events.length,
     uniqueUsers: uniqueUsers.size,
     eventsToday,
     events7d,

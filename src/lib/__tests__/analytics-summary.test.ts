@@ -91,13 +91,27 @@ describe('summarizeEvents', () => {
 
   it('computes time-windowed counts correctly', () => {
     const summary = summarizeEvents(events(), { windowDays: 30, now: NOW });
-    expect(summary.totalEvents).toBe(6);
+    // e4 (60 days old) is outside the 30-day window.
+    expect(summary.totalEvents).toBe(5);
+    expect(summary.rowsRead).toBe(6);
     // anonymous is excluded from unique users
-    expect(summary.uniqueUsers).toBe(3);
+    expect(summary.uniqueUsers).toBe(2); // u1, u2
     expect(summary.eventsToday).toBe(3); // e1, e5, e6
     expect(summary.events7d).toBe(4); // e1, e2, e5, e6
     expect(summary.events30d).toBe(5); // all but the 60-day-old event
     expect(summary.activeUsers7d).toBe(2); // u1, u2
+  });
+
+  it('scopes totals and the recent feed to the selected window', () => {
+    const narrow = summarizeEvents(events(), { windowDays: 7, now: NOW });
+    expect(narrow.totalEvents).toBe(4); // e1, e2, e5, e6
+    expect(narrow.uniqueUsers).toBe(2);
+    expect(narrow.recent.map(e => e.id)).not.toContain('e3'); // 10 days old
+    expect(narrow.recent.map(e => e.id)).not.toContain('e4'); // 60 days old
+
+    const wide = summarizeEvents(events(), { windowDays: 90, now: NOW });
+    expect(wide.totalEvents).toBe(6); // everything, including e4
+    expect(wide.uniqueUsers).toBe(3); // u1, u2, u3
   });
 
   it('ranks top events and users within the window', () => {
@@ -110,7 +124,7 @@ describe('summarizeEvents', () => {
     expect(userLabels).not.toContain('Carol');
   });
 
-  it('buckets events into the right UTC day and zero-fills gaps', () => {
+  it('buckets events into the right day and zero-fills gaps', () => {
     const summary = summarizeEvents(events(), { windowDays: 30, now: NOW });
     const byDate = Object.fromEntries(summary.byDay.map(d => [d.date, d]));
     expect(byDate['2026-11-17'].count).toBe(3);
@@ -118,6 +132,31 @@ describe('summarizeEvents', () => {
     expect(byDate['2026-11-16'].count).toBe(1);
     expect(byDate['2026-11-01']).toBeDefined();
     expect(byDate['2026-11-01'].count).toBe(0);
+  });
+
+  it('uses an IST day boundary by default', () => {
+    // 2026-11-16T19:00Z is 2026-11-17 00:30 IST, so it belongs to the 17th.
+    const lateNightIst = Date.parse('2026-11-16T19:00:00.000Z');
+    const summary = summarizeEvents(
+      [{ id: 'x', eventType: 'Late', userId: 'u1', createdAt: lateNightIst }],
+      { windowDays: 7, now: NOW },
+    );
+    const byDate = Object.fromEntries(summary.byDay.map(d => [d.date, d]));
+    expect(byDate['2026-11-17'].count).toBe(1);
+    expect(byDate['2026-11-16'].count).toBe(0);
+    // NOW is 17:30 IST on the 17th, so that event is also "today".
+    expect(summary.eventsToday).toBe(1);
+  });
+
+  it('honours an explicit timezone offset', () => {
+    const lateNightIst = Date.parse('2026-11-16T19:00:00.000Z');
+    const utc = summarizeEvents(
+      [{ id: 'x', eventType: 'Late', userId: 'u1', createdAt: lateNightIst }],
+      { windowDays: 7, now: NOW, timezoneOffsetMinutes: 0 },
+    );
+    const byDate = Object.fromEntries(utc.byDay.map(d => [d.date, d]));
+    expect(byDate['2026-11-16'].count).toBe(1);
+    expect(byDate['2026-11-17'].count).toBe(0);
   });
 
   it('sorts recent events newest-first and honours the limit', () => {

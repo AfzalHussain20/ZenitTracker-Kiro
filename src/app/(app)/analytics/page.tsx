@@ -238,16 +238,26 @@ export default function AnalyticsPage() {
               <Activity className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <p className="font-semibold">No usage events yet</p>
+              <p className="font-semibold">
+                {data.rowsRead > 0 ? 'No activity in this range' : 'No usage events yet'}
+              </p>
               <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                Events are recorded as people use the app. Once activity comes in, this
-                dashboard shows the most-used features, active users and daily trends.
+                {data.rowsRead > 0
+                  ? `There are ${fmt(data.rowsRead)} recorded events, but none in the last ${data.windowDays} days. Try a wider range.`
+                  : 'Events are recorded as people use the app. Once activity comes in, this dashboard shows the most-used features, active users and daily trends.'}
               </p>
             </div>
-            <Button size="sm" variant="outline" onClick={() => load(range)}>
-              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-              Check again
-            </Button>
+            <div className="flex items-center gap-2">
+              {data.rowsRead > 0 && range !== 90 && (
+                <Button size="sm" variant="outline" onClick={() => setRange(90)}>
+                  Show 90 days
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => load(range)}>
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                Refresh
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -257,16 +267,20 @@ export default function AnalyticsPage() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <KpiCard
-              title="Total events"
+              title="Events in range"
               value={fmt(data.totalEvents)}
-              hint={data.truncated ? 'Partial — read cap reached' : `Last ${data.windowDays} days`}
+              hint={
+                data.truncated
+                  ? 'Partial — read cap reached'
+                  : `Last ${data.windowDays} days`
+              }
               icon={Activity}
               accent="from-blue-500 to-cyan-600"
             />
             <KpiCard
               title="Unique users"
               value={fmt(data.uniqueUsers)}
-              hint="Distinct signed-in users"
+              hint={`Active in last ${data.windowDays} days`}
               icon={Users}
               accent="from-purple-500 to-indigo-600"
             />
@@ -278,9 +292,9 @@ export default function AnalyticsPage() {
               accent="from-green-500 to-emerald-600"
             />
             <KpiCard
-              title="Last 7 days"
-              value={fmt(data.events7d)}
-              hint={`${fmt(data.events30d)} in 30d`}
+              title="Last 30 days"
+              value={fmt(data.events30d)}
+              hint={`${fmt(data.events7d)} in last 7 days`}
               icon={UserCheck}
               accent="from-amber-500 to-orange-600"
             />
