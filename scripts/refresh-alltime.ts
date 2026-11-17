@@ -49,14 +49,27 @@ async function fetchAllPages(jql: string): Promise<any[]> {
         let url = `${base}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&maxResults=100&fields=${encodeURIComponent(FIELDS_PARAM)}`;
         if (token) url += `&nextPageToken=${encodeURIComponent(token)}`;
 
-        const res = await fetch(url, {
-            headers: { Authorization: auth, Accept: 'application/json' },
-            cache: 'no-store',
-        });
-        if (!res.ok) {
-            throw new Error(`Jira HTTP ${res.status} for JQL: ${jql.slice(0, 60)}`);
+        // Jira intermittently returns 429/5xx during long paginations. Without a
+        // retry the whole snapshot build fails and the KPI cache goes stale, so
+        // back off and try again before giving up.
+        let data: any = null;
+        for (let attempt = 1; attempt <= 5; attempt++) {
+            const res = await fetch(url, {
+                headers: { Authorization: auth, Accept: 'application/json' },
+                cache: 'no-store',
+            });
+            if (res.ok) {
+                data = await res.json();
+                break;
+            }
+            const retryable = res.status === 429 || res.status >= 500;
+            if (!retryable || attempt === 5) {
+                throw new Error(`Jira HTTP ${res.status} for JQL: ${jql.slice(0, 60)}`);
+            }
+            const retryAfter = Number(res.headers.get('retry-after')) || attempt * 2;
+            console.error(`  Jira HTTP ${res.status}; retrying in ${retryAfter}s (attempt ${attempt}/5)`);
+            await new Promise(r => setTimeout(r, retryAfter * 1000));
         }
-        const data = await res.json();
         pages++;
         all.push(...(data.issues || []).map(mapIssue));
         if (data.isLast || !data.nextPageToken) break;

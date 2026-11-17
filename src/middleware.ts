@@ -24,14 +24,23 @@ export async function middleware(request: NextRequest) {
 
   // APIs that are intentionally public. Jira and Keepr are NOT here: they
   // proxy company credentials and must require a session.
+  //
+  // Exception: the QR device-scan flow is used from phones that are not signed
+  // in, so the minimum needed to scan a device stays public — read one device,
+  // check it in/out, list devices, and load the team picker. Every other
+  // Keepr/Jira endpoint (history, audit, sync, mutations beyond the scan) is
+  // staff-only.
+  const isPublicScanApi =
+    (pathname === '/api/keepr/device/list' && request.method === 'GET') ||
+    (/^\/api\/keepr\/device\/[^/]+$/.test(pathname) &&
+      (request.method === 'GET' || request.method === 'PATCH')) ||
+    (pathname === '/api/jira/teams' && request.method === 'GET');
+
   const isPublicApi =
     pathname.startsWith('/api/public/') ||
     pathname === '/api/geo' ||
     pathname === '/api/auth/session' ||
-    // The QR scan page needs to read a single device without logging in.
-    (request.method === 'GET' &&
-      pathname !== '/api/keepr/device/list' &&
-      /^\/api\/keepr\/device\/[^/]+$/.test(pathname));
+    isPublicScanApi;
 
   const isApiRoute = pathname.startsWith('/api/');
   const isPublicPage = publicPagePrefixes.some(prefix => pathname.startsWith(prefix));
