@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import {
+  Activity,
   BarChart3,
   Brain,
   Grid3x3,
@@ -46,7 +47,10 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Quality',
-    items: [{ title: 'Jira KPI', href: '/analytics/bugs', icon: BarChart3, internalOnly: true }],
+    items: [
+      { title: 'Usage', href: '/analytics', icon: Activity, internalOnly: true },
+      { title: 'Jira KPI', href: '/analytics/bugs', icon: BarChart3, internalOnly: true },
+    ],
   },
   {
     label: 'Workspace',
