@@ -35,23 +35,30 @@ export async function GET(req: NextRequest) {
   try {
     const db = getCompatDb();
 
-    let snap = await db
+    const ordered = await db
       .collection(COLLECTION)
       .orderBy('createdAt', 'desc')
       .limit(MAX_ROWS)
       .get();
 
-    // Older writers did not set `createdAt`, and an ordered query excludes
-    // documents missing the order field. Fall back to a plain read so those
-    // events still count instead of silently disappearing.
-    if (snap.empty) {
-      snap = await db.collection(COLLECTION).limit(MAX_ROWS).get();
+    // Firestore's ordered query silently excludes documents missing the order
+    // field, and the two event writers disagree: the track API sets
+    // `createdAt` while `clevertap-analytics` only sets `timestamp`. A plain
+    // read catches those rows. It is only affordable (and only complete) when
+    // the ordered read did not hit the cap; when it did we report truncation.
+    const capped = ordered.size >= MAX_ROWS;
+    const plain = capped ? null : await db.collection(COLLECTION).limit(MAX_ROWS).get();
+
+    const byId = new Map<string, Record<string, any>>();
+    for (const doc of ordered.docs) byId.set(doc.id, { id: doc.id, ...doc.data() });
+    for (const doc of plain?.docs ?? []) {
+      if (!byId.has(doc.id)) byId.set(doc.id, { id: doc.id, ...doc.data() });
     }
 
-    const events = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const events = [...byId.values()];
     const summary = summarizeEvents(events, {
       windowDays: days,
-      truncated: snap.size >= MAX_ROWS,
+      truncated: capped,
     });
 
     return NextResponse.json(summary);
