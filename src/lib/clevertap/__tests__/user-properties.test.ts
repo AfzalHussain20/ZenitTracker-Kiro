@@ -18,12 +18,12 @@ import {
 } from '@/lib/clevertap/user-properties-catalog';
 
 describe('CleverTap user-properties catalog', () => {
-  it('embeds all 27 properties from the User Properties sheet', () => {
-    expect(USER_PROPERTY_CATALOG).toHaveLength(27);
-    expect(USER_PROPERTY_NAMES.size).toBe(27);
+  it('embeds all 26 properties from the User Properties sheet', () => {
+    expect(USER_PROPERTY_CATALOG).toHaveLength(26);
+    expect(USER_PROPERTY_NAMES.size).toBe(26);
   });
 
-  it('keeps the exact CSV names, including the MSG-whatsapp hyphen', () => {
+  it('keeps the exact workbook names, including the MSG-whatsapp hyphen', () => {
     const names = USER_PROPERTY_CATALOG.map((p) => p.name);
     expect(names).toEqual(
       expect.arrayContaining([
@@ -44,7 +44,6 @@ describe('CleverTap user-properties catalog', () => {
         'startDateofSubscription',
         'endDateofSubscription',
         'registrationDate',
-        'isEVThread',
         'MSG-whatsapp',
         'Name',
         'Gender',
@@ -60,7 +59,7 @@ describe('CleverTap user-properties catalog', () => {
 
   it('records the owner team for every property', () => {
     for (const property of USER_PROPERTY_CATALOG) {
-      expect(['Client', 'Backend', 'Analytics team']).toContain(property.source);
+      expect(['Client', 'Backend', 'Analytics']).toContain(property.source);
       expect(property.whenUpdated.length).toBeGreaterThan(0);
     }
   });
@@ -177,13 +176,13 @@ describe('analyzeUserProperties', () => {
   it('splits the sample into matched, missing and extra', () => {
     const result = analyzeUserProperties(SAMPLE_USER_PROPERTIES);
 
-    expect(result.summary.catalogTotal).toBe(27);
-    expect(result.summary.matched).toBe(18);
+    expect(result.summary.catalogTotal).toBe(26);
+    expect(result.summary.matched).toBe(17);
     expect(result.summary.missing).toBe(9);
     expect(result.summary.extra).toBe(1);
     expect(result.summary.renamed).toBe(0);
-    expect(result.summary.pastedTotal).toBe(19);
-    expect(result.summary.coverage).toBe(67);
+    expect(result.summary.pastedTotal).toBe(18);
+    expect(result.summary.coverage).toBe(65);
 
     expect(result.extra.map((row) => row.key)).toEqual(['deviceModel']);
     expect(result.missing.map((row) => row.key)).toEqual([
@@ -224,11 +223,11 @@ describe('analyzeUserProperties', () => {
     expect(result.renamed).toHaveLength(0);
   });
 
-  it('lists every CSV property as missing when the paste is a partial profile', () => {
+  it('lists every workbook property as missing when the paste is a partial profile', () => {
     const result = analyzeUserProperties(JSON.stringify({ Email: 'a@b.com' }));
 
     expect(result.summary.matched).toBe(1);
-    expect(result.summary.missing).toBe(26);
+    expect(result.summary.missing).toBe(25);
     expect(result.summary.coverage).toBe(4);
   });
 });
@@ -243,7 +242,7 @@ describe('exports', () => {
     expect(lines[0]).toBe(
       'Property,Status,Canonical name,Value in paste,When it should be updated,Source,Action',
     );
-    expect(lines).toHaveLength(1 + 27 + 1); // header + 27 CSV rows + 1 extra
+    expect(lines).toHaveLength(1 + 26 + 1); // header + 26 workbook rows + 1 extra
     expect(csv).toContain('userStatusD2C,missing');
     expect(csv).toContain('deviceModel,extra');
     expect(csv).toContain('Email,present');

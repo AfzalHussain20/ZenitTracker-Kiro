@@ -1,8 +1,8 @@
 /**
  * CleverTap User Properties catalog + diff engine
  * ────────────────────────────────────────────────────────────────────────────
- * Source of truth: the **User Properties** sheet in `Clevertap Events.xlsx`
- * (27 rows) supplied by the analytics team. The events validator lives in
+ * Source of truth: the **User Properties** sheet in `Clevertap Events (1).xlsx`
+ * (26 rows) supplied by the analytics team. The events validator lives in
  * `event-catalog.ts`; this module is deliberately separate because user
  * properties are compared against a *profile*, not against an event payload.
  *
@@ -22,14 +22,14 @@
 
 // ─── Catalog ──────────────────────────────────────────────────────────────────
 
-export type UserPropertySource = 'Client' | 'Backend' | 'Analytics team';
+export type UserPropertySource = 'Client' | 'Backend' | 'Analytics';
 
 export interface UserPropertyDef {
-  /** Exact name expected in CleverTap (camelCase, case-sensitive in the CSV). */
+  /** Exact name expected in CleverTap (camelCase, case-sensitive in the sheet). */
   name: string;
   /** When the property should be written. */
   whenUpdated: string;
-  /** Example values from the CSV. */
+  /** Example values from the sheet. */
   sampleValues: string;
   /** Which team owns the write. */
   source: UserPropertySource;
@@ -48,7 +48,7 @@ export const USER_PROPERTY_CATALOG: UserPropertyDef[] = [
     name: 'parentalControl',
     whenUpdated: 'On registration & profile update',
     sampleValues: 'U · U/A 7+ · U/A 13+ · U/A 16+ · A',
-    source: 'Backend',
+    source: 'Client',
   },
   {
     name: 'userStatusD2C',
@@ -60,7 +60,7 @@ export const USER_PROPERTY_CATALOG: UserPropertyDef[] = [
   {
     name: 'userStatusB2B',
     whenUpdated: 'On status change',
-    sampleValues: 'Churned Quarterly · Churned Annual · Subscribed Annual · Resubscribed Gold',
+    sampleValues: 'Churned Quarterly · Churned Annual · Subscribed Annual · Resubscribed Gold (yupp, signtel, jio)',
     source: 'Backend',
   },
   {
@@ -103,19 +103,19 @@ export const USER_PROPERTY_CATALOG: UserPropertyDef[] = [
     name: 'Email',
     whenUpdated: 'On registration & profile update',
     sampleValues: 'santhosh@gmail.com',
-    source: 'Backend',
+    source: 'Client',
   },
   {
     name: 'Phone',
     whenUpdated: 'On registration & profile update',
     sampleValues: '"+918127643176" — format: “+” + country mobile code + mobile number',
-    source: 'Backend',
+    source: 'Client',
   },
   {
     name: 'accountID',
     whenUpdated: 'On registration',
     sampleValues: '2111020644218234129',
-    source: 'Backend',
+    source: 'Client',
   },
   {
     name: 'subscriptionStatusD2C',
@@ -142,40 +142,34 @@ export const USER_PROPERTY_CATALOG: UserPropertyDef[] = [
     source: 'Backend',
   },
   {
-    name: 'isEVThread',
-    whenUpdated: 'On every successful API response',
-    sampleValues: 'True · False',
-    source: 'Backend',
-  },
-  {
     name: 'MSG-whatsapp',
     whenUpdated: 'On successful registration & profile update (when a mobile number is available)',
     sampleValues: 'True · False',
-    source: 'Backend',
+    source: 'Client',
   },
   {
     name: 'Name',
     whenUpdated: 'On update',
     sampleValues: 'Dilip Kumar',
-    source: 'Backend',
+    source: 'Client',
   },
   {
     name: 'Gender',
     whenUpdated: 'On update',
     sampleValues: 'Male · Female · Others',
-    source: 'Backend',
+    source: 'Client',
   },
   {
     name: 'DOB',
     whenUpdated: 'On update',
     sampleValues: '$D_1647484118 — “$D_” + epoch timestamp',
-    source: 'Backend',
+    source: 'Client',
   },
   {
     name: 'audioLanguage',
     whenUpdated: 'After every session',
     sampleValues: 'Kannada (one value only — the most-watched audio language)',
-    source: 'Backend',
+    source: 'Analytics',
   },
   {
     name: 'currentLanguageShorts',
@@ -193,13 +187,13 @@ export const USER_PROPERTY_CATALOG: UserPropertyDef[] = [
     name: 'languagePreferred',
     whenUpdated: 'Most watched language',
     sampleValues: 'Tamil · Telugu · Marathi',
-    source: 'Analytics team',
+    source: 'Client',
   },
   {
     name: 'languagePreferredShorts',
     whenUpdated: 'Most watched language',
     sampleValues: 'Tamil · Telugu · Marathi',
-    source: 'Analytics team',
+    source: 'Client',
   },
 ];
 
@@ -269,7 +263,7 @@ function stripKey(key: string): string {
   return k;
 }
 
-/** Case-insensitive key used for exact CSV matching. */
+/** Case-insensitive key used for exact workbook matching. */
 export function normalizeUserPropertyKey(key: string): string {
   return stripKey(key).toLowerCase();
 }
@@ -288,7 +282,7 @@ const CATALOG_BY_LOOSE = new Map<string, UserPropertyDef>(
 );
 
 /**
- * Resolve a pasted key to its CSV definition. Exact (case-insensitive) matches
+ * Resolve a pasted key to its workbook definition. Exact (case-insensitive) matches
  * win; a punctuation-insensitive match is returned as a fallback so the UI can
  * tell the analyst to rename `start_date_of_subscription` → `startDateofSubscription`.
  */
@@ -772,7 +766,7 @@ export type UserPropertyStatus = 'present' | 'renamed' | 'missing' | 'extra';
 export interface UserPropertyRow {
   /** Key exactly as it appeared in the paste (canonical name for missing rows). */
   key: string;
-  /** CSV name when the key is known. */
+  /** Catalog name when the key is known. */
   canonical?: string;
   /** Joined display value. */
   value: string;
@@ -790,7 +784,7 @@ export interface UserPropertySummary {
   missing: number;
   extra: number;
   ignored: number;
-  /** Strict coverage — exact CSV names only. */
+  /** Strict coverage — exact catalog names only. */
   coverage: number;
 }
 
@@ -837,7 +831,7 @@ export function analyzeUserProperties(input: string): UserPropertyAnalysis {
         values,
         status: 'present',
         def: exact,
-        message: 'Matched CSV property',
+        message: 'Matched workbook property',
       });
       continue;
     }
@@ -852,7 +846,7 @@ export function analyzeUserProperties(input: string): UserPropertyAnalysis {
         values,
         status: 'renamed',
         def: loose,
-        message: `Rename to “${loose.name}” — the CSV uses camelCase`,
+        message: `Rename to “${loose.name}” — the workbook uses camelCase`,
       });
       continue;
     }
@@ -862,7 +856,7 @@ export function analyzeUserProperties(input: string): UserPropertyAnalysis {
       value,
       values,
       status: 'extra',
-      message: 'Not in the CSV — remove it',
+      message: 'Not in the workbook — remove it',
     });
   }
 
@@ -879,7 +873,7 @@ export function analyzeUserProperties(input: string): UserPropertyAnalysis {
     values: [],
     status: 'missing',
     def,
-    message: 'Required by the CSV but absent from the paste',
+    message: 'Required by the workbook but absent from the paste',
   }));
 
   return {
@@ -947,7 +941,7 @@ export function buildMissingList(result: UserPropertyAnalysis): string {
   return result.missing.map((row) => row.key).join('\n');
 }
 
-/** Pasted keys that are not in the CSV, one per line. */
+/** Pasted keys that are not in the workbook, one per line. */
 export function buildExtraList(result: UserPropertyAnalysis): string {
   return result.extra.map((row) => row.key).join('\n');
 }
@@ -955,7 +949,7 @@ export function buildExtraList(result: UserPropertyAnalysis): string {
 // ─── Sample ───────────────────────────────────────────────────────────────────
 
 /**
- * Realistic profile push with 18 CSV properties, one extra property
+ * Realistic profile push with 17 catalog properties, one extra property
  * (`deviceModel`) and nine missing properties so every bucket is visible.
  */
 export const SAMPLE_USER_PROPERTIES = `{
@@ -974,7 +968,6 @@ export const SAMPLE_USER_PROPERTIES = `{
       "Phone": "+918127643176",
       "accountID": "2111020644218234129",
       "subscriptionStatusD2C": "True",
-      "isEVThread": "False",
       "MSG-whatsapp": "True",
       "Name": "Dilip Kumar",
       "Gender": "Male",

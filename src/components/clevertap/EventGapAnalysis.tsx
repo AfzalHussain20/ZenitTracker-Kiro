@@ -520,12 +520,12 @@ export default function EventGapAnalysis() {
                         <div className="flex-1 min-w-0">
                             <h2 className="text-xl font-bold">Event Catalog &amp; Gap Analysis</h2>
                             <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
-                                Compare the <span className="font-semibold text-foreground">39 CleverTap CSV events</span> against
-                                what you actually captured — and see which Zenit-specific events go beyond the CSV.
+                                Compare the <span className="font-semibold text-foreground">38 CleverTap events</span> from the
+                                workbook against what you actually captured — and see which Zenit-specific events go beyond it.
                                 Works entirely offline; <span className="font-semibold text-foreground">no CleverTap API key needed</span>.
                             </p>
                             <div className="flex flex-wrap gap-2 mt-3">
-                                <Pill className="bg-background/60 border-border text-muted-foreground"><Layers className="w-3 h-3" /> {CLEVERTAP_CATALOG.length} CSV events</Pill>
+                                <Pill className="bg-background/60 border-border text-muted-foreground"><Layers className="w-3 h-3" /> {CLEVERTAP_CATALOG.length} catalog events</Pill>
                                 <Pill className="bg-background/60 border-border text-muted-foreground"><Sparkles className="w-3 h-3" /> {ZENIT_EXTRA_EVENTS.length} Zenit-specific</Pill>
                                 <Pill className="bg-background/60 border-border text-muted-foreground"><Terminal className="w-3 h-3" /> JSON · NDJSON · CSV · names</Pill>
                             </div>
@@ -1176,12 +1176,12 @@ Searched
 
                     <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-[12px] text-amber-800 dark:text-amber-300 space-y-1">
                         <p className="font-semibold flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> Partial input = partial report</p>
-                        <p>If you paste only 5 events, the report can only validate those 5. The other 34 are still in the 39-event reference list and will show as <b>Not in paste</b> — they are not invented. Paste everything you have in one go for a complete picture.</p>
+                        <p>If you paste only 5 events, the report can only validate those 5. The other 33 are still in the 38-event reference list and will show as <b>Not in paste</b> — they are not invented. Paste everything you have in one go for a complete picture.</p>
                     </div>
 
                     <div className="rounded-xl border border-blue-500/25 bg-blue-500/10 p-4 text-[12px] text-blue-800 dark:text-blue-300 space-y-1">
                         <p className="font-semibold flex items-center gap-2"><Info className="w-4 h-4" /> Why no API key is needed</p>
-                        <p>This screen diffs <b>whatever you paste</b> against the embedded CSV catalog. It never calls CleverTap. Zenit also mirrors its own events to Firestore (<code>analytics_events</code>), so you can export that list the same way and compare.</p>
+                        <p>This screen diffs <b>whatever you paste</b> against the embedded workbook catalog. It never calls CleverTap. Zenit also mirrors its own events to Firestore (<code>analytics_events</code>), so you can export that list the same way and compare.</p>
                     </div>
                 </CardContent>
             </Card>

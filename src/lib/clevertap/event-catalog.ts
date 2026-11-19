@@ -1,8 +1,9 @@
 /**
  * CleverTap Event Catalog + Gap Analysis
  * ────────────────────────────────────────────────────────────────────────────
- * Source of truth: `Clevertap Events.csv` (39 custom events) supplied by the
- * analytics team. This module embeds that catalog so Zenit can compare it
+ * Source of truth: the `Final Events` sheet in `Clevertap Events (1).xlsx`
+ * (38 custom events) supplied by the analytics team. This module embeds that
+ * catalog so Zenit can compare it
  * against events actually captured from CleverTap / DevTools — with **no API
  * key required**. The analyst pastes whatever they have (event-name list,
  * NDJSON, a JSON array, or the DevTools payload) and we diff it here.
@@ -46,7 +47,7 @@ export interface CatalogEvent {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// The 39 events from `Clevertap Events.csv`
+// The 38 events from the `Final Events` sheet in `Clevertap Events (1).xlsx`
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export const CLEVERTAP_CATALOG: CatalogEvent[] = [
@@ -365,13 +366,6 @@ export const CLEVERTAP_CATALOG: CatalogEvent[] = [
     category: 'Profile & Account',
     trigger: 'After a user successfully links their mobile number to their account',
     properties: ['source', 'loginMethod'],
-    zenitStatus: 'not-implemented',
-  },
-  {
-    name: 'Link_Device',
-    category: 'Profile & Account',
-    trigger: 'When the user tries to activate a TV device',
-    properties: ['isQRCode', 'isManualCode', 'isSuccessful', 'contentLanguage', 'source'],
     zenitStatus: 'not-implemented',
   },
   {

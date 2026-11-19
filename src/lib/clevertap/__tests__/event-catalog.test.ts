@@ -24,8 +24,8 @@ import {
 } from '@/lib/clevertap/event-catalog';
 
 describe('CleverTap event catalog', () => {
-  it('embeds all 39 events from the CSV', () => {
-    expect(CLEVERTAP_CATALOG).toHaveLength(39);
+  it('embeds all 38 events from the workbook', () => {
+    expect(CLEVERTAP_CATALOG).toHaveLength(38);
   });
 
   it('has unique, normalised event names', () => {
@@ -352,7 +352,7 @@ describe('analyzeGaps', () => {
       properties: Object.fromEntries(e.properties.map((p) => [p, 'x'])),
     }));
     const result = analyzeGaps(parseCapturedEvents(JSON.stringify(payload)));
-    expect(result.summary.matched).toBe(39);
+    expect(result.summary.matched).toBe(38);
     expect(result.summary.missing).toBe(0);
     expect(result.summary.propertyCoverage).toBe(100);
   });
@@ -361,7 +361,7 @@ describe('analyzeGaps', () => {
     const result = analyzeGaps(parseCapturedEvents('[{"event":"Login","properties":{"source":"D2C"}}]'));
     expect(result.summary.capturedTotal).toBe(1);
     expect(result.summary.matched).toBe(1);
-    expect(result.summary.missing).toBe(38);
+    expect(result.summary.missing).toBe(37);
   });
 
   it('flags captured events that are not in the CSV as extra', () => {

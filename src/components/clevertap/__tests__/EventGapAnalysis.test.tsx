@@ -15,10 +15,10 @@ jest.mock('framer-motion', () => ({
 }));
 
 describe('EventGapAnalysis', () => {
-  it('renders the catalog intro with the CSV event count', () => {
+  it('renders the catalog intro with the workbook event count', () => {
     render(<EventGapAnalysis />);
     expect(screen.getByText(/Event Catalog & Gap Analysis/i)).toBeInTheDocument();
-    expect(screen.getByText(/39 CSV events/i)).toBeInTheDocument();
+    expect(screen.getByText(/38 catalog events/i)).toBeInTheDocument();
   });
 
   it('runs the built-in sample and shows the summary + table', () => {

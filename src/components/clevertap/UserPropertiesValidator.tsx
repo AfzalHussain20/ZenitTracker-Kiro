@@ -47,7 +47,7 @@ function stamp(): string {
 const SOURCE_STYLE: Record<UserPropertySource, string> = {
     Client: 'bg-sky-500/15 text-sky-600 border-sky-500/30',
     Backend: 'bg-violet-500/15 text-violet-600 border-violet-500/30',
-    'Analytics team': 'bg-amber-500/15 text-amber-600 border-amber-500/30',
+    Analytics: 'bg-amber-500/15 text-amber-600 border-amber-500/30',
 };
 
 const FORMAT_LABEL: Record<string, string> = {
@@ -225,14 +225,14 @@ export default function UserPropertiesValidator() {
                         </div>
                         <div className="flex-1 min-w-0">
                             <div className="inline-flex items-center gap-2 rounded-full border border-teal-500/25 bg-teal-500/10 px-3 py-1 text-[11px] font-medium text-teal-700 dark:text-teal-400 mb-2">
-                                <Sparkles className="w-3 h-3" /> User Properties · CSV source of truth
+                                <Sparkles className="w-3 h-3" /> User Properties · workbook source of truth
                             </div>
                             <h2 className="text-2xl font-bold tracking-tight">User Properties Validator</h2>
                             <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
                                 Paste the profile element you copied from the browser inspector. Zenit compares it with the{' '}
-                                <b>{USER_PROPERTY_CATALOG.length} user properties</b> in the CleverTap CSV and shows exactly what is
+                                <b>{USER_PROPERTY_CATALOG.length} user properties</b> in the CleverTap workbook and shows exactly what is
                                 <b className="text-rose-600"> missing</b> and what is
-                                <b className="text-sky-600"> not in the CSV</b> (remove it).
+                                <b className="text-sky-600"> not in the workbook</b> (remove it).
                             </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
@@ -304,11 +304,11 @@ export default function UserPropertiesValidator() {
             {result && result.summary.pastedTotal > 0 && (
                 <div className="space-y-4">
                     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-                        <StatTile label="CSV properties" value={result.summary.catalogTotal} sub="expected" tone="blue" icon={UserRound} />
+                        <StatTile label="Workbook properties" value={result.summary.catalogTotal} sub="expected" tone="blue" icon={UserRound} />
                         <StatTile label="In your paste" value={result.summary.pastedTotal} sub="unique keys" tone="violet" icon={ClipboardPaste} />
-                        <StatTile label="Matched" value={result.summary.matched} sub="exact CSV names" tone="emerald" icon={CheckCircle2} />
+                        <StatTile label="Matched" value={result.summary.matched} sub="exact workbook names" tone="emerald" icon={CheckCircle2} />
                         <StatTile label="Missing" value={result.summary.missing} sub="not in paste" tone="rose" icon={XCircle} />
-                        <StatTile label="Not in CSV" value={result.summary.extra} sub="remove these" tone="sky" icon={PlusCircle} />
+                        <StatTile label="Not in workbook" value={result.summary.extra} sub="remove these" tone="sky" icon={PlusCircle} />
                         <StatTile label="Needs rename" value={result.summary.renamed} sub="wrong case / punctuation" tone="amber" icon={PencilLine} />
                     </div>
 
@@ -319,7 +319,7 @@ export default function UserPropertiesValidator() {
                                 <CoverageBar value={result.summary.coverage} />
                             </div>
                             <span className="text-[11px] text-muted-foreground">
-                                {result.summary.matched}/{result.summary.catalogTotal} CSV properties present under the exact name
+                                {result.summary.matched}/{result.summary.catalogTotal} workbook properties present under the exact name
                             </span>
                             {result.summary.ignored > 0 && (
                                 <Badge variant="outline" className="text-[10px]">
@@ -354,7 +354,7 @@ export default function UserPropertiesValidator() {
 
                     {result.summary.missing === 0 && result.summary.extra === 0 && result.summary.renamed === 0 ? (
                         <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-700 dark:text-emerald-400">
-                            <CheckCircle2 className="w-5 h-5" /> All {result.summary.catalogTotal} CSV user properties are present with the exact names — and there are no extras.
+                            <CheckCircle2 className="w-5 h-5" /> All {result.summary.catalogTotal} workbook user properties are present with the exact names — and there are no extras.
                         </div>
                     ) : null}
 
@@ -362,7 +362,7 @@ export default function UserPropertiesValidator() {
                     {result.missing.length > 0 && (
                         <SectionShell
                             title="Missing from the paste"
-                            description="These CSV properties are required but were not found. Add them to the profile payload."
+                            description="These workbook properties are required but were not found. Add them to the profile payload."
                             count={result.missing.length}
                             tone="rose"
                             icon={XCircle}
@@ -393,8 +393,8 @@ export default function UserPropertiesValidator() {
                     {/* Extra */}
                     {result.extra.length > 0 && (
                         <SectionShell
-                            title="Not in the CSV — remove"
-                            description="These keys were in the paste but do not exist in the user-properties CSV. Remove them or get the CSV updated first."
+                            title="Not in the workbook — remove"
+                            description="These keys were in the paste but do not exist in the user-properties workbook. Remove them or get the workbook updated first."
                             count={result.extra.length}
                             tone="sky"
                             icon={Trash2}
@@ -412,7 +412,7 @@ export default function UserPropertiesValidator() {
                                         <tr key={row.key} className="hover:bg-sky-500/5">
                                             <td className="px-4 py-2 font-mono font-semibold text-sky-600 whitespace-nowrap">{row.key}</td>
                                             <td className="px-3 py-2"><ValueCell row={row} /></td>
-                                            <td className="px-3 py-2 text-muted-foreground">Remove — not in CSV</td>
+                                            <td className="px-3 py-2 text-muted-foreground">Remove — not in workbook</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -424,7 +424,7 @@ export default function UserPropertiesValidator() {
                     {result.renamed.length > 0 && (
                         <SectionShell
                             title="Present but wrongly named"
-                            description="The value exists, but the key is not the camelCase name from the CSV. Rename it so CleverTap matches the profile property."
+                            description="The value exists, but the key is not the camelCase name from the workbook. Rename it so CleverTap matches the profile property."
                             count={result.renamed.length}
                             tone="amber"
                             icon={PencilLine}
@@ -459,7 +459,7 @@ export default function UserPropertiesValidator() {
                         <details className="group rounded-xl border border-emerald-500/25 bg-emerald-500/5 overflow-hidden">
                             <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-3">
                                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                                <span className="text-sm font-bold">Matched CSV properties</span>
+                                <span className="text-sm font-bold">Matched workbook properties</span>
                                 <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-600">
                                     {result.present.length}
                                 </Badge>
@@ -505,7 +505,7 @@ export default function UserPropertiesValidator() {
                         },
                         {
                             title: '3 · Fix the diff',
-                            body: 'Add every property in “Missing”, remove every property in “Not in CSV”, and rename anything shown under “Wrongly named”.',
+                            body: 'Add every property in “Missing”, remove every property in “Not in workbook”, and rename anything shown under “Wrongly named”.',
                         },
                     ].map((item) => (
                         <Card key={item.title}>
